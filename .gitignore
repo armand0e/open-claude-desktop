@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-electron/
+coverage/
+.vite/
+*.log
+analysis/formatted/
+analysis/*profile*/
+
+# Locally extracted Anthropic artifacts are analysis inputs, not redistributable
+# project source. Recreate them with `npm run reference:extract`.
+reference/**/app.asar.extracted/
+reference/**/ion-dist/
+reference/**/*.asar
+reference/**/*.node
+reference/**/*.dll
+reference/**/*.exe

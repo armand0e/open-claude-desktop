@@ -1,0 +1,72 @@
+# Local Claude UX mode
+
+Local mode uses the web application shipped with the installed Claude Desktop build as the presentation layer and replaces the server boundary with independently authored local code. The installed frontend assets are read at runtime; they are not copied into or redistributed by this repository.
+
+```mermaid
+flowchart LR
+  UI["Installed Claude web UX"] --> P["Fail-closed compatibility patches"]
+  P --> API["Local app:// API"]
+  API --> DB["Atomic conversation store"]
+  API --> OA["OpenAI-compatible provider"]
+  OA --> API
+  API -->|"Claude SSE events"| UI
+```
+
+## Start and configure
+
+```powershell
+npm start
+```
+
+The default endpoint is `http://127.0.0.1:11434/v1`, which is suitable for an Ollama OpenAI-compatible server. The **Local model** button opens an isolated configuration panel that can change the endpoint, model, and optional bearer token and can discover models through `GET /models`.
+
+Environment variables override persisted settings:
+
+| Variable                  | Purpose                                             |
+| ------------------------- | --------------------------------------------------- |
+| `CLAUDE_ION_DIST`         | Alternate unpacked `ion-dist` directory             |
+| `CLAUDE_DESKTOP_LOCAL_UI` | `0` opts into hosted compatibility mode             |
+| `CLAUDE_LOCAL_BASE_URL`   | Provider URL through `/v1`                          |
+| `CLAUDE_LOCAL_MODEL`      | Model identifier sent to the provider               |
+| `CLAUDE_LOCAL_API_KEY`    | Optional bearer token                               |
+| `CLAUDE_USER_DATA_DIR`    | Alternate Electron profile and local data directory |
+
+Provider configuration, conversations, artifact metadata/versions, and uploaded-file metadata live in `local-backend.json` beneath Electron's user-data directory. Uploaded bytes are kept separately under `local-files/`. JSON writes use a same-directory temporary file and atomic rename. The API key is never returned to the renderer; the settings API exposes only whether one is stored.
+
+Local mode does not require sign-in. The packaged client still needs an internal account/organization-shaped compatibility object to construct its query graph, but the account control is hidden and no authentication workflow, Claude credential, or hosted account is used.
+
+## Reconstructed web contracts
+
+The packaged client is bootstrapped with a stable synthetic account and organization. The local server currently implements:
+
+- account bootstrap, access, model selector, privacy-consent, and notification-preference responses;
+- conversation creation, listing, search, starring, rename, deletion, tree loading, and local title responses;
+- initial and follow-up completion routes;
+- translation from OpenAI streaming deltas into the Claude client's `message_start`, `conversation_ready`, content-block, message-delta, and `message_stop` events;
+- translation of the recovered Claude artifact tool into an OpenAI function tool, including persistent `create`, `rewrite`, and `update` versions;
+- local artifact listing/version APIs plus an `app://artifacts.local` sandbox for HTML, SVG, Markdown, text, and code previews;
+- multipart document conversion/upload, local file persistence, file preview/download, and attachment metadata in conversation trees;
+- persistence before and after provider execution so a reload reconstructs the conversation.
+
+The provider request contains the configured model and text history as OpenAI `user` and `assistant` messages. UTF-8/UTF-16 text, source code, CSV, JSON, HTML, SVG, and Markdown attachments are extracted locally and included in the user message. Other binary formats can be stored, but are represented to a text-only provider as binary metadata until a format-specific parser or vision adapter is added.
+
+HTML and SVG artifacts render entirely inside the local sandbox. Markdown, plain text, and code have native local renderers. React and Mermaid artifacts currently show their source with an explicit fallback notice rather than loading a remote runtime. Claude-hosted billing, remote connectors, web search, projects, and Cowork/VM services remain unavailable. Unknown server APIs fail closed with a JSON `503` response.
+
+## Frontend compatibility layer
+
+The observed `1.21459.0` frontend still contains the ordinary Claude chat components, but its desktop route table redirects `/new` and `/chat/:uuid` into the newer Cowork task surface. Local mode applies eight exact in-memory transformations while serving the installed JavaScript:
+
+1. define a stable route component around the retained conversation renderer;
+2. restore `/new` and `/chat/:uuid` to the retained web-chat components;
+3. keep the new-chat route in web-chat mode;
+4. defer initial completion until after navigation so the conversation route owns the stream;
+5. disable service-worker cleanup on the custom `app://` protocol;
+6. permit the retained conversation-tree query in third-party mode;
+7. point artifact previews at the local sandbox;
+8. derive staged composer files into persistent local file references before send.
+
+Every transformation must match exactly once across the module graph declared by `index.html`. Startup aborts when a marker is missing or duplicated. This makes a changed vendor build an explicit compatibility failure instead of silently patching the wrong code. The files in the Claude installation are never modified.
+
+## What “reverse engineered” means here
+
+Client behavior, wire contracts, persistence rules, and desktop IPC can be derived from code shipped to the machine and from runtime observation. Anthropic's server implementation and original unminified source are not present in the desktop package, so they cannot literally be decompiled. The local backend is a behavioral reimplementation of the contracts the shipped client consumes.

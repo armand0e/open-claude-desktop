@@ -1,0 +1,6 @@
+analysis/
+dist/
+dist-electron/
+node_modules/
+reference/
+src/generated/

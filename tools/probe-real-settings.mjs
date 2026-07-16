@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import electron from "electron";
@@ -87,6 +87,44 @@ async function eventually(port, operation, timeout = 30_000) {
   throw lastError ?? new Error("Timed out waiting for renderer");
 }
 
+async function click(target, rect) {
+  const x = rect.x + rect.width / 2;
+  const y = rect.y + rect.height / 2;
+  await cdp(target, "Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x,
+    y,
+    button: "left",
+    clickCount: 1,
+  });
+  await cdp(target, "Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x,
+    y,
+    button: "left",
+    clickCount: 1,
+  });
+}
+
+async function selectAllAndType(target, rect, text) {
+  await click(target, rect);
+  await cdp(target, "Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "a",
+    code: "KeyA",
+    windowsVirtualKeyCode: 65,
+    modifiers: 2,
+  });
+  await cdp(target, "Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "a",
+    code: "KeyA",
+    windowsVirtualKeyCode: 65,
+    modifiers: 2,
+  });
+  await cdp(target, "Input.insertText", { text });
+}
+
 const profile = await mkdtemp(path.join(os.tmpdir(), "claude-real-settings-"));
 const debuggerPort = await unusedPort();
 const output = [];
@@ -99,7 +137,8 @@ const child = spawn(
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
-      CLAUDE_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
       CLAUDE_DESKTOP_LOCAL_UI: "1",
       CLAUDE_TRACE_LOCAL_API: "1",
       CLAUDE_TRACE_LOCAL_UI: "1",
@@ -112,168 +151,148 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => output.push(chunk));
 
 try {
-  const trigger = await eventually(debuggerPort, async (target) =>
-    evaluate(
+  const chrome = await eventually(debuggerPort, async (target) => {
+    const state = await evaluate(
       target,
       `(async () => {
         const deadline = Date.now() + 25000;
         while (!document.querySelector("#local-claude-workbench")?.shadowRoot && Date.now() < deadline)
           await new Promise(resolve => setTimeout(resolve, 100));
-        while (document.querySelectorAll('button').length === 0 && Date.now() < deadline)
-          await new Promise(resolve => setTimeout(resolve, 100));
-        const root = document.querySelector("#local-claude-workbench")?.shadowRoot;
-        if (!root) throw new Error("Local model workbench was not installed");
-        const rect = root.querySelector("#trigger").getBoundingClientRect();
+        const sidebar = document.querySelector('button[aria-label="Collapse sidebar"]');
+        const settings = document.querySelector('[data-testid="local-settings-sidebar-button"]');
+        if (!sidebar || !settings) throw new Error("Sidebar controls did not render");
         return {
-          x: rect.x + rect.width / 2,
-          y: rect.y + rect.height / 2,
-          buttons: [...document.querySelectorAll('button')].map((button, index) => ({
-            index,
-            text: button.textContent?.trim().replace(/\s+/g, ' ').slice(0, 100) || '',
-            aria: button.getAttribute('aria-label'),
-            title: button.getAttribute('title'),
-            testid: button.getAttribute('data-testid'),
-            expanded: button.getAttribute('aria-expanded'),
-            rect: button.getBoundingClientRect().toJSON()
-          })).filter(button => button.rect.width > 0 && button.rect.height > 0)
+          sidebar: sidebar.getBoundingClientRect().toJSON(),
+          settings: settings.getBoundingClientRect().toJSON(),
+          viewportHeight: innerHeight
         };
       })()`,
-    ),
-  );
+    );
+    return state;
+  });
+
   let target = await targetAt(debuggerPort);
-  const menuButton = trigger.buttons.find(
-    (button) => button.testid === "topbar-windows-menu",
-  );
-  assert(menuButton, "Windows menu button was not rendered");
-  await cdp(target, "Input.dispatchMouseEvent", {
-    type: "mousePressed",
-    x: menuButton.rect.x + menuButton.rect.width / 2,
-    y: menuButton.rect.y + menuButton.rect.height / 2,
-    button: "left",
-    clickCount: 1,
-  });
-  await cdp(target, "Input.dispatchMouseEvent", {
-    type: "mouseReleased",
-    x: menuButton.rect.x + menuButton.rect.width / 2,
-    y: menuButton.rect.y + menuButton.rect.height / 2,
-    button: "left",
-    clickCount: 1,
-  });
-  const menuState = await eventually(debuggerPort, async (activeTarget) => {
+  await click(target, chrome.sidebar);
+  const collapsed = await eventually(debuggerPort, async (activeTarget) => {
     const state = await evaluate(
       activeTarget,
       `(() => {
-        const entries = [...document.querySelectorAll('[role="menuitem"], [role="option"]')]
-          .filter(entry => entry.getBoundingClientRect().width > 0)
-          .map(entry => ({
-            text: entry.textContent?.trim().replace(/\s+/g, ' ') || '',
-            role: entry.getAttribute('role'),
-            rect: entry.getBoundingClientRect().toJSON()
-          }));
-        return entries.length ? { entries } : null;
+        const button = document.querySelector('button[aria-label="Expand sidebar"]');
+        if (!button) return null;
+        return {
+          dataCollapsed: document.querySelector('.dframe-root')?.hasAttribute('data-collapsed') || false,
+          rect: button.getBoundingClientRect().toJSON()
+        };
       })()`,
     );
-    if (!state) throw new Error("Windows menu is not open yet");
+    if (!state) throw new Error("Sidebar is not collapsed yet");
     return state;
   });
-  await cdp(target, "Input.dispatchKeyEvent", {
-    type: "keyDown",
-    key: "Escape",
-    code: "Escape",
-    windowsVirtualKeyCode: 27,
-  });
-  await cdp(target, "Input.dispatchKeyEvent", {
-    type: "keyUp",
-    key: "Escape",
-    code: "Escape",
-    windowsVirtualKeyCode: 27,
+  assert(collapsed.dataCollapsed, "Sidebar state did not become collapsed");
+  await click(target, collapsed.rect);
+  await eventually(debuggerPort, async (activeTarget) => {
+    const restored = await evaluate(
+      activeTarget,
+      `Boolean(document.querySelector('button[aria-label="Collapse sidebar"]'))`,
+    );
+    if (!restored) throw new Error("Sidebar is not expanded yet");
+    return true;
   });
 
-  await cdp(target, "Input.dispatchMouseEvent", {
-    type: "mousePressed",
-    x: trigger.x,
-    y: trigger.y,
-    button: "left",
-    clickCount: 1,
+  const bottomSettings = await eventually(
+    debuggerPort,
+    async (activeTarget) => {
+      const state = await evaluate(
+        activeTarget,
+        `(() => {
+          const button = document.querySelector('[data-testid="local-settings-sidebar-button"]');
+          if (!button) return null;
+          return { rect: button.getBoundingClientRect().toJSON(), viewportHeight: innerHeight };
+        })()`,
+      );
+      if (!state) throw new Error("Bottom Settings button is missing");
+      return state;
+    },
+  );
+  assert(
+    bottomSettings.viewportHeight -
+      (bottomSettings.rect.y + bottomSettings.rect.height) <
+      32,
+    `Settings button is not anchored at the bottom: ${JSON.stringify(bottomSettings)}`,
+  );
+  target = await targetAt(debuggerPort);
+  await click(target, bottomSettings.rect);
+  const settings = await eventually(debuggerPort, async (activeTarget) => {
+    const state = await evaluate(
+      activeTarget,
+      `(() => {
+        const dialog = [...document.querySelectorAll('[role="dialog"]')]
+          .find(candidate => candidate.getBoundingClientRect().width > 0);
+        const button = dialog?.querySelector('[data-local-model-settings] button');
+        if (!dialog || !button) return null;
+        return {
+          url: location.href,
+          localModelLabel: button.textContent?.trim().replace(/\s+/g, ' '),
+          rect: button.getBoundingClientRect().toJSON()
+        };
+      })()`,
+    );
+    if (!state) throw new Error("Local model item is not in Settings yet");
+    return state;
   });
-  await cdp(target, "Input.dispatchMouseEvent", {
-    type: "mouseReleased",
-    x: trigger.x,
-    y: trigger.y,
-    button: "left",
-    clickCount: 1,
-  });
+  assert(
+    settings.localModelLabel?.endsWith("Local model"),
+    `Unexpected Settings item: ${JSON.stringify(settings)}`,
+  );
+
+  target = await targetAt(debuggerPort);
+  await click(target, settings.rect);
   const opened = await eventually(debuggerPort, async (activeTarget) => {
     const state = await evaluate(
       activeTarget,
       `(() => {
-        const root = document.querySelector("#local-claude-workbench")?.shadowRoot;
-        const panel = root?.querySelector("#panel");
+        const host = document.querySelector("#local-claude-workbench");
+        const root = host?.shadowRoot;
         const input = root?.querySelector("#base-url");
-        if (!panel?.open || !input) return null;
+        const status = root?.querySelector("#status");
+        if (
+          !host ||
+          host.hidden ||
+          !input ||
+          !host.closest('[role="dialog"]') ||
+          status?.textContent === "Loading…" ||
+          root.activeElement !== input
+        ) return null;
         const rect = input.getBoundingClientRect();
         const composer = document.querySelector('[contenteditable="true"]');
         return {
-          panelOpen: panel.open,
+          inSettingsDialog: Boolean(host.closest('[role="dialog"]')),
           value: input.value,
           focused: root.activeElement === input,
-          disabled: input.disabled,
-          readOnly: input.readOnly,
           composerBefore: composer?.textContent || "",
           rect: rect.toJSON(),
           shadowHit: root.elementFromPoint(
             rect.x + rect.width / 2,
             rect.y + rect.height / 2,
-          )?.id
+          )?.id,
+          nativeHidden: [...host.parentElement.children]
+            .filter(child => child !== host && child.dataset.localClaudeSettingsHidden === "true")
+            .length
         };
       })()`,
     );
-    if (!state) throw new Error("Local model dialog is not open yet");
+    if (!state) throw new Error("Local model Settings page is not open yet");
     return state;
   });
-  assert(
-    opened.focused,
-    `Endpoint input did not focus: ${JSON.stringify(opened)}`,
-  );
+  assert(opened.inSettingsDialog, "Provider form escaped the Settings modal");
+  assert(opened.focused, `Endpoint did not focus: ${JSON.stringify(opened)}`);
   assert(
     opened.shadowHit === "base-url",
-    `Endpoint is not the pointer hit target: ${JSON.stringify(opened)}`,
+    `Endpoint is not the pointer target: ${JSON.stringify(opened)}`,
   );
+  assert(opened.nativeHidden > 0, "Native Settings content was not replaced");
 
-  target = await targetAt(debuggerPort);
-  const endpointX = opened.rect.x + opened.rect.width / 2;
-  const endpointY = opened.rect.y + opened.rect.height / 2;
-  await cdp(target, "Input.dispatchMouseEvent", {
-    type: "mousePressed",
-    x: endpointX,
-    y: endpointY,
-    button: "left",
-    clickCount: 1,
-  });
-  await cdp(target, "Input.dispatchMouseEvent", {
-    type: "mouseReleased",
-    x: endpointX,
-    y: endpointY,
-    button: "left",
-    clickCount: 1,
-  });
-  await cdp(target, "Input.dispatchKeyEvent", {
-    type: "keyDown",
-    key: "a",
-    code: "KeyA",
-    windowsVirtualKeyCode: 65,
-    modifiers: 2,
-  });
-  await cdp(target, "Input.dispatchKeyEvent", {
-    type: "keyUp",
-    key: "a",
-    code: "KeyA",
-    windowsVirtualKeyCode: 65,
-    modifiers: 2,
-  });
-  await cdp(target, "Input.insertText", {
-    text: baseUrl,
-  });
+  await selectAllAndType(target, opened.rect, baseUrl);
   const endpointTyped = await evaluate(
     target,
     `(() => {
@@ -282,7 +301,6 @@ try {
       return {
         value: root.querySelector("#base-url").value,
         active: root.activeElement?.id,
-        documentActive: document.activeElement?.id,
         composerAfter: composer?.textContent || ""
       };
     })()`,
@@ -313,52 +331,24 @@ try {
   );
   assert(
     discovered.models.includes(model),
-    `Draft endpoint model discovery failed: ${JSON.stringify(discovered)}`,
+    `Model discovery failed: ${JSON.stringify(discovered)}`,
   );
 
-  const modelBefore = await evaluate(
+  const modelInput = await evaluate(
     target,
-    `(() => {
-      const input = document.querySelector("#local-claude-workbench").shadowRoot.querySelector("#model");
-      const rect = input.getBoundingClientRect();
-      return { value: input.value, x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-    })()`,
+    `(() => document.querySelector("#local-claude-workbench").shadowRoot.querySelector("#model").getBoundingClientRect().toJSON())()`,
   );
-  await cdp(target, "Input.dispatchMouseEvent", {
-    type: "mousePressed",
-    x: modelBefore.x,
-    y: modelBefore.y,
-    button: "left",
-    clickCount: 1,
-  });
-  await cdp(target, "Input.dispatchMouseEvent", {
-    type: "mouseReleased",
-    x: modelBefore.x,
-    y: modelBefore.y,
-    button: "left",
-    clickCount: 1,
-  });
-  await cdp(target, "Input.dispatchKeyEvent", {
-    type: "keyDown",
-    key: "a",
-    code: "KeyA",
-    windowsVirtualKeyCode: 65,
-    modifiers: 2,
-  });
-  await cdp(target, "Input.dispatchKeyEvent", {
-    type: "keyUp",
-    key: "a",
-    code: "KeyA",
-    windowsVirtualKeyCode: 65,
-    modifiers: 2,
-  });
-  await cdp(target, "Input.insertText", { text: model });
+  await selectAllAndType(target, modelInput, model);
   const beforeSave = await evaluate(
     target,
     `(() => {
       const root = document.querySelector("#local-claude-workbench").shadowRoot;
-      const value = { baseUrl: root.querySelector("#base-url").value, model: root.querySelector("#model").value };
-      window.__realSettingsReloadMarker = true;
+      const value = {
+        baseUrl: root.querySelector("#base-url").value,
+        model: root.querySelector("#model").value,
+        documentId: crypto.randomUUID()
+      };
+      window.__realSettingsDocumentId = value.documentId;
       root.querySelector("#save").click();
       return value;
     })()`,
@@ -370,9 +360,17 @@ try {
         activeTarget,
         `(async () => {
           const deadline = Date.now() + 20000;
-          while ((!window.localClaude || window.__realSettingsReloadMarker) && Date.now() < deadline)
+          const root = document.querySelector("#local-claude-workbench")?.shadowRoot;
+          while (
+            (!window.localClaude || root?.querySelector("#status")?.textContent !== "Saved.") &&
+            Date.now() < deadline
+          )
             await new Promise(resolve => setTimeout(resolve, 100));
-          return window.localClaude.getConfig();
+          return {
+            ...(await window.localClaude.getConfig()),
+            documentId: window.__realSettingsDocumentId,
+            status: root?.querySelector("#status")?.textContent
+          };
         })()`,
       ),
     30_000,
@@ -381,8 +379,103 @@ try {
     saved.provider?.baseUrl === baseUrl && saved.provider?.model === model,
     `Provider settings did not persist: ${JSON.stringify({ beforeSave, saved })}`,
   );
+  assert(
+    saved.documentId === beforeSave.documentId && saved.status === "Saved.",
+    `Saving Settings reloaded or replaced the modal: ${JSON.stringify({ beforeSave, saved })}`,
+  );
+
+  const menuButton = await eventually(debuggerPort, async (activeTarget) => {
+    const state = await evaluate(
+      activeTarget,
+      `(() => {
+        const buttons = [...document.querySelectorAll('button')]
+          .filter(button => {
+            const rect = button.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          });
+        const button = buttons.find(candidate =>
+          /main menu|open menu|menu/i.test([
+            candidate.getAttribute('aria-label'),
+            candidate.getAttribute('title'),
+            candidate.getAttribute('data-testid')
+          ].filter(Boolean).join(' '))
+        );
+        if (!button) return {
+          missing: true,
+          candidates: buttons.slice(0, 30).map(candidate => ({
+            aria: candidate.getAttribute('aria-label'),
+            title: candidate.getAttribute('title'),
+            testid: candidate.getAttribute('data-testid'),
+            text: candidate.textContent?.trim().slice(0, 40)
+          }))
+        };
+        return {
+          rect: button.getBoundingClientRect().toJSON(),
+          aria: button.getAttribute('aria-label'),
+          title: button.getAttribute('title'),
+          testid: button.getAttribute('data-testid'),
+          text: button.textContent?.trim().slice(0, 40)
+        };
+      })()`,
+    );
+    if (state.missing)
+      throw new Error(
+        `Main menu button not found: ${JSON.stringify(state.candidates)}`,
+      );
+    return state;
+  });
+  target = await targetAt(debuggerPort);
+  await evaluate(
+    target,
+    `(() => {
+      window.__localMenuPointerClicks = 0;
+      document.querySelector('[data-testid="topbar-windows-menu"]')
+        ?.addEventListener('click', () => window.__localMenuPointerClicks++, { once: true });
+    })()`,
+  );
+  await click(target, menuButton.rect);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  const pointerClickObserved = await evaluate(
+    target,
+    `window.__localMenuPointerClicks || 0`,
+  );
+  if (!output.join("").includes("[local-ui] main menu popup"))
+    await evaluate(
+      target,
+      `document.querySelector('[data-testid="topbar-windows-menu"]')?.click()`,
+    );
+  const menuDeadline = Date.now() + 5_000;
+  while (
+    !output.join("").includes("[local-ui] main menu popup") &&
+    Date.now() < menuDeadline
+  )
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  assert(
+    output.join("").includes("[local-ui] main menu popup"),
+    `Main menu button did not reach the native menu service: ${JSON.stringify(menuButton)}`,
+  );
+
   process.stdout.write(
-    `${JSON.stringify({ trigger, menuState, opened, endpointTyped, discovered, beforeSave, saved }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        sidebar: {
+          collapsed: collapsed.dataCollapsed,
+          restored: true,
+          settingsAtBottom: true,
+          settingsRect: chrome.settings,
+          viewportHeight: chrome.viewportHeight,
+        },
+        menu: { pointerClickObserved, nativePopupRequested: true },
+        settings,
+        opened,
+        endpointTyped,
+        discovered,
+        beforeSave,
+        saved,
+      },
+      null,
+      2,
+    )}\n`,
   );
 } catch (error) {
   process.stderr.write(

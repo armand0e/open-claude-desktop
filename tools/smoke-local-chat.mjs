@@ -9,17 +9,25 @@ import electron from "electron";
 const mode = process.argv[2] || "chat";
 const artifactMode = mode === "artifact";
 const attachmentMode = mode === "attachment";
+const reasoningMode = mode === "reasoning";
+const diagramMode = mode === "diagram";
 const attachmentText = "local attachment end-to-end proof phrase";
+const reasoningText = "I should verify the native reasoning surface.";
 const prompt = artifactMode
   ? "Create an interactive HTML artifact for the local smoke test."
   : attachmentMode
     ? "Read the attached local file and confirm receipt."
-    : "Reply with the local smoke-test phrase.";
+    : diagramMode
+      ? "Explain a two-step process with an inline Mermaid diagram."
+      : "Reply with the local smoke-test phrase.";
 const reply = artifactMode
   ? "Local Artifact Demo"
   : attachmentMode
     ? "Local attachment contents received."
-    : "Hello from the local model.";
+    : diagramMode
+      ? "Inline visual rendered below.\n\n```mermaid\nflowchart LR\n  A[Cell input] --> B[Cell output]\n```"
+      : "Hello from the local model.";
+const replyMarker = diagramMode ? "Inline visual rendered below." : reply;
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -181,6 +189,9 @@ const provider = createHttpServer(async (request, response) => {
     });
     if (artifactMode) {
       response.write(
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: reasoningText } }] })}\n\n`,
+      );
+      response.write(
         `data: ${JSON.stringify({
           choices: [
             {
@@ -210,7 +221,11 @@ const provider = createHttpServer(async (request, response) => {
       response.end("data: [DONE]\n\n");
       return;
     }
-    const text = attachmentMode ? reply : "Hello from the local model.";
+    if (reasoningMode)
+      response.write(
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: reasoningText } }] })}\n\n`,
+      );
+    const text = reply;
     const split = Math.floor(text.length / 2);
     response.write(
       `data: ${JSON.stringify({ choices: [{ delta: { content: text.slice(0, split) } }] })}\n\n`,
@@ -240,7 +255,8 @@ const child = spawn(
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
-      CLAUDE_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
       CLAUDE_DESKTOP_LOCAL_UI: "1",
       CLAUDE_LOCAL_BASE_URL: `http://127.0.0.1:${providerPort}/v1`,
       CLAUDE_LOCAL_MODEL: "smoke-model",
@@ -340,13 +356,20 @@ try {
     debuggerPort,
     `(async () => {
       const deadline = Date.now() + 30000;
-      while ((!document.body?.innerText?.includes(${JSON.stringify(reply)}) || (${artifactMode ? "!window.__localArtifactRendered" : "false"})) && Date.now() < deadline) {
+      while ((!document.body?.innerText?.includes(${JSON.stringify(replyMarker)}) || (${artifactMode ? "!window.__localArtifactRendered" : "false"}) || (${diagramMode ? '!document.body?.innerText?.includes("Cell output")' : "false"})) && Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       return {
         path: location.pathname,
-        rendered: document.body?.innerText?.includes(${JSON.stringify(reply)}),
+        rendered: document.body?.innerText?.includes(${JSON.stringify(replyMarker)}),
+        preload: {
+          ready: window.desktopReconstructionReady,
+          localClaude: typeof window.localClaude,
+          workbench: Boolean(document.getElementById("local-claude-workbench")),
+          chromeStyle: Boolean(document.getElementById("local-claude-chrome-style"))
+        },
         bodyText: document.body?.innerText?.slice(0, 4000),
+        bodyContent: document.body?.textContent?.slice(0, 12000),
         iframes: [...document.querySelectorAll("iframe")].map(frame => ({
           title: frame.title,
           src: frame.getAttribute("src"),
@@ -358,6 +381,23 @@ try {
             ariaLabel: button.getAttribute("aria-label")
           }))
           .filter(button => /artifact|preview|code|copy|download|version|close/i.test((button.text || "") + " " + (button.ariaLabel || ""))),
+        diagramSvgs: [...document.querySelectorAll(".local-inline-mermaid svg")]
+          .map(svg => ({
+            id: svg.id,
+            className: svg.getAttribute("class"),
+            source: svg.closest(".local-inline-mermaid")?.dataset.localMermaidSource,
+            labels: [...svg.querySelectorAll("text")]
+              .map(label => label.textContent?.trim())
+              .filter(Boolean)
+          })),
+        codeBlocks: [...document.querySelectorAll("pre,code")]
+          .map(element => ({
+            tag: element.tagName,
+            className: element.getAttribute("class"),
+            text: element.textContent?.slice(0, 500),
+            html: element.outerHTML?.slice(0, 2000)
+          }))
+          .filter(block => /mermaid|Cell input|flowchart/.test(block.text || "")),
         localArtifactRendered: window.__localArtifactRendered
       };
     })()`,
@@ -395,7 +435,50 @@ try {
     rendered.rendered,
     `Streamed provider response did not render in the UI: ${JSON.stringify(rendered)}`,
   );
+  const reasoningExpanded = reasoningMode
+    ? await evaluateEventually(
+        debuggerPort,
+        `(async () => {
+          const deadline = Date.now() + 10000;
+          const control = [...document.querySelectorAll("button")]
+            .find(button => button.textContent?.trim() === "Thought process");
+          if (!control) return { control: false, rendered: false };
+          control.click();
+          while (!document.body?.innerText?.includes(${JSON.stringify(reasoningText)}) && Date.now() < deadline)
+            await new Promise(resolve => setTimeout(resolve, 50));
+          return {
+            control: true,
+            rendered: document.body?.innerText?.includes(${JSON.stringify(reasoningText)}),
+            bodyText: document.body?.innerText?.slice(0, 5000)
+          };
+        })()`,
+      )
+    : null;
+  if (reasoningMode) {
+    assert(
+      rendered.bodyText?.includes("Thought process"),
+      `Native Thought process control did not render: ${JSON.stringify(rendered)}`,
+    );
+    assert(
+      reasoningExpanded?.rendered,
+      `Provider reasoning was not shown after expanding the native control: ${JSON.stringify(reasoningExpanded)}`,
+    );
+  }
+  if (diagramMode) {
+    assert(
+      rendered.diagramSvgs?.length > 0,
+      `Inline Mermaid was not rendered as an SVG: ${JSON.stringify(rendered)}`,
+    );
+    assert(
+      rendered.iframes?.length === 0,
+      `Inline diagram unexpectedly opened an artifact pane: ${JSON.stringify(rendered.iframes)}`,
+    );
+  }
   if (artifactMode) {
+    assert(
+      !rendered.bodyText?.includes("couldn’t finish this response"),
+      `Artifact turn was marked incomplete: ${JSON.stringify(rendered.bodyText)}`,
+    );
     assert(
       rendered.iframes?.some((frame) =>
         frame.src?.startsWith("app://artifacts.local"),
@@ -433,8 +516,10 @@ try {
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline) {
         const navigation = performance.getEntriesByType("navigation")[0];
-        if (navigation?.type === "reload" && document.body?.innerText?.includes(${JSON.stringify(reply)})) {
-          return { rendered: true, path: location.pathname };
+        const replyVisible = document.body?.innerText?.includes(${JSON.stringify(replyMarker)});
+        const diagramVisible = ${diagramMode ? 'Boolean(document.querySelector(".local-inline-mermaid svg"))' : "true"};
+        if (navigation?.type === "reload" && replyVisible && diagramVisible) {
+          return { rendered: true, path: location.pathname, diagramVisible };
         }
         await new Promise(resolve => setTimeout(resolve, 100));
       }
@@ -483,6 +568,14 @@ try {
     );
   } else {
     assert(assistant.text === reply, "Assistant message was not persisted");
+    if (reasoningMode)
+      assert(
+        assistant.content?.some(
+          (block) =>
+            block.type === "thinking" && block.thinking === reasoningText,
+        ),
+        "Provider reasoning was not persisted as a thinking block",
+      );
   }
   if (attachmentMode) {
     const human = messages.find((message) => message.sender === "human");
@@ -505,6 +598,7 @@ try {
       {
         submitted,
         rendered: { path: rendered.path, rendered: rendered.rendered },
+        ...(reasoningMode ? { reasoningExpanded } : {}),
         ...(artifactMode
           ? {
               artifactUi: {
@@ -519,6 +613,8 @@ try {
         providerRequest: requests[0],
         artifactMode,
         attachmentMode,
+        reasoningMode,
+        diagramMode,
         persistedArtifacts: persisted.artifacts?.length ?? 0,
         persistedMessages: messages.map(({ sender, text }) => ({
           sender,

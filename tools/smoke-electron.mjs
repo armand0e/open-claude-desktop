@@ -124,7 +124,8 @@ const profile = await mkdtemp(
 const stderr = [];
 const childEnvironment = {
   ...process.env,
-  CLAUDE_USER_DATA_DIR: profile,
+  CLAUDE_LOCAL_USER_DATA_DIR: profile,
+  CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
 };
 if (mode === "local") delete childEnvironment.CLAUDE_DESKTOP_LOCAL_UI;
 else childEnvironment.CLAUDE_DESKTOP_LOCAL_UI = "0";
@@ -230,7 +231,7 @@ try {
     "Shell did not load the exact local renderer",
   );
   assert(
-    shellResult.appVersion === "1.21459.0",
+    shellResult.appVersion === "1.21459.1",
     `Unexpected desktop version ${shellResult.appVersion}`,
   );
   assert(

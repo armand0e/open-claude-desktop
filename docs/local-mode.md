@@ -1,6 +1,6 @@
 # Local Claude UX mode
 
-Local mode uses the web application shipped with the installed Claude Desktop build as the presentation layer and replaces the server boundary with independently authored local code. The installed frontend assets are read at runtime; they are not copied into or redistributed by this repository.
+Local mode uses a private snapshot of the web application shipped with the compatible Claude Desktop build as the presentation layer and replaces the server boundary with independently authored local code. The installed frontend is read only while creating the first private snapshot; subsequent runs serve `%AppData%\Claude Local\UI Assets`. Nothing is written into the installed application or its profile, and the snapshot is not redistributed by this repository.
 
 ```mermaid
 flowchart LR
@@ -18,20 +18,22 @@ flowchart LR
 npm start
 ```
 
-The default endpoint is `http://127.0.0.1:11434/v1`, which is suitable for an Ollama OpenAI-compatible server. The **Local model** button opens an isolated configuration panel that can change the endpoint, model, and optional bearer token and can discover models through `GET /models`.
+The default endpoint is `http://127.0.0.1:11434/v1`, which is suitable for an Ollama OpenAI-compatible server. **Settings → Local model** opens an isolated configuration panel that can change the endpoint, model, and optional bearer token and can discover models through `GET /models`.
 
 Environment variables override persisted settings:
 
-| Variable                  | Purpose                                             |
-| ------------------------- | --------------------------------------------------- |
-| `CLAUDE_ION_DIST`         | Alternate unpacked `ion-dist` directory             |
-| `CLAUDE_DESKTOP_LOCAL_UI` | `0` opts into hosted compatibility mode             |
-| `CLAUDE_LOCAL_BASE_URL`   | Provider URL through `/v1`                          |
-| `CLAUDE_LOCAL_MODEL`      | Model identifier sent to the provider               |
-| `CLAUDE_LOCAL_API_KEY`    | Optional bearer token                               |
-| `CLAUDE_USER_DATA_DIR`    | Alternate Electron profile and local data directory |
+| Variable                     | Purpose                                           |
+| ---------------------------- | ------------------------------------------------- |
+| `CLAUDE_ION_DIST`            | Alternate unpacked `ion-dist` directory           |
+| `CLAUDE_DESKTOP_LOCAL_UI`    | `0` opts into hosted compatibility mode           |
+| `CLAUDE_LOCAL_BASE_URL`      | Provider URL through `/v1`                        |
+| `CLAUDE_LOCAL_MODEL`         | Model identifier sent to the provider             |
+| `CLAUDE_LOCAL_API_KEY`       | Optional bearer token                             |
+| `CLAUDE_LOCAL_USER_DATA_DIR` | Alternate Claude Local profile and data directory |
 
 Provider configuration, conversations, artifact metadata/versions, and uploaded-file metadata live in `local-backend.json` beneath Electron's user-data directory. Uploaded bytes are kept separately under `local-files/`. JSON writes use a same-directory temporary file and atomic rename. The API key is never returned to the renderer; the settings API exposes only whether one is stored.
+
+The application identity is **Claude Local** with its own Windows taskbar ID, `claude-local://` deep-link namespace, single-instance lock, startup entry, and `%AppData%\Claude Local` profile. Electron session data, cache, logs, and crash dumps are all children of that profile. It never shares `%AppData%\Claude` with Anthropic Claude Desktop.
 
 Local mode does not require sign-in. The packaged client still needs an internal account/organization-shaped compatibility object to construct its query graph, but the account control is hidden and no authentication workflow, Claude credential, or hosted account is used.
 

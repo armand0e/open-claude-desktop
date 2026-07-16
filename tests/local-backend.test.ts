@@ -100,11 +100,17 @@ describe("LocalBackend", () => {
           model: "test-model",
           stream: true,
           tool_choice: "auto",
-          tools: [
+          tools: expect.arrayContaining([
             expect.objectContaining({
               function: expect.objectContaining({ name: "artifacts" }),
             }),
-          ],
+            expect.objectContaining({
+              function: expect.objectContaining({ name: "web_search" }),
+            }),
+            expect.objectContaining({
+              function: expect.objectContaining({ name: "visit_website" }),
+            }),
+          ]),
           messages: [
             expect.objectContaining({ role: "system" }),
             { role: "user", content: "Say hello" },
@@ -283,9 +289,8 @@ describe("LocalBackend", () => {
         completionUrl,
       );
       const events = await completion?.text();
-      expect(events).toContain('"type":"thinking"');
-      expect(events).toContain('"type":"thinking_delta"');
-      expect(events).toContain('"thinking":"Planning silently."');
+      expect(events).not.toContain('"type":"thinking"');
+      expect(events).not.toContain('"type":"thinking_delta"');
       expect(events).toContain('"text":"Recovered visible Chat reply."');
       expect(providerRequests).toHaveLength(3);
       expect(providerRequests[1].messages).toEqual(
@@ -318,10 +323,7 @@ describe("LocalBackend", () => {
         stored.conversations[0].chat_messages
           .at(-1)
           ?.content.filter((block) => block.type === "thinking"),
-      ).toEqual([
-        expect.objectContaining({ thinking: "Planning silently." }),
-        expect.objectContaining({ thinking: "Planning silently." }),
-      ]);
+      ).toEqual([]);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
@@ -336,6 +338,9 @@ describe("LocalBackend", () => {
       for await (const chunk of request) body += chunk;
       providerRequests.push(JSON.parse(body) as Record<string, unknown>);
       response.writeHead(200, { "Content-Type": "text/event-stream" });
+      response.write(
+        `data: ${JSON.stringify({ choices: [{ delta: { reasoning_content: "Planning the artifact." } }] })}\n\n`,
+      );
       if (providerRequests.length > 1) {
         response.write(
           `data: ${JSON.stringify({
@@ -458,6 +463,8 @@ describe("LocalBackend", () => {
       expect(events).toContain('"name":"artifacts"');
       expect(events).toContain('"type":"input_json_delta"');
       expect(events).toContain("<h1>Hello artifact</h1>");
+      expect(events).toContain('"stop_reason":"tool_use"');
+      expect(events).not.toContain('"type":"thinking"');
 
       const revision = await backend.handle(
         new Request(completionUrl, {
@@ -474,7 +481,10 @@ describe("LocalBackend", () => {
         }),
         completionUrl,
       );
-      expect(await revision?.text()).toContain("<h1>Revised artifact</h1>");
+      const revisionEvents = await revision?.text();
+      expect(revisionEvents).toContain("<h1>Revised artifact</h1>");
+      expect(revisionEvents).toContain('"stop_reason":"tool_use"');
+      expect(revisionEvents).not.toContain('"type":"thinking"');
 
       const stored = JSON.parse(
         await readFile(path.join(directory, "local-backend.json"), "utf8"),
@@ -538,11 +548,13 @@ describe("LocalBackend", () => {
         }),
       );
       expect(providerRequests).toHaveLength(2);
-      expect(providerRequests[0].tools).toEqual([
-        expect.objectContaining({
-          function: expect.objectContaining({ name: "artifacts" }),
-        }),
-      ]);
+      expect(providerRequests[0].tools).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            function: expect.objectContaining({ name: "artifacts" }),
+          }),
+        ]),
+      );
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

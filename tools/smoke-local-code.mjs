@@ -10,6 +10,9 @@ const realMode = process.argv.includes("real");
 const allToolsMode = process.argv.includes("all-tools");
 const permissionMode = process.argv.includes("permission");
 const terminalMode = process.argv.includes("terminal");
+const expectedReasoning = permissionMode
+  ? "I should request approval before running the command."
+  : "I should inspect fixture.txt before writing the proof.";
 const expectedReply = realMode
   ? allToolsMode
     ? "LIVE_CODE_ALL_TOOLS_OK"
@@ -59,7 +62,7 @@ async function targetsAt(port) {
   return response.json();
 }
 
-async function evaluate(target, expression) {
+async function cdpCall(target, method, params = {}) {
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
     socket.addEventListener("open", resolve, { once: true });
@@ -78,21 +81,87 @@ async function evaluate(target, expression) {
       socket.send(
         JSON.stringify({
           id: 1,
-          method: "Runtime.evaluate",
-          params: { expression, awaitPromise: true, returnByValue: true },
+          method,
+          params,
         }),
       );
     });
-    if (result.exceptionDetails)
-      throw new Error(
-        result.exceptionDetails.exception?.description ??
-          result.exceptionDetails.text ??
-          "CDP evaluation failed",
-      );
-    return result.result?.value;
+    return result;
   } finally {
     socket.close();
   }
+}
+
+async function evaluate(target, expression) {
+  const result = await cdpCall(target, "Runtime.evaluate", {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  if (result.exceptionDetails)
+    throw new Error(
+      result.exceptionDetails.exception?.description ??
+        result.exceptionDetails.text ??
+        "CDP evaluation failed",
+    );
+  return result.result?.value;
+}
+
+async function appTarget(port) {
+  return (await targetsAt(port)).find(
+    (candidate) =>
+      candidate.type === "page" && candidate.url.startsWith("app://localhost"),
+  );
+}
+
+async function captureScreenshot(port, clip) {
+  const target = await appTarget(port);
+  if (!target?.webSocketDebuggerUrl)
+    throw new Error("The app CDP target was not available for a screenshot");
+  const result = await cdpCall(target, "Page.captureScreenshot", {
+    format: "png",
+    fromSurface: true,
+    captureBeyondViewport: false,
+    clip: { ...clip, scale: 1 },
+  });
+  return { target, data: result.data };
+}
+
+async function screenshotPixelStats(target, pngBase64) {
+  return evaluate(
+    target,
+    `(async () => {
+      const image = new Image();
+      image.src = ${JSON.stringify(`data:image/png;base64,${pngBase64}`)};
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d", { willReadFrequently: true });
+      context.drawImage(image, 0, 0);
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      const colors = new Map();
+      let brightPixels = 0;
+      for (let offset = 0; offset < pixels.length; offset += 4) {
+        const red = pixels[offset];
+        const green = pixels[offset + 1];
+        const blue = pixels[offset + 2];
+        const key = (red << 16) | (green << 8) | blue;
+        colors.set(key, (colors.get(key) || 0) + 1);
+        if (Math.max(red, green, blue) >= 100) brightPixels += 1;
+      }
+      const totalPixels = pixels.length / 4;
+      const dominantPixels = Math.max(...colors.values());
+      return {
+        width: canvas.width,
+        height: canvas.height,
+        totalPixels,
+        distinctColors: colors.size,
+        nonDominantPixels: totalPixels - dominantPixels,
+        brightPixels
+      };
+    })()`,
+  );
 }
 
 async function evaluateEventually(port, expression, timeout = 30_000) {
@@ -100,11 +169,7 @@ async function evaluateEventually(port, expression, timeout = 30_000) {
   let lastError;
   while (Date.now() < deadline) {
     try {
-      const target = (await targetsAt(port)).find(
-        (candidate) =>
-          candidate.type === "page" &&
-          candidate.url.startsWith("app://localhost"),
-      );
+      const target = await appTarget(port);
       if (target?.webSocketDebuggerUrl)
         return await evaluate(target, expression);
     } catch (error) {
@@ -134,6 +199,7 @@ const provider = createHttpServer(async (request, response) => {
             {
               message: {
                 role: "assistant",
+                reasoning_content: expectedReasoning,
                 content: permissionMode
                   ? "I’ll run a harmless verification command."
                   : "I’ll inspect the fixture first.",
@@ -295,7 +361,10 @@ await writeFile(
           effort: "medium",
           createdAt: Date.now() - 1000,
           lastActivityAt: Date.now() - 1000,
-          isArchived: true,
+          // Keep the workspace seed visible until the native launcher has
+          // hydrated its recent-project state. Archived-only seeds made the
+          // folder popover timing-sensitive across consecutive Electron runs.
+          isArchived: false,
           title: "Workspace seed",
           homePath: os.homedir(),
           folderExists: true,
@@ -315,14 +384,21 @@ await writeFile(
 const output = [];
 const child = spawn(
   electron,
-  [".", `--remote-debugging-port=${debuggerPort}`],
+  [
+    ".",
+    ...(terminalMode && process.env.CLAUDE_SMOKE_DOM_TERMINAL === "1"
+      ? ["--disable-gpu", "--disable-webgl", "--disable-software-rasterizer"]
+      : []),
+    `--remote-debugging-port=${debuggerPort}`,
+  ],
   {
     cwd: process.cwd(),
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
-      CLAUDE_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
       CLAUDE_DESKTOP_LOCAL_UI: "1",
       CLAUDE_LOCAL_BASE_URL: realMode
         ? process.env.CLAUDE_REAL_BASE_URL || "http://127.0.0.1:1234/v1"
@@ -345,6 +421,15 @@ try {
       const deadline = Date.now() + 25000;
       while (!window["claude.web"]?.LocalSessions && Date.now() < deadline)
         await new Promise(resolve => setTimeout(resolve, 100));
+      let detectedProjects = [];
+      while (Date.now() < deadline) {
+        detectedProjects = await window["claude.web"].LocalSessions.getDetectedProjects();
+        if (detectedProjects.some(project => project.path === ${JSON.stringify(workspace)}))
+          break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      if (!detectedProjects.some(project => project.path === ${JSON.stringify(workspace)}))
+        throw new Error("Seeded workspace did not hydrate through LocalSessions: " + JSON.stringify(detectedProjects));
       window.__localCodeEvents = [];
       window["claude.web"].LocalSessions.onOnEvent(event => {
         window.__localCodeEvents.push({
@@ -360,6 +445,7 @@ try {
       codeButton?.click();
       while (!document.body?.innerText?.includes("What’s up next?") && Date.now() < deadline)
         await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 300));
       const visible = element =>
         element.getClientRects().length > 0 &&
         getComputedStyle(element).visibility !== "hidden";
@@ -380,7 +466,7 @@ try {
         if (!folderChoice) await new Promise(resolve => setTimeout(resolve, 100));
       }
       if (!folderChoice)
-        throw new Error("Seeded workspace was not offered by the native folder selector: " + document.body?.innerText?.slice(-2000));
+        throw new Error("Seeded workspace was not offered by the native folder selector despite hydrated projects: " + JSON.stringify(detectedProjects) + "\\n" + document.body?.innerText?.slice(-2000));
       folderChoice.click();
       const composer = [...document.querySelectorAll('[contenteditable="true"]')]
         .find(element => visible(element) && element.getAttribute("aria-label") === "Prompt");
@@ -480,6 +566,13 @@ try {
           .map(element => element.outerHTML.slice(0, 2000)),
         session,
         transcriptTypes: transcript.map(message => message.type),
+        thinkingBlocks: transcript.flatMap(message =>
+          message.type === "assistant" && Array.isArray(message.message?.content)
+            ? message.message.content
+                .filter(block => block.type === "thinking")
+                .map(block => block.thinking)
+            : []
+        ),
         observedEvents: window.__localCodeEventsAfterPermission || window.__localCodeEvents,
         toolNames: transcript.flatMap(message =>
           message.type === "assistant" && Array.isArray(message.message?.content)
@@ -602,7 +695,7 @@ try {
   }
   let terminalDiagnostics = null;
   if (terminalMode) {
-    terminalDiagnostics = await evaluateEventually(
+    const terminalReady = await evaluateEventually(
       debuggerPort,
       `(async () => {
         const visible = element =>
@@ -616,15 +709,60 @@ try {
         if (!terminalVisible) terminalButton.click();
         const deadline = Date.now() + 20000;
         let buffer = null;
-        while (buffer === null && Date.now() < deadline) {
+        let terminalInput = null;
+        while ((buffer === null || !terminalInput) && Date.now() < deadline) {
           buffer = await window["claude.web"].LocalSessions.getShellPtyBuffer(${JSON.stringify(started.sessionId)});
-          if (buffer === null) await new Promise(resolve => setTimeout(resolve, 100));
+          terminalInput = document.querySelector(".xterm-helper-textarea");
+          terminalVisible = [...document.querySelectorAll(".xterm")].some(visible);
+          if (buffer === null || !terminalInput)
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         if (buffer === null) throw new Error("Native terminal did not acquire its PTY");
-        await window["claude.web"].LocalSessions.writeShellPty(
-          ${JSON.stringify(started.sessionId)},
-          "Write-Output ('NATIVE_TERMINAL_' + 'EXECUTED')\\r"
-        );
+        if (!terminalInput) throw new Error("Native terminal input did not mount");
+        await new Promise(resolve => setTimeout(resolve, 500));
+        terminalInput.focus();
+        return {
+          buffer,
+          terminalVisible,
+          inputFocused: document.activeElement === terminalInput
+        };
+      })()`,
+      25_000,
+    );
+    assert(
+      terminalReady.terminalVisible === true && terminalReady.inputFocused,
+      `Native terminal did not become keyboard-ready: ${JSON.stringify(terminalReady)}`,
+    );
+    const terminalTarget = await appTarget(debuggerPort);
+    if (!terminalTarget?.webSocketDebuggerUrl)
+      throw new Error("The app CDP target was unavailable for terminal input");
+    await cdpCall(terminalTarget, "Input.insertText", {
+      text: "Write-Output ('NATIVE_TERMINAL_' + 'EXECUTED')",
+    });
+    await cdpCall(terminalTarget, "Input.dispatchKeyEvent", {
+      type: "rawKeyDown",
+      key: "Enter",
+      code: "Enter",
+      text: "\r",
+      unmodifiedText: "\r",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+    });
+    await cdpCall(terminalTarget, "Input.dispatchKeyEvent", {
+      type: "keyUp",
+      key: "Enter",
+      code: "Enter",
+      windowsVirtualKeyCode: 13,
+      nativeVirtualKeyCode: 13,
+    });
+    terminalDiagnostics = await evaluateEventually(
+      debuggerPort,
+      `(async () => {
+        const visible = element =>
+          element.getClientRects().length > 0 &&
+          getComputedStyle(element).visibility !== "hidden";
+        const deadline = Date.now() + 20000;
+        let buffer = "";
         let terminalText = "";
         while (!buffer.includes("NATIVE_TERMINAL_EXECUTED") && Date.now() < deadline) {
           terminalText = document.querySelector(".xterm-rows")?.textContent || "";
@@ -633,13 +771,12 @@ try {
           ) || "";
           await new Promise(resolve => setTimeout(resolve, 100));
         }
+        await new Promise(resolve => setTimeout(resolve, 750));
         const busy = await window["claude.web"].LocalSessions.getBusyShellPtyKeys(
           ${JSON.stringify(started.sessionId)}
         );
-        while (!terminalVisible && Date.now() < deadline) {
-          terminalVisible = [...document.querySelectorAll(".xterm")].some(visible);
-          if (!terminalVisible) await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        const terminalVisible = [...document.querySelectorAll(".xterm")].some(visible);
+        terminalText = document.querySelector(".xterm-rows")?.textContent || "";
         const surfaces = [...document.querySelectorAll(".xterm canvas")].map(canvas => ({
           width: canvas.width,
           height: canvas.height,
@@ -648,23 +785,103 @@ try {
         const ptyEvents = (window.__localCodeEvents || []).filter(event =>
           event.type === "shell_pty_data" && event.sessionId === ${JSON.stringify(started.sessionId)}
         );
-        return { terminalText, buffer, busy, terminalVisible, surfaces, ptyEventCount: ptyEvents.length };
+        const xterms = [...document.querySelectorAll(".xterm")].map(element => ({
+          rect: element.getBoundingClientRect().toJSON(),
+          visible: visible(element),
+          classes: [...element.querySelectorAll("*")].slice(0, 30).map(child => child.className),
+          html: element.outerHTML.slice(0, 5000)
+        }));
+        const screenRect = document.querySelector(".xterm-screen")?.getBoundingClientRect().toJSON();
+        return {
+          terminalText,
+          buffer,
+          busy,
+          terminalVisible,
+          surfaces,
+          xterms,
+          screenRect,
+          ptyEventCount: ptyEvents.length
+        };
       })()`,
       25_000,
     );
+    const screenshot = await captureScreenshot(
+      debuggerPort,
+      terminalDiagnostics.screenRect,
+    );
+    terminalDiagnostics.pixelStats = await screenshotPixelStats(
+      screenshot.target,
+      screenshot.data,
+    );
+    terminalDiagnostics.screenshotBytes = Buffer.from(
+      screenshot.data,
+      "base64",
+    ).length;
     assert(
       terminalDiagnostics.buffer.includes("NATIVE_TERMINAL_EXECUTED") &&
         terminalDiagnostics.terminalVisible === true &&
-        terminalDiagnostics.surfaces?.some(
-          (surface) =>
-            surface.visible && surface.width > 0 && surface.height > 0,
-        ) &&
+        terminalDiagnostics.pixelStats?.distinctColors > 10 &&
+        terminalDiagnostics.pixelStats?.nonDominantPixels > 500 &&
+        terminalDiagnostics.pixelStats?.brightPixels > 100 &&
         terminalDiagnostics.ptyEventCount > 0 &&
         terminalDiagnostics.busy?.live?.includes(started.sessionId) &&
         terminalDiagnostics.busy?.probed === true,
       `Native terminal did not render PTY output: ${JSON.stringify(terminalDiagnostics)}`,
     );
   }
+  const thinkingViewDiagnostics = !realMode
+    ? await evaluateEventually(
+        debuggerPort,
+        `(async () => {
+          const visible = element => {
+            const rect = element.getBoundingClientRect();
+            const style = getComputedStyle(element);
+            return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+          };
+          const candidates = [...document.querySelectorAll('button[aria-label="Session actions"], button[aria-label="More actions"]')].filter(visible);
+          let option = null;
+          for (const candidate of candidates) {
+            candidate.click();
+            await new Promise(resolve => setTimeout(resolve, 150));
+            const transcriptView = [...document.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], button')]
+              .find(element => visible(element) && /transcript view/i.test(element.textContent?.trim() || ""));
+            if (transcriptView) {
+              transcriptView.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+              transcriptView.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+              transcriptView.click();
+            }
+            const optionDeadline = Date.now() + 1500;
+            while (!option && Date.now() < optionDeadline) {
+              option = [...document.querySelectorAll('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], button')]
+                .find(element => visible(element) && element.textContent?.trim() === "Thinking");
+              if (!option) await new Promise(resolve => setTimeout(resolve, 50));
+            }
+            if (option) break;
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+          }
+          const opened = Boolean(option);
+          option?.click();
+          const deadline = Date.now() + 5000;
+          while (!document.body?.innerText?.includes(${JSON.stringify(expectedReasoning)}) && Date.now() < deadline)
+            await new Promise(resolve => setTimeout(resolve, 50));
+          return {
+            opened,
+            reasoningVisible: document.body?.innerText?.includes(${JSON.stringify(expectedReasoning)}) || false,
+            moreActionsCount: candidates.length,
+            buttons: [...document.querySelectorAll("button")]
+              .filter(visible)
+              .map(button => ({
+                text: button.textContent?.trim().slice(0, 80),
+                ariaLabel: button.getAttribute("aria-label"),
+                title: button.getAttribute("title")
+              }))
+              .filter(button => button.text || button.ariaLabel || button.title)
+              .slice(0, 120)
+          };
+        })()`,
+        12_000,
+      )
+    : null;
   if (!realMode) {
     assert(
       requests.length === (permissionMode ? 2 : 3),
@@ -688,6 +905,17 @@ try {
               message.content?.includes("native Code renderer proof phrase")),
       ),
       `${permissionMode ? "Bash" : "Read"} result was not returned to the provider`,
+    );
+    assert(
+      rendered.thinkingBlocks?.some((thinking) =>
+        /request approval|inspect fixture\.txt/i.test(thinking)
+      ),
+      `Provider reasoning was not preserved in the native Code transcript: ${JSON.stringify(rendered.thinkingBlocks)}`,
+    );
+    assert(
+      thinkingViewDiagnostics?.opened &&
+        thinkingViewDiagnostics?.reasoningVisible,
+      `Native Code Thinking transcript view did not expose provider reasoning: ${JSON.stringify(thinkingViewDiagnostics)}`,
     );
   }
   if (!permissionMode)
@@ -796,6 +1024,7 @@ try {
         proofPath,
         permissionDiagnostics,
         terminalDiagnostics,
+        thinkingViewDiagnostics,
         lifecycleDiagnostics,
         reloadDiagnostics,
         nativeRendererText: rendered.bodyText.slice(0, 1200),

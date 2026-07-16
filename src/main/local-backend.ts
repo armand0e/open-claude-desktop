@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { WEB_TOOLS, type WebToolRunner } from "./local-web-tools";
 
 export interface LocalProviderConfig {
   baseUrl: string;
   model: string;
+  contextWindow?: number;
   apiKey?: string;
 }
 
@@ -156,6 +158,7 @@ type JsonObject = Record<string, unknown>;
 const DEFAULT_PROVIDER: LocalProviderConfig = {
   baseUrl: "http://127.0.0.1:11434/v1",
   model: "local-model",
+  contextWindow: 128_000,
 };
 
 const MAX_LOCAL_FILE_BYTES = 50 * 1024 * 1024;
@@ -197,7 +200,7 @@ const ARTIFACT_TYPES = new Set<ArtifactType>([
   "application/vnd.ant.react",
 ]);
 
-const ARTIFACT_SYSTEM_PROMPT = `You are running in a local desktop chat that supports Claude-style artifacts. When a user asks for a substantial document, code file, diagram, SVG, HTML page, or React component that benefits from a dedicated pane, call the artifacts function. Use command=create for a new artifact, rewrite for a complete replacement, and update with old_str/new_str for a precise edit. Keep ordinary conversational replies as text.`;
+const ARTIFACT_SYSTEM_PROMPT = `You are running in a local desktop chat that supports Claude-style artifacts and private local web tools. Use web_search and visit_website when current public information is required, cite the returned URLs, and distinguish source reliability. When a user asks for a substantial document, code file, diagram, SVG, HTML page, or React component that benefits from a dedicated pane, call the artifacts function. Use command=create for a new artifact, rewrite for a complete replacement, and update with old_str/new_str for a precise edit. Keep ordinary conversational replies as text. For a diagram that should appear directly in the conversation, prefer a Mermaid fenced code block; reserve an artifact for substantial or interactive standalone output.`;
 
 const ARTIFACT_TAG_SYSTEM_PROMPT = `${ARTIFACT_SYSTEM_PROMPT}\nThis provider does not accept function tools. Emit an artifact inline using exactly <antArtifact identifier="stable-id" type="text/markdown" title="Title">CONTENT</antArtifact>. Supported types are text/plain, text/markdown, text/html, image/svg+xml, application/vnd.ant.code, application/vnd.ant.mermaid, and application/vnd.ant.react.`;
 
@@ -276,7 +279,31 @@ function normalizeAttachment(value: unknown): LocalAttachment | null {
     extracted_content: extractedContent,
     origin: stringValue(value.origin) || "user_upload",
     kind: stringValue(value.kind) || "file",
-  };
+};
+
+}
+
+const CHAT_TOOLS = [ARTIFACT_TOOL, ...WEB_TOOLS];
+
+function reasoningRequest(body: JsonObject): JsonObject {
+  const thinking = isObject(body.thinking) ? body.thinking : {};
+  let effort =
+    stringValue(body.reasoning_effort || body.effort || thinking.effort)
+      ?.toLowerCase() ?? "";
+  if (thinking.type === "disabled") effort = "off";
+  if (!effort || effort === "auto") return {};
+  if (effort === "off")
+    return {
+      thinking_budget_tokens: 0,
+      reasoning_budget: 0,
+      chat_template_kwargs: { enable_thinking: false },
+    };
+  if (["low", "medium", "high"].includes(effort))
+    return {
+      reasoning_effort: effort,
+      chat_template_kwargs: { enable_thinking: true, reasoning_effort: effort },
+    };
+  return {};
 }
 
 function normalizeMessageFile(
@@ -375,6 +402,9 @@ function normalizeBaseUrl(value: string): string {
 function configuredProvider(
   input?: Partial<LocalProviderConfig>,
 ): LocalProviderConfig {
+  const configuredContextWindow = Number(
+    process.env.CLAUDE_LOCAL_CONTEXT_WINDOW?.trim() || input?.contextWindow,
+  );
   return {
     baseUrl: normalizeBaseUrl(
       process.env.CLAUDE_LOCAL_BASE_URL?.trim() ||
@@ -385,6 +415,10 @@ function configuredProvider(
       process.env.CLAUDE_LOCAL_MODEL?.trim() ||
       input?.model?.trim() ||
       DEFAULT_PROVIDER.model,
+    contextWindow:
+      Number.isFinite(configuredContextWindow) && configuredContextWindow >= 1024
+        ? Math.floor(configuredContextWindow)
+        : DEFAULT_PROVIDER.contextWindow,
     ...(process.env.CLAUDE_LOCAL_API_KEY?.trim() || input?.apiKey
       ? {
           apiKey:
@@ -649,14 +683,23 @@ async function* openAiDeltas(
 export class LocalBackend {
   readonly filePath: string;
   #data: LocalData;
+  readonly #webTools?: WebToolRunner;
   #writeChain = Promise.resolve();
 
-  private constructor(filePath: string, data: LocalData) {
+  private constructor(
+    filePath: string,
+    data: LocalData,
+    webTools?: WebToolRunner,
+  ) {
     this.filePath = filePath;
     this.#data = data;
+    this.#webTools = webTools;
   }
 
-  static async create(userDataPath: string): Promise<LocalBackend> {
+  static async create(
+    userDataPath: string,
+    webTools?: WebToolRunner,
+  ): Promise<LocalBackend> {
     const filePath = path.join(userDataPath, "local-backend.json");
     let value: unknown;
     try {
@@ -675,17 +718,22 @@ export class LocalBackend {
     const files = Array.isArray(input.files)
       ? (input.files as LocalStoredFile[])
       : [];
-    return new LocalBackend(filePath, {
-      version: 3,
-      provider: configuredProvider({
-        baseUrl: stringValue(provider.baseUrl),
-        model: stringValue(provider.model),
-        apiKey: stringValue(provider.apiKey),
-      }),
-      conversations,
-      artifacts,
-      files,
-    });
+    return new LocalBackend(
+      filePath,
+      {
+        version: 3,
+        provider: configuredProvider({
+          baseUrl: stringValue(provider.baseUrl),
+          model: stringValue(provider.model),
+          contextWindow: Number(provider.contextWindow),
+          apiKey: stringValue(provider.apiKey),
+        }),
+        conversations,
+        artifacts,
+        files,
+      },
+      webTools,
+    );
   }
 
   provider(): LocalProviderConfig {
@@ -855,6 +903,8 @@ export class LocalBackend {
     history: readonly LocalMessage[],
     signal: AbortSignal,
     emptyRetry = false,
+    continuation: readonly JsonObject[] = [],
+    requestOptions: JsonObject = {},
   ): Promise<Response> {
     const provider = this.#data.provider;
     const send = (withTools: boolean) =>
@@ -891,8 +941,10 @@ export class LocalBackend {
                   },
                 ]
               : []),
+            ...continuation,
           ],
-          ...(withTools ? { tools: [ARTIFACT_TOOL], tool_choice: "auto" } : {}),
+          ...(withTools ? { tools: CHAT_TOOLS, tool_choice: "auto" } : {}),
+          ...requestOptions,
         }),
       });
     let response = await send(true);
@@ -996,7 +1048,7 @@ export class LocalBackend {
       async start(controller) {
         let assistantText = "";
         const assistantBlocks: LocalContentBlock[] = [];
-        const toolCalls = new Map<
+        let toolCalls = new Map<
           number,
           { id: string; name: string; arguments: string }
         >();
@@ -1020,112 +1072,198 @@ export class LocalBackend {
           }
           let nextBlockIndex = 0;
           let textBlockIndex: number | undefined;
-          let thinkingBlockIndex: number | undefined;
-          let thinkingBlock: LocalThinkingBlock | undefined;
-          const stopThinkingBlock = () => {
-            if (thinkingBlockIndex === undefined) return;
-            if (thinkingBlock)
-              thinkingBlock.stop_timestamp = new Date().toISOString();
-            controller.enqueue(
-              sse("content_block_stop", {
-                type: "content_block_stop",
-                index: thinkingBlockIndex,
-              }),
-            );
-            thinkingBlockIndex = undefined;
-            thinkingBlock = undefined;
-          };
-          for (let attempt = 0; attempt < 3; attempt += 1) {
-            const providerResponse = await backend.#providerCompletion(
-              conversation,
-              providerHistory,
-              request.signal,
-              attempt > 0,
-            );
-            for await (const delta of openAiDeltas(providerResponse)) {
-              if (delta.type === "reasoning") {
-                if (thinkingBlockIndex === undefined) {
-                  thinkingBlockIndex = nextBlockIndex++;
-                  thinkingBlock = {
-                    type: "thinking",
+          const continuation: JsonObject[] = [];
+          const providerOptions = reasoningRequest(body);
+          let terminalTurn = false;
+          let carriedReasoning = "";
+          for (let providerTurn = 0; providerTurn < 8; providerTurn += 1) {
+            const turnTextStart = assistantText.length;
+            let pendingReasoning = carriedReasoning;
+            carriedReasoning = "";
+            const emitPendingReasoning = () => {
+              if (!pendingReasoning) return;
+              const blockIndex = nextBlockIndex++;
+              const timestamp = new Date().toISOString();
+              const thinkingBlock: LocalThinkingBlock = {
+                type: "thinking",
+                thinking: pendingReasoning,
+                signature: `local-openai:${randomUUID()}`,
+                summaries: [],
+                start_timestamp: timestamp,
+                stop_timestamp: timestamp,
+              };
+              assistantBlocks.push(thinkingBlock);
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: blockIndex,
+                  content_block: {
+                    ...thinkingBlock,
                     thinking: "",
                     signature: "",
-                    summaries: [],
-                    start_timestamp: new Date().toISOString(),
-                  };
-                  assistantBlocks.push(thinkingBlock);
-                  controller.enqueue(
-                    sse("content_block_start", {
-                      type: "content_block_start",
-                      index: thinkingBlockIndex,
-                      content_block: { ...thinkingBlock },
-                    }),
-                  );
-                }
-                thinkingBlock!.thinking += delta.text;
-                controller.enqueue(
-                  sse("content_block_delta", {
-                    type: "content_block_delta",
-                    index: thinkingBlockIndex,
-                    delta: {
-                      type: "thinking_delta",
-                      thinking: delta.text,
-                    },
-                  }),
-                );
-                continue;
-              }
-              if (delta.type === "text") {
-                stopThinkingBlock();
-                if (textBlockIndex === undefined) {
-                  textBlockIndex = nextBlockIndex++;
-                  assistantBlocks.push({
-                    type: "text",
-                    text: "",
-                    citations: [],
-                  });
-                  controller.enqueue(
-                    sse("content_block_start", {
-                      type: "content_block_start",
-                      index: textBlockIndex,
-                      content_block: { type: "text", text: "" },
-                    }),
-                  );
-                }
-                assistantText += delta.text;
-                const textBlock = assistantBlocks.find(
-                  (block): block is LocalTextBlock => block.type === "text",
-                );
-                if (textBlock) textBlock.text += delta.text;
-                controller.enqueue(
-                  sse("content_block_delta", {
-                    type: "content_block_delta",
-                    index: textBlockIndex,
-                    delta: { type: "text_delta", text: delta.text },
-                  }),
-                );
-                continue;
-              }
-              const accumulated = toolCalls.get(delta.index) ?? {
-                id: randomUUID(),
-                name: "",
-                arguments: "",
-              };
-              if (delta.id) accumulated.id = delta.id;
-              if (delta.name) accumulated.name += delta.name;
-              if (delta.arguments) accumulated.arguments += delta.arguments;
-              toolCalls.set(delta.index, accumulated);
-            }
-            stopThinkingBlock();
-            const hasToolCall = [...toolCalls.values()].some(
-              (toolCall) => toolCall.name.trim() && toolCall.arguments.trim(),
-            );
-            if (assistantText.trim() || hasToolCall) break;
-            if (attempt === 2)
-              throw new Error(
-                "Provider returned no visible assistant content after three attempts",
+                    stop_timestamp: undefined,
+                  },
+                }),
               );
+              controller.enqueue(
+                sse("content_block_delta", {
+                  type: "content_block_delta",
+                  index: blockIndex,
+                  delta: {
+                    type: "thinking_delta",
+                    thinking: pendingReasoning,
+                  },
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_delta", {
+                  type: "content_block_delta",
+                  index: blockIndex,
+                  delta: {
+                    type: "signature_delta",
+                    signature: thinkingBlock.signature,
+                  },
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: blockIndex,
+                }),
+              );
+              pendingReasoning = "";
+            };
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              toolCalls = new Map();
+              if (attempt > 0) pendingReasoning = "";
+              const attemptTextStart = assistantText.length;
+              const providerResponse = await backend.#providerCompletion(
+                conversation,
+                providerHistory,
+                request.signal,
+                attempt > 0,
+                continuation,
+                providerOptions,
+              );
+              for await (const delta of openAiDeltas(providerResponse)) {
+                if (delta.type === "reasoning") {
+                  pendingReasoning += delta.text;
+                  continue;
+                }
+                if (delta.type === "text") {
+                  // The native client accepts thinking before a normal text
+                  // answer, but marks thinking followed directly by a tool-only
+                  // artifact response as incomplete. Buffer until visible text.
+                  emitPendingReasoning();
+                  if (textBlockIndex === undefined) {
+                    textBlockIndex = nextBlockIndex++;
+                    assistantBlocks.push({
+                      type: "text",
+                      text: "",
+                      citations: [],
+                    });
+                    controller.enqueue(
+                      sse("content_block_start", {
+                        type: "content_block_start",
+                        index: textBlockIndex,
+                        content_block: { type: "text", text: "" },
+                      }),
+                    );
+                  }
+                  assistantText += delta.text;
+                  const textBlock = assistantBlocks.find(
+                    (block): block is LocalTextBlock => block.type === "text",
+                  );
+                  if (textBlock) textBlock.text += delta.text;
+                  controller.enqueue(
+                    sse("content_block_delta", {
+                      type: "content_block_delta",
+                      index: textBlockIndex,
+                      delta: { type: "text_delta", text: delta.text },
+                    }),
+                  );
+                  continue;
+                }
+                const accumulated = toolCalls.get(delta.index) ?? {
+                  id: randomUUID(),
+                  name: "",
+                  arguments: "",
+                };
+                if (delta.id) accumulated.id = delta.id;
+                if (delta.name) accumulated.name += delta.name;
+                if (delta.arguments)
+                  accumulated.arguments += delta.arguments;
+                toolCalls.set(delta.index, accumulated);
+              }
+              const hasToolCall = [...toolCalls.values()].some(
+                (toolCall) =>
+                  toolCall.name.trim() && toolCall.arguments.trim(),
+              );
+              if (
+                assistantText.slice(attemptTextStart).trim() ||
+                hasToolCall
+              )
+                break;
+              if (attempt === 2)
+                throw new Error(
+                  "Provider returned no visible assistant content after three attempts",
+                );
+            }
+
+            const webCalls = [...toolCalls.values()].filter(
+              (toolCall) =>
+                toolCall.name === "web_search" ||
+                toolCall.name === "visit_website",
+            );
+            if (webCalls.length === 0) {
+              terminalTurn = true;
+              break;
+            }
+            carriedReasoning = pendingReasoning;
+            continuation.push({
+              role: "assistant",
+              content: assistantText.slice(turnTextStart) || null,
+              tool_calls: webCalls.map((toolCall) => ({
+                id: toolCall.id,
+                type: "function",
+                function: {
+                  name: toolCall.name,
+                  arguments: toolCall.arguments || "{}",
+                },
+              })),
+            });
+            for (const toolCall of webCalls) {
+              let input: JsonObject = {};
+              try {
+                const parsed: unknown = JSON.parse(
+                  toolCall.arguments || "{}",
+                );
+                if (isObject(parsed)) input = parsed;
+              } catch {
+                // The tool receives an empty object and returns a clear error.
+              }
+              let output: string;
+              try {
+                output = backend.#webTools
+                  ? await backend.#webTools.execute(
+                      toolCall.name,
+                      input,
+                      request.signal,
+                    )
+                  : "Local web tools are not available in this runtime.";
+              } catch (error) {
+                output = `Web tool error: ${error instanceof Error ? error.message : String(error)}`;
+              }
+              continuation.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                name: toolCall.name,
+                content: output,
+              });
+            }
           }
+          if (!terminalTurn)
+            throw new Error("The local web-tool loop exceeded eight turns");
           if (textBlockIndex !== undefined) {
             controller.enqueue(
               sse("content_block_stop", {
@@ -1207,7 +1345,14 @@ export class LocalBackend {
           controller.enqueue(
             sse("message_delta", {
               type: "message_delta",
-              delta: { stop_reason: "end_turn", stop_details: null },
+              delta: {
+                stop_reason: assistantBlocks.some(
+                  (block) => block.type === "tool_use",
+                )
+                  ? "tool_use"
+                  : "end_turn",
+                stop_details: null,
+              },
             }),
           );
           controller.enqueue(sse("message_stop", { type: "message_stop" }));
@@ -1302,6 +1447,7 @@ export class LocalBackend {
           this.#data.provider = configuredProvider({
             baseUrl: stringValue(body.baseUrl),
             model: stringValue(body.model),
+            contextWindow: Number(body.contextWindow),
             apiKey,
           });
           await this.#persist();
@@ -1346,7 +1492,20 @@ export class LocalBackend {
           const id = stringValue(entry.id);
           return id ? [id] : [];
         });
-        return new Response(JSON.stringify({ models }), {
+        const contextWindows = Object.fromEntries(
+          data.flatMap((entry) => {
+            if (!isObject(entry)) return [];
+            const id = stringValue(entry.id);
+            const meta = isObject(entry.meta) ? entry.meta : {};
+            const contextWindow = Number(
+              meta.n_ctx ?? entry.context_length ?? entry.max_model_len,
+            );
+            return id && Number.isFinite(contextWindow) && contextWindow >= 1024
+              ? [[id, Math.floor(contextWindow)]]
+              : [];
+          }),
+        );
+        return new Response(JSON.stringify({ models, contextWindows }), {
           headers: { "Content-Type": "application/json" },
         });
       } catch (error) {

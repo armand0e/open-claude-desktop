@@ -126,6 +126,8 @@ const profile = await mkdtemp(path.join(os.tmpdir(), "claude-code-probe-"));
 const directRoute = process.argv.find((argument) => argument.startsWith("/"));
 const clickNewSession = process.argv.includes("--new-session");
 const startSession = process.argv.includes("--start-session");
+const clickCustomize = process.argv.includes("--click-customize");
+const clickArtifacts = process.argv.includes("--click-artifacts");
 const stderr = [];
 const child = spawn(electron, [".", `--remote-debugging-port=${port}`], {
   cwd: process.cwd(),
@@ -133,7 +135,8 @@ const child = spawn(electron, [".", `--remote-debugging-port=${port}`], {
   stdio: ["ignore", "pipe", "pipe"],
   env: {
     ...process.env,
-    CLAUDE_USER_DATA_DIR: profile,
+    CLAUDE_LOCAL_USER_DATA_DIR: profile,
+    CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
     CLAUDE_TRACE_CODE_IPC: "1",
   },
 });
@@ -184,11 +187,35 @@ try {
         await new Promise(resolve => setTimeout(resolve, 100));
       await new Promise(resolve => setTimeout(resolve, 2000));
       const before = { url: location.href, text: document.body?.innerText?.slice(0, 2500) || "" };
+      const localArtifactsHost = document.querySelector("#local-code-artifacts");
+      before.localArtifacts = localArtifactsHost ? {
+        hidden: localArtifactsHost.hidden,
+        bounds: localArtifactsHost.getBoundingClientRect().toJSON(),
+        text: localArtifactsHost.shadowRoot?.textContent?.replace(/\s+/g, " ").trim().slice(0, 3000) || ""
+      } : null;
+      const localCustomizationHost = document.querySelector("#local-code-customization");
+      before.localCustomization = localCustomizationHost ? {
+        hidden: localCustomizationHost.hidden,
+        bounds: localCustomizationHost.getBoundingClientRect().toJSON(),
+        text: localCustomizationHost.shadowRoot?.textContent?.replace(/\s+/g, " ").trim().slice(0, 3000) || "",
+        inputs: [...localCustomizationHost.shadowRoot.querySelectorAll("input,select,textarea")].map(element => ({
+          id: element.id,
+          value: element.value
+        }))
+      } : null;
       const codeButton = [...document.querySelectorAll("button")].find(element =>
         element.getAttribute("aria-label") === "Code" || element.textContent?.trim() === "Code"
       );
       codeButton?.click();
       await new Promise(resolve => setTimeout(resolve, 10000));
+      if (${JSON.stringify(clickCustomize)} || ${JSON.stringify(clickArtifacts)}) {
+        const label = ${JSON.stringify(clickArtifacts ? "Artifacts" : "Customize")};
+        const navigationButton = [...document.querySelectorAll("button")].find(element =>
+          element.getAttribute("aria-label") === label || element.textContent?.includes(label)
+        );
+        navigationButton?.click();
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      }
       if (${JSON.stringify(clickNewSession)}) {
         const newSessionButton = [...document.querySelectorAll("button")].find(element =>
           element.textContent?.includes("New session")
@@ -202,6 +229,7 @@ try {
         clicked: Boolean(codeButton),
         startedSessionId: ${JSON.stringify(startedSessionId)},
         codeButtonHtml: codeButton?.outerHTML?.slice(0, 5000) || null,
+        codeNavigationHtml: codeButton?.parentElement?.parentElement?.outerHTML?.slice(0, 20000) || null,
         after: {
           url: location.href,
           title: document.title,

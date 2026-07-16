@@ -1,9 +1,12 @@
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
+import { cp, mkdir, readdir, rename, rm } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   protocol,
@@ -13,6 +16,13 @@ import {
   WebContentsView,
 } from "electron";
 import { PRELOAD_CHANNELS } from "../generated/ipc-contract";
+import {
+  isLocalDeepLink,
+  LOCAL_APP_NAME,
+  LOCAL_APP_USER_MODEL_ID,
+  LOCAL_PROFILE_ENV,
+  localProfilePaths,
+} from "../shared/app-identity";
 import { parseChannel, serviceKey } from "../shared/channels";
 import {
   isTrustedRendererUrl,
@@ -23,21 +33,47 @@ import { assertTrustedIpcSender, registerGeneratedIpc } from "./ipc";
 import { installLocalUiProtocol, registerAppScheme } from "./local-ui";
 import { LocalBackend } from "./local-backend";
 import { LocalCodeSessionManager } from "./local-code";
+import { LocalFilePreview } from "./local-file-preview";
+import { LocalLaunchPreview } from "./local-launch-preview";
+import { LocalWebTools } from "./local-web-tools";
 import { featureMatrix, ServiceContext, ServiceDispatcher } from "./services";
 import { StateStore } from "./state";
 
 registerAppScheme();
 
-app.name = "Claude";
-app.setAppUserModelId("com.anthropic.Claude.desktop.reconstructed");
-if (process.env.CLAUDE_USER_DATA_DIR)
-  app.setPath("userData", path.resolve(process.env.CLAUDE_USER_DATA_DIR));
+// Electron derives its Chromium profile, single-instance lock, taskbar group,
+// logs, and several caches from application identity. Set all of them before
+// readiness so this app cannot attach to or write into Anthropic's profile.
+app.name = LOCAL_APP_NAME;
+app.setAppUserModelId(LOCAL_APP_USER_MODEL_ID);
+const profilePaths = localProfilePaths(
+  app.getPath("appData"),
+  process.env[LOCAL_PROFILE_ENV],
+);
+for (const directory of Object.values(profilePaths))
+  mkdirSync(directory, { recursive: true });
+app.setPath("userData", profilePaths.userData);
+app.setPath("sessionData", profilePaths.sessionData);
+app.setPath("cache", profilePaths.cache);
+app.setPath("crashDumps", profilePaths.crashDumps);
+app.setAppLogsPath(profilePaths.logs);
+if (process.env.CLAUDE_TRACE_APP_IDENTITY === "1")
+  console.error(
+    `[local-app-identity] ${JSON.stringify({
+      name: app.name,
+      appUserModelId: LOCAL_APP_USER_MODEL_ID,
+      ...profilePaths,
+    })}`,
+  );
 
 let mainWindow: BrowserWindow | null = null;
 let mainView: WebContentsView | null = null;
 let state: StateStore;
 let disposeIpc: (() => void) | null = null;
 let codeSessions: LocalCodeSessionManager | null = null;
+let localWebTools: LocalWebTools | null = null;
+let localFilePreview: LocalFilePreview | null = null;
+let localLaunchPreview: LocalLaunchPreview | null = null;
 let targetUrl = "https://claude.ai";
 
 function preloadPath(name: "preload-main-view" | "preload-shell"): string {
@@ -56,25 +92,88 @@ function isShellNavigation(rawUrl: string): boolean {
   }
 }
 
-function localUiRoot(): string | null {
+function isUiRoot(candidate: string | undefined): candidate is string {
+  return Boolean(candidate && existsSync(path.join(candidate, "index.html")));
+}
+
+function compareVersions(left: string, right: string): number {
+  return left.localeCompare(right, undefined, {
+    numeric: true,
+    sensitivity: "base",
+  });
+}
+
+async function installedClaudeVersions(installRoot: string): Promise<string[]> {
+  try {
+    return (await readdir(installRoot, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && /^app-\d/.test(entry.name))
+      .map((entry) => entry.name.slice(4))
+      .sort(compareVersions);
+  } catch {
+    return [];
+  }
+}
+
+async function localUiRoot(): Promise<string | null> {
   const explicit = process.env.CLAUDE_ION_DIST;
-  const candidates = [
-    explicit,
-    path.join(app.getAppPath(), "reference", "claude-1.21459.0", "ion-dist"),
-    path.join(
-      process.env.ProgramData ?? "C:\\ProgramData",
-      process.env.USERNAME ?? "",
-      "AnthropicClaude",
-      "app-1.21459.0",
-      "resources",
-      "ion-dist",
-    ),
-  ].filter((candidate): candidate is string => Boolean(candidate));
-  return (
-    candidates.find((candidate) =>
-      existsSync(path.join(candidate, "index.html")),
-    ) ?? null
+  if (isUiRoot(explicit)) return explicit;
+  const preferredVersion =
+    process.env.CLAUDE_DESKTOP_VERSION ?? app.getVersion();
+  const repositorySnapshot = path.join(
+    app.getAppPath(),
+    "reference",
+    `claude-${preferredVersion}`,
+    "ion-dist",
   );
+  if (isUiRoot(repositorySnapshot)) return repositorySnapshot;
+
+  const privateSnapshot = path.join(
+    profilePaths.userData,
+    "UI Assets",
+    `claude-${preferredVersion}`,
+    "ion-dist",
+  );
+  if (isUiRoot(privateSnapshot)) return privateSnapshot;
+
+  const installRoot = path.join(
+    process.env.ProgramData ?? "C:\\ProgramData",
+    process.env.USERNAME ?? "",
+    "AnthropicClaude",
+  );
+  const installedVersions = await installedClaudeVersions(installRoot);
+  const installedVersion = installedVersions.includes(preferredVersion)
+    ? preferredVersion
+    : installedVersions.at(-1);
+  if (!installedVersion) return null;
+  const installedSource = path.join(
+    installRoot,
+    `app-${installedVersion}`,
+    "resources",
+    "ion-dist",
+  );
+  if (!isUiRoot(installedSource)) return null;
+  if (process.env.CLAUDE_LOCAL_SKIP_UI_SNAPSHOT === "1") return installedSource;
+
+  const versionedPrivateSnapshot = path.join(
+    profilePaths.userData,
+    "UI Assets",
+    `claude-${installedVersion}`,
+    "ion-dist",
+  );
+  if (isUiRoot(versionedPrivateSnapshot)) return versionedPrivateSnapshot;
+
+  // Take a private, immutable-at-runtime snapshot. The installed application
+  // is only read once and is never served from or modified during later runs.
+  const temporary = `${versionedPrivateSnapshot}.${randomUUID()}.tmp`;
+  await mkdir(path.dirname(versionedPrivateSnapshot), { recursive: true });
+  try {
+    await cp(installedSource, temporary, { recursive: true });
+    await rename(temporary, versionedPrivateSnapshot);
+  } catch (error) {
+    await rm(temporary, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+  return versionedPrivateSnapshot;
 }
 
 function eventChannel(service: string, method: string): string | undefined {
@@ -226,6 +325,12 @@ function createMainWindow(): BrowserWindow {
   });
   mainWindow = window;
   mainView = view;
+  // The retained client distinguishes its native Code surface from the web
+  // Code product by the official desktop user-agent token. Without this it
+  // redirects /code and /epitaxy into cloud-only enrollment pages.
+  view.webContents.setUserAgent(
+    `${view.webContents.getUserAgent()} Claude/${app.getVersion()}`,
+  );
   if (process.env.CLAUDE_TRACE_LOCAL_API === "1") {
     view.webContents.on(
       "console-message",
@@ -356,6 +461,8 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
   ipcMain.removeHandler("list-mcp-servers");
   ipcMain.removeHandler("connect-to-mcp-server");
   ipcMain.removeHandler("request-open-mcp-settings");
+  ipcMain.removeHandler("local-pick-directory");
+  ipcMain.removeHandler("local-open-settings");
   ipcMain.handle("list-mcp-servers", (event) => {
     assertTrustedIpcSender(event);
     return dispatcher.listMcpServers();
@@ -371,6 +478,24 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
     assertTrustedIpcSender(event);
     return undefined;
   });
+  ipcMain.handle("local-pick-directory", async (event) => {
+    assertTrustedIpcSender(event);
+    const options: Electron.OpenDialogOptions = {
+      title: "Select a workspace folder",
+      properties: ["openDirectory", "createDirectory"],
+    };
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, options)
+      : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  ipcMain.handle("local-open-settings", (event) => {
+    assertTrustedIpcSender(event);
+    const channel = eventChannel("claude.web.Navigation", "navigate");
+    if (!channel) return false;
+    broadcast(channel, "/settings/desktop");
+    return true;
+  });
 }
 
 function dispatchDeepLink(url: string): void {
@@ -384,11 +509,12 @@ if (!gotLock) {
 } else {
   app.on("second-instance", (_event, argv) => {
     showMainWindow();
-    const deepLink = argv.find((value) => value.startsWith("claude://"));
+    const deepLink = argv.find(isLocalDeepLink);
     if (deepLink) dispatchDeepLink(deepLink);
   });
 
   app.on("open-url", (event, url) => {
+    if (!isLocalDeepLink(url)) return;
     event.preventDefault();
     dispatchDeepLink(url);
     showMainWindow();
@@ -398,8 +524,9 @@ if (!gotLock) {
     .whenReady()
     .then(async () => {
       state = new StateStore(app.getPath("userData"));
+      localWebTools = new LocalWebTools(app.getPath("userData"), app.getAppPath());
       let localBackend: LocalBackend | null = null;
-      const ionRoot = localUiRoot();
+      const ionRoot = await localUiRoot();
       const useLocalUi =
         process.env.CLAUDE_DESKTOP_LOCAL_UI === "1" ||
         (process.env.CLAUDE_DESKTOP_LOCAL_UI !== "0" &&
@@ -409,8 +536,10 @@ if (!gotLock) {
           throw new Error(
             "Local UI mode is enabled but no ion-dist directory was found. Set CLAUDE_ION_DIST or install the observed Claude Desktop build.",
           );
-        localBackend = await LocalBackend.create(app.getPath("userData"));
-        await installLocalUiProtocol(ionRoot, localBackend);
+        localBackend = await LocalBackend.create(
+          app.getPath("userData"),
+          localWebTools,
+        );
         targetUrl = "app://localhost/new?mode=chat&surface=chat";
       } else if (process.env.CLAUDE_DESKTOP_URL) {
         const candidate = new URL(process.env.CLAUDE_DESKTOP_URL);
@@ -439,10 +568,30 @@ if (!gotLock) {
           );
           if (channel) broadcast(channel, request);
         },
+        localWebTools,
       );
+      localFilePreview = new LocalFilePreview(() => mainWindow, codeSessions);
+      localLaunchPreview = new LocalLaunchPreview(
+        () => mainWindow,
+        codeSessions,
+        (servers) => {
+          void state.update((draft) => {
+            draft.stores.activeServers = servers;
+          });
+          const channel = eventChannel(
+            "claude.web.Launch",
+            "activeServers_$store$_update",
+          );
+          if (channel) broadcast(channel, servers);
+        },
+      );
+      if (useLocalUi && ionRoot && localBackend)
+        await installLocalUiProtocol(ionRoot, localBackend, codeSessions);
       const context: ServiceContext = {
         state,
         codeSessions,
+        filePreview: localFilePreview,
+        launchPreview: localLaunchPreview,
         mainWindow: () => mainWindow,
         mainView: () => mainView,
         broadcast,
@@ -462,14 +611,20 @@ if (!gotLock) {
       });
     })
     .catch((error) => {
-      console.error("Claude reconstruction failed to launch", error);
+      console.error(`${LOCAL_APP_NAME} failed to launch`, error);
       app.exit(1);
     });
 }
 
 app.on("before-quit", () => {
+  localLaunchPreview?.dispose();
+  localLaunchPreview = null;
+  localFilePreview?.dispose();
+  localFilePreview = null;
   codeSessions?.dispose();
   codeSessions = null;
+  localWebTools?.dispose();
+  localWebTools = null;
   disposeIpc?.();
   disposeIpc = null;
 });

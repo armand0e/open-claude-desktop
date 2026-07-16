@@ -3,9 +3,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { net, protocol } from "electron";
+import { net, protocol, shell } from "electron";
 import { resolveInside } from "../shared/security";
 import { LocalBackend } from "./local-backend";
+import { LocalCodeSessionManager } from "./local-code";
 
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -32,6 +33,7 @@ interface ClientPatch {
   id: string;
   find: string;
   replace: string;
+  assetUrlPath?: string;
 }
 
 // The packaged desktop web client defaults /new into Cowork's VM-backed task
@@ -81,6 +83,45 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
     id: "derive-local-chat-attachments",
     find: "wiggleEnabled:dn,targetStore:void 0,isLocalAgentMode:W||G",
     replace: 'wiggleEnabled:dn,targetStore:"org",isLocalAgentMode:W||G',
+  },
+  {
+    id: "enable-local-claude-code-surface",
+    find: 'claude_code_web:FL({feature:"claude_code_web",useClientSideGate:()=>(av("bad_moon_rising"),!1)})',
+    replace:
+      'claude_code_web:FL({feature:"claude_code_web",useClientSideGate:()=>!0})',
+  },
+  {
+    id: "enable-native-local-code-artifacts",
+    assetUrlPath: "/assets/v1/ca82bcec9-BHaPdnp0.js",
+    find: "function pn(){const e=At(),{data:t}=G(),a=void 0===t;return e||a?",
+    replace: "function pn(){const e=!0,{data:t}=G(),a=void 0===t;return e||a?",
+  },
+  {
+    id: "enable-local-artifact-gallery-data",
+    assetUrlPath: "/assets/v1/c47ad434c-D_dYPjVp.js",
+    find: 'function ne(){const e=Boolean(""),{isAvailable:t}=i("cobalt_plinth");return!d(()=>!1,!1)&&(e||t)}',
+    replace: "function ne(){return!0}",
+  },
+  {
+    id: "bind-native-artifact-gallery-to-local-desktop-store",
+    assetUrlPath: "/assets/v1/c47ad434c-D_dYPjVp.js",
+    find:
+      'function ie(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=F(),n=s?.uuid,i=c(),d=ne(),p=f(',
+    replace:
+      'function ie(e=!1,t){const r=c(),[a,s]=g.useState({artifacts:[],isPending:!0,isError:!1});return g.useEffect(()=>{let e=!1;const t=window["claude.web"]?.CoworkArtifacts?.getAllArtifacts?.();return Promise.resolve(t).then(t=>{e||s({artifacts:Array.isArray(t)?t:[],isPending:!1,isError:!1})}).catch(()=>{e||s({artifacts:[],isPending:!1,isError:!0})}),()=>{e=!0}},[]),{enabled:!0,includeShared:!1,items:a.artifacts.map(e=>({key:`frame:${e.id}`,source:"frame",rel:"mine",title:e.title??"Artifact",description:e.sessionTitle,extraSearchText:[e.sessionTitle,e.path].filter(e=>"string"==typeof e),href:`/code/artifact/${e.id}?org=00000000-0000-4000-8000-000000000001&open_in_browser=1`,newTab:r,updatedAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,createdAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,audience:"owner",softDeleted:!1,starred:!1})),isPending:a.isPending,isError:a.isError,capped:!1,isPartial:!1,isPartialError:!1,starsEnabled:!1}}function ieCloudUnused(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=F(),n=s?.uuid,i=c(),d=ne(),p=f(',
+  },
+  {
+    id: "use-local-code-artifact-gallery-source",
+    assetUrlPath: "/assets/v1/ce569194f-YKjvV2xt.js",
+    find: 'function Je(){const e=z(),s=i(),r=Ke("chat",{relTabs:!0});',
+    replace:
+      'function Je(){const e=z(),s=i(),r=Ke("frame",{relTabs:!0});',
+  },
+  {
+    id: "defer-local-terminal-pty-delivery",
+    find: 'for(const n of nBn)try{n(e)}catch(t){dt.error(ut.DESKTOP_API,"localShellPtyTransport subscriber threw",{err:t})}',
+    replace:
+      'for(const n of nBn)setTimeout(()=>{try{n(e)}catch(t){dt.error(ut.DESKTOP_API,"localShellPtyTransport subscriber threw",{err:t})}},0)',
   },
 ];
 
@@ -252,6 +293,16 @@ async function patchedClientAssets(
       throw new Error(`Packaged UI module is unavailable: ${assetUrlPath}`);
     sources.set(path.resolve(assetPath), await readFile(assetPath, "utf8"));
   }
+  for (const assetUrlPath of new Set(
+    patches.map((patch) => patch.assetUrlPath).filter(Boolean) as string[],
+  )) {
+    const assetPath = resolveInside(root, assetUrlPath);
+    if (!assetPath || !(await regularFile(assetPath)))
+      throw new Error(
+        `Packaged UI patch asset is unavailable: ${assetUrlPath}`,
+      );
+    sources.set(path.resolve(assetPath), await readFile(assetPath, "utf8"));
+  }
 
   const idsByPath = new Map<string, string[]>();
   for (const patch of patches) {
@@ -296,6 +347,24 @@ export function registerAppScheme(): void {
         corsEnabled: false,
       },
     },
+    {
+      scheme: "claude-local-preview",
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        stream: true,
+      },
+    },
+    {
+      scheme: "claude-local-launch",
+      privileges: {
+        standard: true,
+        secure: true,
+        supportFetchAPI: true,
+        stream: true,
+      },
+    },
   ]);
 }
 
@@ -335,12 +404,17 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 function currentUserAccess(): Record<string, unknown> {
   return {
-    features: ["chat", "claude_code", "claude_code_desktop", "skills"].map(
-      (feature) => ({
-        feature,
-        status: "available",
-      }),
-    ),
+    features: [
+      "chat",
+      "claude_code",
+      "claude_code_web",
+      "claude_code_desktop",
+      "skills",
+      "cobalt_plinth",
+    ].map((feature) => ({
+      feature,
+      status: "available",
+    })),
   };
 }
 
@@ -495,12 +569,152 @@ async function localApiResponse(
   request: Request,
   url: URL,
   backend: LocalBackend,
+  codeSessions: LocalCodeSessionManager,
 ): Promise<Response | null> {
   const pathname = url.pathname;
   traceLocalApi(request, pathname);
   const normalized = pathname.startsWith("/edge-api/")
     ? `/api/${pathname.slice(10)}`
     : pathname;
+  if (normalized === "/api/frame/frames" && request.method === "GET") {
+    const artifacts = (await codeSessions.invoke(
+      "getAllArtifacts",
+      [],
+    )) as Array<Record<string, unknown>>;
+    return jsonResponse({
+      frames: artifacts.map((artifact) => ({
+        slug: artifact.id,
+        title: artifact.title,
+        label: artifact.title,
+        description: artifact.sessionTitle,
+        source_surface: "code",
+        rel: "mine",
+        audience: "owner",
+        updatedAt: artifact.updatedAt,
+        created_at: artifact.updatedAt,
+        last_viewed_at: artifact.updatedAt,
+        softDeleted: false,
+        starred: false,
+      })),
+      starsEnabled: false,
+    });
+  }
+  if (normalized === "/api/frame/track" && request.method === "POST")
+    return new Response(null, { status: 204 });
+  if (
+    request.method === "GET" &&
+    /^\/api\/organizations\/[^/]+\/user_artifacts$/.test(normalized)
+  )
+    return jsonResponse({ artifacts: [] });
+  if (
+    request.method === "GET" &&
+    /^\/api\/organizations\/[^/]+\/user_artifacts\/count$/.test(normalized)
+  )
+    return jsonResponse({ count: 0 });
+  if (
+    request.method === "GET" &&
+    normalized === "/api/published_artifacts/view_counts"
+  )
+    return jsonResponse([]);
+  const localFrameMatch = normalized.match(
+    /^\/api\/frame\/([0-9a-f-]{36})$/i,
+  );
+  if (localFrameMatch) {
+    if (request.method === "DELETE") {
+      const deleted = await codeSessions.invoke("deleteArtifactById", [
+        localFrameMatch[1].toLowerCase(),
+      ]);
+      return new Response(null, { status: deleted ? 204 : 404 });
+    }
+    if (request.method === "GET") {
+      const artifact = (await codeSessions.invoke("readArtifactById", [
+        localFrameMatch[1].toLowerCase(),
+      ])) as Record<string, unknown> | null;
+      return artifact
+        ? jsonResponse({
+            uuid: localFrameMatch[1].toLowerCase(),
+            title: artifact.title,
+            updated_at: artifact.updatedAt,
+            perm: {
+              role: "owner",
+              mode: "private",
+              writersEnabled: false,
+              assignableReadModes: ["private"],
+              mayWiden: false,
+            },
+            author: { display_name: "Local User" },
+          })
+        : jsonResponse(
+            { error: { type: "not_found_error", message: "Not found" } },
+            404,
+          );
+    }
+  }
+  if (normalized === "/api/local/code/artifacts" && request.method === "GET") {
+    return jsonResponse({
+      artifacts: await codeSessions.invoke("getAllArtifacts", []),
+    });
+  }
+  if (normalized === "/api/local/code/artifact" && request.method === "GET") {
+    const artifact = await codeSessions.invoke("readArtifact", [
+      url.searchParams.get("sessionId"),
+      url.searchParams.get("url"),
+    ]);
+    return artifact
+      ? jsonResponse({ artifact })
+      : jsonResponse({ error: { message: "Artifact not found" } }, 404);
+  }
+  if (
+    normalized === "/api/local/code/artifact/open" &&
+    request.method === "POST"
+  ) {
+    const input = (await request.json()) as Record<string, unknown>;
+    const artifact = (await codeSessions.invoke("readArtifact", [
+      input.sessionId,
+      input.url,
+    ])) as Record<string, unknown> | null;
+    if (!artifact || typeof artifact.path !== "string")
+      return jsonResponse({ error: { message: "Artifact not found" } }, 404);
+    const action = input.action === "reveal" ? "reveal" : "open";
+    if (action === "reveal") shell.showItemInFolder(artifact.path);
+    else {
+      const error = await shell.openPath(artifact.path);
+      if (error) return jsonResponse({ error: { message: error } }, 500);
+    }
+    return jsonResponse({ ok: true });
+  }
+  if (normalized === "/api/local/code/customization") {
+    try {
+      if (request.method === "GET") {
+        return jsonResponse(
+          await codeSessions.invoke("getCustomization", [
+            url.searchParams.get("cwd"),
+          ]),
+        );
+      }
+      if (request.method === "PUT" || request.method === "DELETE") {
+        const input = await request.json();
+        return jsonResponse(
+          await codeSessions.invoke(
+            request.method === "PUT"
+              ? "saveCustomization"
+              : "deleteCustomization",
+            [input],
+          ),
+        );
+      }
+      return new Response(null, { status: 405 });
+    } catch (error) {
+      return jsonResponse(
+        {
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+          },
+        },
+        400,
+      );
+    }
+  }
   if (
     normalized === "/api/bootstrap" ||
     (normalized.startsWith("/api/bootstrap/") &&
@@ -620,6 +834,7 @@ function contentSecurityPolicy(scriptHashes: readonly string[]): string {
 export async function installLocalUiProtocol(
   root: string,
   backend: LocalBackend,
+  codeSessions: LocalCodeSessionManager,
 ): Promise<void> {
   const indexPath = path.join(root, "index.html");
   await access(indexPath);
@@ -660,7 +875,12 @@ export async function installLocalUiProtocol(
     if (origin && origin !== "app://localhost")
       return new Response(null, { status: 403 });
 
-    const apiResponse = await localApiResponse(request, url, backend);
+    const apiResponse = await localApiResponse(
+      request,
+      url,
+      backend,
+      codeSessions,
+    );
     if (apiResponse) return apiResponse;
 
     const requested = resolveInside(absoluteRoot, url.pathname);

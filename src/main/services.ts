@@ -10,6 +10,7 @@ import {
   dialog,
   globalShortcut,
   IpcMainInvokeEvent,
+  Menu,
   nativeTheme,
   net,
   Notification,
@@ -17,6 +18,7 @@ import {
   WebContentsView,
 } from "electron";
 import { PRELOAD_CHANNELS } from "../generated/ipc-contract";
+import { LOCAL_APP_NAME } from "../shared/app-identity";
 import {
   ParsedChannel,
   serviceKey,
@@ -26,12 +28,16 @@ import { originOf, TRUSTED_REMOTE_ORIGINS } from "../shared/security";
 import { StateStore } from "./state";
 import { FileAccessPolicy } from "./file-access";
 import type { LocalCodeSessionManager } from "./local-code";
+import type { LocalFilePreview } from "./local-file-preview";
+import type { LocalLaunchPreview } from "./local-launch-preview";
 
 const execFileAsync = promisify(execFile);
 
 export interface ServiceContext {
   readonly state: StateStore;
   readonly codeSessions: LocalCodeSessionManager;
+  readonly filePreview: LocalFilePreview;
+  readonly launchPreview: LocalLaunchPreview;
   mainWindow(): BrowserWindow | null;
   mainView(): WebContentsView | null;
   broadcast(channel: string, ...args: unknown[]): void;
@@ -98,7 +104,7 @@ export function featureMatrix(): Record<
     coworkWatchRecord: unavailable,
     coworkKappa: unavailable,
     coworkArtifacts: unavailable,
-    framebufferPreview: unavailable,
+    framebufferPreview: supported,
     iosSimulator: unavailable,
     androidEmulator: unavailable,
     iosSimulatorH264: unavailable,
@@ -122,7 +128,7 @@ export function featureMatrix(): Record<
     chatTab: supported,
     chatCodeExecution: supported,
     epitaxyMcpApps: unavailable,
-    launch: unavailable,
+    launch: supported,
   };
 }
 
@@ -296,6 +302,11 @@ export class ServiceDispatcher {
     event?: IpcMainInvokeEvent,
   ): unknown | Promise<unknown> {
     const key = serviceKey(parsed);
+    if (
+      key === "claude.web.Launch" &&
+      storeNameFromMethod(parsed.method) === "activeServers"
+    )
+      return this.context.launchPreview.servers;
     if (storeNameFromMethod(parsed.method))
       return defaultStoreValue(this.context, parsed);
 
@@ -328,13 +339,13 @@ export class ServiceDispatcher {
       case "claude.internal.ui.AboutWindow":
         return this.about(parsed.method);
       case "claude.internal.ui.MainWindowTitleBar":
-        return this.titleBar(parsed.method);
+        return this.titleBar(parsed.method, event);
       case "claude.web.WindowControl":
         return this.windowControl(parsed.method, args, event);
       case "claude.web.WindowState":
         return this.windowState(parsed.method, event);
       case "claude.web.BrowserNavigation":
-        return this.browserNavigation(parsed.method);
+        return this.browserNavigation(parsed.method, event);
       case "claude.web.Navigation":
         return this.navigation(args);
       case "claude.web.Auth":
@@ -350,9 +361,14 @@ export class ServiceDispatcher {
       case "claude.web.ClaudeCode":
         return this.claudeCode(parsed.method, args);
       case "claude.web.LocalSessions":
+      case "claude.web.LocalAgentModeSessions":
         return this.localSessions(parsed.method, args, event);
+      case "claude.web.CoworkFilePreview":
+        return this.filePreview(parsed.method, args);
+      case "claude.web.CoworkArtifacts":
+        return this.coworkArtifacts(parsed.method, args);
       case "claude.web.Launch":
-        return parsed.method === "isAvailable" ? false : genericDefault(parsed);
+        return this.launch(parsed.method, args);
       case "claude.web.PluginBridgeMcp":
         return parsed.method === "listServers"
           ? this.listMcpServers()
@@ -431,7 +447,7 @@ export class ServiceDispatcher {
     if (method === "setStartupOnLoginEnabled") {
       app.setLoginItemSettings({
         openAtLogin: Boolean(args[0]),
-        name: "Claude",
+        name: LOCAL_APP_NAME,
       });
     }
     return undefined;
@@ -607,12 +623,108 @@ export class ServiceDispatcher {
     return null;
   }
 
-  private titleBar(method: string): unknown {
+  private navigate(pathname: string): void {
+    const channel = eventChannel("claude.web.Navigation", "navigate");
+    if (channel) this.context.broadcast(channel, pathname);
+  }
+
+  private popupMainMenu(event?: IpcMainInvokeEvent): void {
+    const window =
+      focusedWindow(this.context, event) ?? this.context.mainWindow();
+    if (!window || window.isDestroyed()) return;
+    if (process.env.CLAUDE_TRACE_LOCAL_UI === "1")
+      console.error("[local-ui] main menu popup");
+    const contents = this.context.mainView()?.webContents;
+    const menu = Menu.buildFromTemplate([
+      {
+        label: "File",
+        submenu: [
+          {
+            label: "New conversation",
+            accelerator: "CmdOrCtrl+N",
+            click: () => this.navigate("/new"),
+          },
+          {
+            label: "Settings…",
+            accelerator: "CmdOrCtrl+,",
+            click: () => this.navigate("/settings/desktop"),
+          },
+          { type: "separator" },
+          { label: "Close window", accelerator: "CmdOrCtrl+W", role: "close" },
+          { label: "Exit", role: "quit" },
+        ],
+      },
+      {
+        label: "Edit",
+        submenu: [
+          { label: "Undo", accelerator: "CmdOrCtrl+Z", role: "undo" },
+          { label: "Redo", accelerator: "CmdOrCtrl+Shift+Z", role: "redo" },
+          { type: "separator" },
+          { label: "Cut", accelerator: "CmdOrCtrl+X", role: "cut" },
+          { label: "Copy", accelerator: "CmdOrCtrl+C", role: "copy" },
+          { label: "Paste", accelerator: "CmdOrCtrl+V", role: "paste" },
+          {
+            label: "Select all",
+            accelerator: "CmdOrCtrl+A",
+            role: "selectAll",
+          },
+        ],
+      },
+      {
+        label: "View",
+        submenu: [
+          {
+            label: "Toggle sidebar",
+            accelerator: "CmdOrCtrl+B",
+            click: () => {
+              const channel = eventChannel(
+                "claude.web.MenuEvents",
+                "toggleSidebar",
+              );
+              if (channel) this.context.broadcast(channel);
+            },
+          },
+          { type: "separator" },
+          {
+            label: "Reload",
+            accelerator: "CmdOrCtrl+R",
+            click: () => contents?.reload(),
+          },
+          { role: "resetZoom" },
+          { role: "zoomIn" },
+          { role: "zoomOut" },
+        ],
+      },
+      {
+        label: "Help",
+        submenu: [
+          {
+            label: "Local model settings",
+            click: () => this.navigate("/settings/desktop"),
+          },
+          { type: "separator" },
+          {
+            label: "About",
+            click: () =>
+              void dialog.showMessageBox(window, {
+                type: "info",
+                title: "About",
+                message: LOCAL_APP_NAME,
+                detail: `Version ${app.getVersion()}`,
+              }),
+          },
+        ],
+      },
+    ]);
+    menu.popup({ window });
+  }
+
+  private titleBar(method: string, event?: IpcMainInvokeEvent): unknown {
     if (method === "isClaudeCurrentlyHealthy")
       return !this.context.mainView()?.webContents.isCrashed();
     if (method === "requestReloadMainView")
       return this.context.mainView()?.webContents.reload();
-    if (method === "requestMainMenuPopup") return undefined;
+    if (method === "requestMainMenuPopup") return this.popupMainMenu(event);
     return undefined;
   }
 
@@ -664,14 +776,17 @@ export class ServiceDispatcher {
     return undefined;
   }
 
-  private browserNavigation(method: string): unknown {
+  private browserNavigation(
+    method: string,
+    event?: IpcMainInvokeEvent,
+  ): unknown {
     const contents = this.context.mainView()?.webContents;
     if (!contents || contents.isDestroyed()) return null;
     if (method === "goBack" && contents.navigationHistory.canGoBack())
       contents.navigationHistory.goBack();
     if (method === "goForward" && contents.navigationHistory.canGoForward())
       contents.navigationHistory.goForward();
-    if (method === "requestMainMenuPopup") return undefined;
+    if (method === "requestMainMenuPopup") return this.popupMainMenu(event);
     return {
       canGoBack: contents.navigationHistory.canGoBack(),
       canGoForward: contents.navigationHistory.canGoForward(),
@@ -730,7 +845,7 @@ export class ServiceDispatcher {
     if (method === "showNotification" && supported) {
       const [title, body, tag, navigateTo, notificationType] = args;
       const notification = new Notification({
-        title: typeof title === "string" ? title : "Claude",
+        title: typeof title === "string" ? title : LOCAL_APP_NAME,
         body: typeof body === "string" ? body : "",
       });
       notification.on("click", () => {
@@ -983,7 +1098,156 @@ export class ServiceDispatcher {
       const error = await shell.openPath(resolved);
       return error ? { ok: false, error } : { ok: true };
     }
+    if (method === "showSessionFilePreview")
+      return this.context.filePreview.show(
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+      );
     return this.context.codeSessions.invoke(method, args);
+  }
+
+  private filePreview(method: string, args: unknown[]): unknown {
+    if (method === "isEnabled" || method === "isEpitaxyPreviewEnabled")
+      return true;
+    if (method === "isOpenInDefaultAppEnabled" || method === "isVmReady")
+      return true;
+    if (method === "show")
+      return this.context.filePreview.show(
+        args[0],
+        args[1],
+        args[2],
+        args[3],
+      );
+    if (method === "hide") return this.context.filePreview.hide(args[0]);
+    if (method === "parkAndCapture")
+      return this.context.filePreview.parkAndCapture(args[0], args[1]);
+    return undefined;
+  }
+
+  private coworkArtifacts(
+    method: string,
+    args: unknown[],
+  ): unknown | Promise<unknown> {
+    if (method === "getAllArtifacts")
+      return this.context.codeSessions.invoke("getAllArtifacts", []);
+    if (method === "deleteArtifact")
+      return this.context.codeSessions.invoke("deleteArtifactById", [args[0]]);
+    if (method === "getArtifactMetadata")
+      return this.context.codeSessions.invoke("readArtifactById", [args[0]]);
+    if (method === "isAutoPublishEnabled") return true;
+    if (method === "isSharingEnabled") return false;
+    if (method === "getArtifactThumbnail") return null;
+    return genericDefault({
+      channel: "",
+      kind: "message",
+      generatorId: "",
+      namespace: "claude.web",
+      service: "CoworkArtifacts",
+      method,
+    });
+  }
+
+  private launch(method: string, args: unknown[]): unknown | Promise<unknown> {
+    const preview = this.context.launchPreview;
+    switch (method) {
+      case "isAvailable":
+        return true;
+      case "isJitlessForced":
+        return false;
+      case "startBrowserPreview":
+        return preview.startBrowserPreview(args[0], args[1]);
+      case "loadHtmlPreview":
+        return preview.loadHtmlPreview(args[0], args[1], args[2]);
+      case "loadHtmlPreviewContent":
+        return preview.loadHtmlPreviewContent(
+          args[0],
+          args[1],
+          args[2],
+          args[3],
+          args[4],
+        );
+      case "showPreview":
+        return preview.showPreview(args[0], args[1], args[2]);
+      case "hidePreview":
+        return preview.hidePreview(args[0], args[1]);
+      case "focusPreview":
+        return preview.focusPreview(args[0]);
+      case "destroyPreview":
+        return preview.destroyPreview(args[0]);
+      case "getPreviewUrl":
+        return preview.getPreviewUrl(args[0]);
+      case "getPreviewNavState":
+        return preview.getPreviewNavState(args[0]);
+      case "navigatePreview":
+        return preview.navigatePreview(args[0], args[1]);
+      case "goBack":
+        return preview.goBack(args[0]);
+      case "goForward":
+        return preview.goForward(args[0]);
+      case "refreshPreview":
+        return preview.refreshPreview(args[0]);
+      case "capturePreviewScreenshot":
+      case "capturePreviewScreenshotIfChanged":
+        return preview.capturePreviewScreenshot(args[0]);
+      case "setPreviewViewport":
+        return preview.setPreviewViewport(args[0], args[1], args[2]);
+      case "clearPreviewViewport":
+        return preview.clearPreviewViewport(args[0]);
+      case "setPreviewColorScheme":
+        return preview.setPreviewColorScheme(args[0], args[1]);
+      case "getPreviewTabs":
+        return preview.getPreviewTabs(args[0]);
+      case "openPreviewInBrowser":
+        return preview.openPreviewInBrowser(args[0]);
+      case "getLogs":
+        return preview.getLogs(args[0]);
+      case "getConfiguredServices":
+        return preview.getConfiguredServices(args[0]);
+      case "getAutoVerify":
+        return preview.getAutoVerify(args[0]);
+      case "setAutoVerify":
+        return preview.setAutoVerify(args[0], args[1]);
+      case "startFromConfig":
+        return preview.startFromConfig(args[0], args[1], args[2]);
+      case "pickHtmlFile":
+        return preview.pickHtmlFile(args[0]);
+      case "stopServer":
+        return preview.stopServer(args[0]);
+      case "openPreviewTab":
+        return "default";
+      case "setActivePreviewTab":
+      case "closePreviewTab":
+      case "closeAllPreviewTabs":
+      case "toggleSelectionMode":
+      case "clearPreviewAllowedOrigins":
+        return true;
+      case "getPreviewAllowedOrigins":
+        return [];
+      case "addPreviewAllowedOrigin":
+        return "allowed";
+      case "removePreviewAllowedOrigin":
+        return false;
+      case "exportPreview":
+      case "focusOrOpenPreviewTab":
+      case "openExternalLinkInPreview":
+        return null;
+      case "loadClaudePagePreview":
+        return preview.loadArtifactPreview(args[0], args[1], args[2]);
+      case "sendClaudePageShareCommand":
+      case "sendClaudePageDismissCommand":
+        return false;
+      default:
+        return genericDefault({
+          channel: "",
+          kind: "message",
+          generatorId: "",
+          namespace: "claude.web",
+          service: "Launch",
+          method,
+        });
+    }
   }
 
   listMcpServers(): Array<{ name: string; config: unknown }> {

@@ -1,16 +1,10 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import process from "node:process";
+import { referencePaths } from "./reference-paths.mjs";
 
-const referenceRoot = path.resolve(
-  process.env.CLAUDE_REFERENCE_ROOT ?? "reference/claude-1.21459.0",
-);
+const { referenceRoot, installedResources } = await referencePaths();
 const asarRoot = path.join(referenceRoot, "app.asar.extracted");
-const installedResources = path.resolve(
-  process.env.CLAUDE_RESOURCES_ROOT ??
-    "C:/ProgramData/aranr/AnthropicClaude/app-1.21459.0/resources",
-);
 const ionRoot = path.join(referenceRoot, "ion-dist");
 const effectiveIonRoot = (await exists(ionRoot))
   ? ionRoot

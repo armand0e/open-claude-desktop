@@ -148,7 +148,8 @@ const child = spawn(
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
-      CLAUDE_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
       CLAUDE_DESKTOP_LOCAL_UI: "1",
       CLAUDE_LOCAL_BASE_URL: baseUrl,
       CLAUDE_LOCAL_MODEL: model,
@@ -311,6 +312,10 @@ try {
   const assistant = messages.find((message) => message.sender === "assistant");
   assert(assistant, "Assistant reply was not persisted");
   if (artifactMode) {
+    assert(
+      !rendered.bodyText.includes("couldn’t finish this response"),
+      `Artifact turn was marked incomplete in the UI: ${JSON.stringify(rendered.bodyText)}`,
+    );
     assert(
       assistant.content?.some(
         (block) =>

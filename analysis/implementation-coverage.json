@@ -7,8 +7,8 @@
     "validatedResultCount": 526
   },
   "serviceSpecificDispatch": {
-    "serviceCount": 25,
-    "methodCount": 202,
+    "serviceCount": 26,
+    "methodCount": 398,
     "services": [
       {
         "service": "claude.hybrid.DesktopIntl",
@@ -91,6 +91,10 @@
         "methodCount": 2
       },
       {
+        "service": "claude.web.LocalSessions",
+        "methodCount": 196
+      },
+      {
         "service": "claude.web.Navigation",
         "methodCount": 1
       },
@@ -113,8 +117,8 @@
     ]
   },
   "safeFallbackDispatch": {
-    "serviceCount": 46,
-    "methodCount": 629,
+    "serviceCount": 45,
+    "methodCount": 433,
     "services": [
       {
         "service": "claude.buddy.Buddy",
@@ -267,10 +271,6 @@
       {
         "service": "claude.web.LocalPlugins",
         "methodCount": 17
-      },
-      {
-        "service": "claude.web.LocalSessions",
-        "methodCount": 196
       },
       {
         "service": "claude.web.MenuEvents",

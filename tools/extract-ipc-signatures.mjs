@@ -1,12 +1,10 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import process from "node:process";
 import { parse } from "@babel/parser";
+import { referencePaths } from "./reference-paths.mjs";
 
-const referenceRoot = path.resolve(
-  process.env.CLAUDE_REFERENCE_ROOT ?? "reference/claude-1.21459.0",
-);
+const { referenceRoot } = await referencePaths();
 const buildRoot = path.join(
   referenceRoot,
   "app.asar.extracted",

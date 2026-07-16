@@ -106,7 +106,7 @@ export class StateStore {
 
   constructor(userDataPath: string) {
     mkdirSync(userDataPath, { recursive: true });
-    this.filePath = path.join(userDataPath, "open-claude-desktop.json");
+    this.filePath = path.join(userDataPath, "claude-local-desktop.json");
     try {
       this.#state = normalizeState(
         JSON.parse(readFileSync(this.filePath, "utf8")),

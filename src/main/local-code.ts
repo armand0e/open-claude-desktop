@@ -14,13 +14,16 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import type { Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { shell } from "electron";
 import { spawn as spawnPty, type IPty } from "node-pty";
 import type { LocalProviderConfig } from "./local-backend";
 import { isPathInside } from "./file-access";
+import { WEB_TOOLS, type WebToolRunner } from "./local-web-tools";
 
 const execAsync = promisify(execCallback);
 const execFileAsync = promisify(execFileCallback);
@@ -72,10 +75,20 @@ interface CodeArtifact {
   version: string;
 }
 
+interface CodeModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+}
+
 interface CodeStore {
   version: 1;
   sessions: StoredCodeSession[];
 }
+
+type CustomizationKind = "skill" | "command" | "agent";
+type CustomizationScope = "workspace" | "user";
 
 interface ShellPtyRecord {
   readonly key: string;
@@ -114,6 +127,7 @@ interface ToolExecution {
 
 interface ModelTurn {
   text: string;
+  reasoning?: string;
   toolCalls: ToolCall[];
   rawToolCalls?: JsonObject[];
   fallbackToolMode?: boolean;
@@ -304,9 +318,10 @@ const CODE_TOOLS: ToolDefinition[] = [
       },
     },
   },
+  ...WEB_TOOLS,
 ];
 
-const CODE_SYSTEM_PROMPT = `You are a capable local coding agent embedded in a desktop Code UI. Work directly in the selected workspace and finish the user's task end to end. Inspect relevant files before editing, make focused changes, run proportionate verification, and report concrete outcomes. Use tools instead of guessing about workspace state. File tools are confined to selected roots. Bash may have broader effects, so keep commands scoped to the workspace. Use Artifact to publish an existing Markdown or HTML file, or mcp__desktop__present_artifact to create substantial visual or document output directly in the desktop workspace. Do not claim a command or edit succeeded unless its tool result says it did.`;
+const CODE_SYSTEM_PROMPT = `You are a capable local coding agent embedded in a desktop Code UI. Work directly in the selected workspace and finish the user's task end to end. Inspect relevant files before editing, make focused changes, run proportionate verification, and report concrete outcomes. Use tools instead of guessing about workspace state. File tools are confined to selected roots. Bash may have broader effects, so keep commands scoped to the workspace. Use web_search and visit_website when current public web information is required; cite the returned URLs and distinguish source reliability. Use Artifact to publish an existing Markdown or HTML file, or mcp__desktop__present_artifact to create substantial visual or document output directly in the desktop workspace. Do not claim a command or edit succeeded unless its tool result says it did.`;
 
 function isObject(value: unknown): value is JsonObject {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -318,6 +333,25 @@ function stringValue(value: unknown): string {
 
 function numberValue(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function reasoningRequest(effort: unknown): JsonObject {
+  if (effort === "auto" || effort === undefined || effort === null) return {};
+  if (effort === "off")
+    return {
+      thinking_budget_tokens: 0,
+      reasoning_budget: 0,
+      chat_template_kwargs: { enable_thinking: false },
+    };
+  if (["low", "medium", "high"].includes(String(effort)))
+    return {
+      reasoning_effort: effort,
+      chat_template_kwargs: {
+        enable_thinking: true,
+        reasoning_effort: effort,
+      },
+    };
+  return {};
 }
 
 function truncate(value: string, limit = MAX_TOOL_OUTPUT): string {
@@ -374,8 +408,42 @@ function artifactSlug(title: string): string {
   );
 }
 
+function artifactId(sessionId: string, url: string): string {
+  const hex = sha256(`${sessionId}\0${url}`).slice(0, 32).split("");
+  hex[12] = "4";
+  hex[16] = ((Number.parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  return [
+    hex.slice(0, 8).join(""),
+    hex.slice(8, 12).join(""),
+    hex.slice(12, 16).join(""),
+    hex.slice(16, 20).join(""),
+    hex.slice(20, 32).join(""),
+  ].join("-");
+}
+
 function messageTimestamp(): string {
   return new Date().toISOString();
+}
+
+function localDateKey(value: string | number | Date): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return localDateKey(new Date());
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function localDayNumber(value: string | number | Date): number {
+  const date = value instanceof Date ? value : new Date(value);
+  return Math.floor(
+    Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86_400_000,
+  );
+}
+
+function usageFromMessage(message: JsonObject): JsonObject {
+  return isObject(message.usage) ? message.usage : {};
 }
 
 function userTranscriptMessage(
@@ -400,21 +468,35 @@ function assistantTranscriptMessage(
   text: string,
   toolCalls: ToolCall[],
   usage: JsonObject = {},
+  reasoning = "",
 ): JsonObject {
   const uuid = randomUUID();
+  const timestamp = messageTimestamp();
   return {
     type: "assistant",
     uuid,
     session_id: sessionId,
     sessionId,
     parent_tool_use_id: null,
-    timestamp: messageTimestamp(),
+    timestamp,
     message: {
       id: uuid,
       type: "message",
       role: "assistant",
       model,
       content: [
+        ...(reasoning
+          ? [
+              {
+                type: "thinking",
+                thinking: reasoning,
+                signature: `local-openai:${randomUUID()}`,
+                summaries: [],
+                start_timestamp: timestamp,
+                stop_timestamp: timestamp,
+              },
+            ]
+          : []),
         ...(text ? [{ type: "text", text }] : []),
         ...toolCalls.map((call) => ({
           type: "tool_use",
@@ -596,6 +678,7 @@ export class LocalCodeSessionManager {
   readonly #provider: () => LocalProviderConfig | null;
   readonly #emitEvent: (event: JsonObject) => void;
   readonly #emitPermission: (request: ToolPermissionRequest) => void;
+  readonly #webTools?: WebToolRunner;
   readonly #sessions = new Map<string, StoredCodeSession>();
   readonly #controllers = new Map<string, AbortController>();
   readonly #queues = new Map<string, Promise<void>>();
@@ -610,11 +693,13 @@ export class LocalCodeSessionManager {
     provider: () => LocalProviderConfig | null,
     emitEvent: (event: JsonObject) => void,
     emitPermission: (request: ToolPermissionRequest) => void,
+    webTools?: WebToolRunner,
   ) {
     this.filePath = filePath;
     this.#provider = provider;
     this.#emitEvent = emitEvent;
     this.#emitPermission = emitPermission;
+    this.#webTools = webTools;
   }
 
   static async create(
@@ -622,12 +707,14 @@ export class LocalCodeSessionManager {
     provider: () => LocalProviderConfig | null,
     emitEvent: (event: JsonObject) => void,
     emitPermission: (request: ToolPermissionRequest) => void,
+    webTools?: WebToolRunner,
   ): Promise<LocalCodeSessionManager> {
     const manager = new LocalCodeSessionManager(
       path.join(userDataPath, "local-code-sessions.json"),
       provider,
       emitEvent,
       emitPermission,
+      webTools,
     );
     try {
       const parsed: unknown = JSON.parse(
@@ -764,14 +851,16 @@ export class LocalCodeSessionManager {
       case "getGitCommits":
         return this.getGitCommits(args[0], args[1], args[2]);
       case "getLocalMcpServers":
-      case "getAgents":
-      case "getSupportedCommands":
       case "getInstalledEditors":
       case "getSSHConfigs":
       case "getTrustedSSHHosts":
       case "listWslDistros":
       case "getBackgroundTaskSuggestions":
         return [];
+      case "getAgents":
+        return this.getAgents();
+      case "getSupportedCommands":
+        return this.getSupportedCommands(args[0]);
       case "checkGhAvailable":
         return this.commandAvailable("gh");
       case "isVSCodeInstalled":
@@ -781,11 +870,40 @@ export class LocalCodeSessionManager {
       case "openInEditor":
         return this.openEditor(args[0], args[1], args[3]);
       case "getContextUsage":
-        return undefined;
+        return this.getContextUsage(args[0]);
       case "getPlanForSession":
-      case "getCodeStats":
       case "getPeriodUsage":
         return null;
+      case "getCodeStats":
+        return this.getCodeStats();
+      case "getAllArtifacts":
+        return this.getAllArtifacts();
+      case "readArtifact":
+        return this.readArtifact(args[0], args[1]);
+      case "readArtifactById":
+        return this.readArtifactById(args[0]);
+      case "deleteArtifactById":
+        return this.deleteArtifactById(args[0]);
+      case "getCustomization":
+        return this.getCustomization(args[0]);
+      case "saveCustomization":
+        return this.saveCustomization(args[0]);
+      case "deleteCustomization":
+        return this.deleteCustomization(args[0]);
+      case "listLocalSkills":
+        return this.listLocalSkills();
+      case "saveLocalSkill":
+        return this.saveLocalSkill(args[0], args[1], args[2], args[3]);
+      case "deleteLocalSkill":
+        return this.deleteLocalSkill(args[0]);
+      case "getLocalSkillFiles":
+        return this.getLocalSkillFiles(args[0]);
+      case "setLocalSkillEnabled":
+        return this.setLocalSkillEnabled(args[0], args[1]);
+      case "revealLocalSkill":
+        return this.revealLocalSkill(args[0]);
+      case "syncSkills":
+        return this.listLocalSkills();
       case "setFocusedSession":
       case "setAvailableCodeModels":
       case "setFastMode":
@@ -970,10 +1088,12 @@ export class LocalCodeSessionManager {
     });
     await this.persist();
 
+    const localCustomization = await this.localCustomizationPrompt(session);
     const messages = this.providerHistory(
       session,
       systemPrompt,
       systemPromptAppend,
+      localCustomization,
     );
     let emptyTurns = 0;
     try {
@@ -1014,6 +1134,7 @@ export class LocalCodeSessionManager {
           turn.text,
           turn.toolCalls,
           turn.usage,
+          turn.reasoning,
         );
         this.append(session, assistant);
         messages.push(
@@ -1113,11 +1234,17 @@ export class LocalCodeSessionManager {
     session: StoredCodeSession,
     systemPrompt?: string,
     systemPromptAppend?: string,
+    localCustomization?: string,
   ): JsonObject[] {
     const messages: JsonObject[] = [
       {
         role: "system",
-        content: [CODE_SYSTEM_PROMPT, systemPrompt, systemPromptAppend]
+        content: [
+          CODE_SYSTEM_PROMPT,
+          localCustomization,
+          systemPrompt,
+          systemPromptAppend,
+        ]
           .filter(Boolean)
           .join("\n\n"),
       },
@@ -1133,6 +1260,64 @@ export class LocalCodeSessionManager {
       }
     }
     return messages.slice(-80);
+  }
+
+  private async localCustomizationPrompt(
+    session: StoredCodeSession,
+  ): Promise<string> {
+    try {
+      const result = await this.getCustomization(session.cwd);
+      const localSkillState = await this.readLocalSkillState();
+      const entries = Array.isArray(result.entries)
+        ? result.entries.filter(
+            (entry) =>
+              isObject(entry) &&
+              !(
+                entry.kind === "skill" &&
+                entry.scope === "user" &&
+                localSkillState[stringValue(entry.name)] === false
+              ),
+          )
+        : [];
+      const instructionFiles: Array<{ path: string; content: string }> = [];
+      for (const file of [
+        path.join(this.userCustomizationRoot(), "CLAUDE.md"),
+        path.join(session.cwd, "CLAUDE.md"),
+        path.join(session.cwd, ".claude", "CLAUDE.md"),
+      ]) {
+        try {
+          instructionFiles.push({
+            path: file,
+            content: await readFile(file, "utf8"),
+          });
+        } catch {
+          // Instruction files are optional.
+        }
+      }
+      if (entries.length === 0 && instructionFiles.length === 0) return "";
+      const sections: string[] = [
+        "Local customization is enabled. Apply the following workspace/user instructions when they are relevant. A command named X is invoked when the user's message starts with /X. An agent entry is a role specification, not a separate cloud worker; follow that role directly when asked.",
+      ];
+      let remaining = 64_000;
+      for (const instruction of instructionFiles) {
+        const section = `<local-instructions path=${JSON.stringify(instruction.path)}>\n${instruction.content}\n</local-instructions>`;
+        if (section.length > remaining) break;
+        sections.push(section);
+        remaining -= section.length;
+      }
+      for (const entry of entries) {
+        const content = stringValue(entry.content);
+        const header = `<local-${stringValue(entry.kind)} name=${JSON.stringify(stringValue(entry.name))} scope=${JSON.stringify(stringValue(entry.scope))}>`;
+        const footer = `</local-${stringValue(entry.kind)}>`;
+        const section = `${header}\n${content}\n${footer}`;
+        if (section.length > remaining) break;
+        sections.push(section);
+        remaining -= section.length;
+      }
+      return sections.join("\n\n");
+    } catch {
+      return "";
+    }
   }
 
   private async modelTurn(
@@ -1164,6 +1349,7 @@ export class LocalCodeSessionManager {
                 },
               ],
           ...(withTools ? { tools: CODE_TOOLS, tool_choice: "auto" } : {}),
+          ...reasoningRequest(session.effort),
         }),
       });
 
@@ -1193,6 +1379,25 @@ export class LocalCodeSessionManager {
       ? body.choices[0].message
       : {};
     const text = contentText(message.content);
+    const reasoning =
+      stringValue(message.reasoning_content || message.reasoning) ||
+      (Array.isArray(message.reasoning_details)
+        ? message.reasoning_details
+            .flatMap((detail) => {
+              if (typeof detail === "string") return [detail];
+              if (!isObject(detail)) return [];
+              return [
+                stringValue(
+                  detail.text ||
+                    detail.content ||
+                    detail.reasoning ||
+                    detail.summary,
+                ),
+              ];
+            })
+            .filter(Boolean)
+            .join("")
+        : "");
     const rawCalls = Array.isArray(message.tool_calls)
       ? message.tool_calls.filter(isObject)
       : [];
@@ -1221,6 +1426,7 @@ export class LocalCodeSessionManager {
     if (withTools) this.#providerToolSupport.set(providerKey, true);
     return {
       text: toolCalls.length > 0 && !withTools ? "" : text,
+      ...(reasoning ? { reasoning } : {}),
       toolCalls,
       ...(rawCalls.length > 0 ? { rawToolCalls: rawCalls } : {}),
       ...(!withTools ? { fallbackToolMode: true, providerContent: text } : {}),
@@ -1346,6 +1552,10 @@ export class LocalCodeSessionManager {
       return `${stringValue(call.arguments.action) || "Publish"} artifact: ${stringValue(call.arguments.file_path) || stringValue(call.arguments.title)}`;
     if (call.name === "mcp__desktop__present_artifact")
       return `Create artifact: ${stringValue(call.arguments.title)}`;
+    if (call.name === "web_search")
+      return `Search the web: ${stringValue(call.arguments.query)}`;
+    if (call.name === "visit_website")
+      return `Read webpage: ${stringValue(call.arguments.url)}`;
     return call.name;
   }
 
@@ -1381,6 +1591,24 @@ export class LocalCodeSessionManager {
         return this.toolSdkArtifact(session, call.arguments);
       case "mcp__desktop__present_artifact":
         return this.toolArtifact(session, call.arguments);
+      case "web_search":
+      case "visit_website": {
+        if (!this.#webTools)
+          throw new Error("Local web tools are not available in this runtime");
+        const modelOutput = await this.#webTools.execute(
+          call.name,
+          call.arguments,
+          signal,
+        );
+        return {
+          modelOutput,
+          toolUseResult: {
+            name: call.name,
+            input: call.arguments,
+            output: modelOutput,
+          },
+        };
+      }
       default:
         throw new Error(`Unknown tool: ${call.name}`);
     }
@@ -1788,6 +2016,590 @@ export class LocalCodeSessionManager {
     return [...this.#sessions.values()]
       .sort((a, b) => b.lastActivityAt - a.lastActivityAt)
       .map(publicSession);
+  }
+
+  private getCodeStats(): JsonObject {
+    const activity = new Map<
+      string,
+      {
+        date: string;
+        sessionCount: number;
+        messageCount: number;
+        toolCallCount: number;
+      }
+    >();
+    const dailyTokens = new Map<string, Record<string, number>>();
+    const modelUsage: Record<string, CodeModelUsage> = {};
+    const messageHours = Array.from({ length: 24 }, () => 0);
+
+    const day = (date: string) => {
+      let entry = activity.get(date);
+      if (!entry) {
+        entry = { date, sessionCount: 0, messageCount: 0, toolCallCount: 0 };
+        activity.set(date, entry);
+      }
+      return entry;
+    };
+
+    for (const session of this.#sessions.values()) {
+      day(localDateKey(session.createdAt)).sessionCount += 1;
+      for (const event of session.transcript) {
+        const timestamp = stringValue(event.timestamp);
+        const eventDate = localDateKey(timestamp || session.lastActivityAt);
+        const eventHour = new Date(
+          timestamp || session.lastActivityAt,
+        ).getHours();
+        const message = isObject(event.message) ? event.message : null;
+        if (!message) continue;
+
+        if (event.type === "user" && typeof message.content === "string") {
+          day(eventDate).messageCount += 1;
+          if (Number.isInteger(eventHour)) messageHours[eventHour] += 1;
+          continue;
+        }
+        if (event.type !== "assistant") continue;
+        day(eventDate).messageCount += 1;
+        const content = Array.isArray(message.content) ? message.content : [];
+        day(eventDate).toolCallCount += content.filter(
+          (block) => isObject(block) && block.type === "tool_use",
+        ).length;
+
+        const usage = usageFromMessage(message);
+        const inputTokens = numberValue(usage.input_tokens, 0);
+        const outputTokens = numberValue(usage.output_tokens, 0);
+        const cacheReadInputTokens = numberValue(
+          usage.cache_read_input_tokens,
+          0,
+        );
+        const cacheCreationInputTokens = numberValue(
+          usage.cache_creation_input_tokens,
+          0,
+        );
+        const model =
+          stringValue(message.model) || session.model || "local-model";
+        const aggregate = (modelUsage[model] ??= {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadInputTokens: 0,
+          cacheCreationInputTokens: 0,
+        });
+        aggregate.inputTokens += inputTokens;
+        aggregate.outputTokens += outputTokens;
+        aggregate.cacheReadInputTokens += cacheReadInputTokens;
+        aggregate.cacheCreationInputTokens += cacheCreationInputTokens;
+        const tokensByModel = dailyTokens.get(eventDate) ?? {};
+        tokensByModel[model] =
+          (tokensByModel[model] ?? 0) +
+          inputTokens +
+          outputTokens +
+          cacheReadInputTokens +
+          cacheCreationInputTokens;
+        dailyTokens.set(eventDate, tokensByModel);
+      }
+    }
+
+    const activeDays = [...activity.values()]
+      .filter((entry) => entry.messageCount > 0)
+      .map((entry) => localDayNumber(`${entry.date}T12:00:00`))
+      .sort((a, b) => a - b);
+    const uniqueDays = [...new Set(activeDays)];
+    let longestStreak = 0;
+    let runningStreak = 0;
+    let previousDay: number | undefined;
+    for (const activeDay of uniqueDays) {
+      runningStreak = previousDay === activeDay - 1 ? runningStreak + 1 : 1;
+      longestStreak = Math.max(longestStreak, runningStreak);
+      previousDay = activeDay;
+    }
+    const activeDaySet = new Set(uniqueDays);
+    const today = localDayNumber(new Date());
+    let cursor = activeDaySet.has(today) ? today : today - 1;
+    let currentStreak = 0;
+    while (activeDaySet.has(cursor)) {
+      currentStreak += 1;
+      cursor -= 1;
+    }
+    let peakActivityHour: number | null = null;
+    const peakCount = Math.max(...messageHours);
+    if (peakCount > 0) peakActivityHour = messageHours.indexOf(peakCount);
+
+    return {
+      dailyActivity: [...activity.values()].sort((a, b) =>
+        a.date.localeCompare(b.date),
+      ),
+      dailyModelTokens: [...dailyTokens.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([date, tokensByModel]) => ({ date, tokensByModel })),
+      modelUsage,
+      streaks: { currentStreak, longestStreak },
+      peakActivityHour,
+    };
+  }
+
+  private getContextUsage(sessionId: unknown): JsonObject | undefined {
+    const session = this.session(sessionId);
+    if (!session) return undefined;
+    const rawMaxTokens = this.#provider()?.contextWindow ?? 128_000;
+    const assistants = session.transcript.filter(
+      (event) => event.type === "assistant" && isObject(event.message),
+    );
+    const latestMessage = assistants.at(-1)?.message;
+    const latestUsage = isObject(latestMessage)
+      ? usageFromMessage(latestMessage)
+      : {};
+    let totalTokens =
+      numberValue(latestUsage.input_tokens, 0) +
+      numberValue(latestUsage.output_tokens, 0) +
+      numberValue(latestUsage.cache_read_input_tokens, 0) +
+      numberValue(latestUsage.cache_creation_input_tokens, 0);
+    if (totalTokens === 0) {
+      const characters = session.transcript.reduce((sum, event) => {
+        if (!isObject(event.message)) return sum;
+        return sum + contentText(event.message.content).length;
+      }, 0);
+      totalTokens = Math.ceil(characters / 4);
+    }
+    totalTokens = Math.min(totalTokens, rawMaxTokens);
+    return {
+      rawMaxTokens,
+      totalTokens,
+      percentage: rawMaxTokens > 0 ? (totalTokens / rawMaxTokens) * 100 : 0,
+      categories: [
+        { name: "Conversation", tokens: totalTokens },
+        { name: "Free space", tokens: Math.max(0, rawMaxTokens - totalTokens) },
+      ],
+      mcpTools: [],
+      memoryFiles: [],
+      agents: [],
+    };
+  }
+
+  private getAllArtifacts(): JsonObject[] {
+    return [...this.#sessions.values()]
+      .flatMap((session) =>
+        session.artifacts.map((artifact) => ({
+          ...artifact,
+          id: artifactId(session.sessionId, artifact.url),
+          sessionId: session.sessionId,
+          sessionTitle: session.title,
+          cwd: session.cwd,
+        })),
+      )
+      .sort((a, b) =>
+        stringValue(b.updatedAt).localeCompare(stringValue(a.updatedAt)),
+      );
+  }
+
+  private async readArtifact(
+    sessionId: unknown,
+    artifactUrl: unknown,
+  ): Promise<JsonObject | null> {
+    const session = this.session(sessionId);
+    if (!session || typeof artifactUrl !== "string") return null;
+    const artifact = session.artifacts.find(
+      (candidate) => candidate.url === artifactUrl,
+    );
+    if (!artifact) return null;
+    const extension = path.extname(artifact.path).toLowerCase();
+    const typeByExtension: Record<string, string> = {
+      ".htm": "text/html",
+      ".html": "text/html",
+      ".md": "text/markdown",
+      ".mmd": "application/vnd.ant.mermaid",
+      ".svg": "image/svg+xml",
+      ".tsx": "application/vnd.ant.react",
+    };
+    return {
+      ...artifact,
+      sessionId: session.sessionId,
+      sessionTitle: session.title,
+      cwd: session.cwd,
+      type: typeByExtension[extension] ?? "text/plain",
+      content: await readFile(artifact.path, "utf8"),
+    };
+  }
+
+  private async readArtifactById(id: unknown): Promise<JsonObject | null> {
+    if (typeof id !== "string") return null;
+    for (const session of this.#sessions.values()) {
+      const artifact = session.artifacts.find(
+        (candidate) => artifactId(session.sessionId, candidate.url) === id,
+      );
+      if (artifact) return this.readArtifact(session.sessionId, artifact.url);
+    }
+    return null;
+  }
+
+  private async deleteArtifactById(id: unknown): Promise<boolean> {
+    if (typeof id !== "string") return false;
+    for (const session of this.#sessions.values()) {
+      const next = session.artifacts.filter(
+        (candidate) => artifactId(session.sessionId, candidate.url) !== id,
+      );
+      if (next.length === session.artifacts.length) continue;
+      session.artifacts = next;
+      await this.persist();
+      return true;
+    }
+    return false;
+  }
+
+  private customizationRoot(cwd: string, scope: CustomizationScope): string {
+    return scope === "user"
+      ? this.userCustomizationRoot()
+      : path.join(cwd, ".claude");
+  }
+
+  private userCustomizationRoot(): string {
+    return path.join(path.dirname(this.filePath), ".claude");
+  }
+
+  private localSkillStatePath(): string {
+    return path.join(this.userCustomizationRoot(), "skill-state.json");
+  }
+
+  private async readLocalSkillState(): Promise<Record<string, boolean>> {
+    try {
+      const parsed: unknown = JSON.parse(
+        await readFile(this.localSkillStatePath(), "utf8"),
+      );
+      if (!isObject(parsed)) return {};
+      return Object.fromEntries(
+        Object.entries(parsed).filter(
+          (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+        ),
+      );
+    } catch {
+      return {};
+    }
+  }
+
+  private async writeLocalSkillState(
+    state: Record<string, boolean>,
+  ): Promise<void> {
+    const target = this.localSkillStatePath();
+    const temporary = `${target}.${process.pid}.${randomUUID()}.tmp`;
+    await mkdir(path.dirname(target), { recursive: true });
+    await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    await rename(temporary, target);
+  }
+
+  private localSkillPath(nameValue: unknown): string {
+    const name = stringValue(nameValue).trim();
+    return this.customizationPath(
+      path.dirname(this.filePath),
+      "user",
+      "skill",
+      name,
+    );
+  }
+
+  private async listLocalSkills(): Promise<JsonObject[]> {
+    const root = path.join(this.userCustomizationRoot(), "skills");
+    const enabled = await this.readLocalSkillState();
+    let entries: Dirent<string>[] = [];
+    try {
+      entries = await readdir(root, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    const skills: JsonObject[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const skillMd = path.join(root, entry.name, "SKILL.md");
+      try {
+        const [content, details] = await Promise.all([
+          readFile(skillMd, "utf8"),
+          stat(skillMd),
+        ]);
+        skills.push({
+          skillId: entry.name,
+          name: entry.name,
+          description: this.customizationDescription(content),
+          updatedAt: details.mtime.toISOString(),
+          enabled: enabled[entry.name] !== false,
+        });
+      } catch {
+        // Ignore incomplete skill directories.
+      }
+    }
+    return skills.sort((a, b) =>
+      stringValue(a.name).localeCompare(stringValue(b.name)),
+    );
+  }
+
+  private async saveLocalSkill(
+    nameValue: unknown,
+    _description: unknown,
+    skillMdValue: unknown,
+    overwriteValue: unknown,
+  ): Promise<JsonObject> {
+    const file = this.localSkillPath(nameValue);
+    const content = stringValue(skillMdValue);
+    if (!content.trim()) return { ok: false, error: "Skill content is empty" };
+    if (Buffer.byteLength(content, "utf8") > 1024 * 1024)
+      return { ok: false, error: "Skill files are limited to 1 MiB" };
+    const exists = await stat(file).then(
+      () => true,
+      () => false,
+    );
+    if (exists && overwriteValue !== true)
+      return { ok: false, error: "already_exists" };
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, content, { encoding: "utf8", mode: 0o600 });
+    const state = await this.readLocalSkillState();
+    if (!(stringValue(nameValue) in state)) {
+      state[stringValue(nameValue)] = true;
+      await this.writeLocalSkillState(state);
+    }
+    return { ok: true };
+  }
+
+  private async deleteLocalSkill(nameValue: unknown): Promise<JsonObject> {
+    const file = this.localSkillPath(nameValue);
+    const name = stringValue(nameValue).trim();
+    await rm(path.dirname(file), { recursive: true, force: true });
+    const state = await this.readLocalSkillState();
+    delete state[name];
+    await this.writeLocalSkillState(state);
+    return { ok: true };
+  }
+
+  private async getLocalSkillFiles(nameValue: unknown): Promise<JsonObject[]> {
+    const file = this.localSkillPath(nameValue);
+    const root = path.dirname(file);
+    const files: JsonObject[] = [];
+    const visit = async (directory: string): Promise<void> => {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const absolute = path.join(directory, entry.name);
+        if (entry.isDirectory()) await visit(absolute);
+        else if (entry.isFile()) {
+          const details = await stat(absolute);
+          if (details.size > 1024 * 1024) continue;
+          files.push({
+            path: path.relative(root, absolute).replaceAll("\\", "/"),
+            content: await readFile(absolute, "utf8"),
+          });
+        }
+      }
+    };
+    try {
+      await visit(root);
+    } catch {
+      return [];
+    }
+    return files.sort((a, b) =>
+      stringValue(a.path).localeCompare(stringValue(b.path)),
+    );
+  }
+
+  private async setLocalSkillEnabled(
+    nameValue: unknown,
+    enabledValue: unknown,
+  ): Promise<JsonObject> {
+    const name = stringValue(nameValue).trim();
+    this.localSkillPath(name);
+    const state = await this.readLocalSkillState();
+    state[name] = enabledValue !== false;
+    await this.writeLocalSkillState(state);
+    return { ok: true };
+  }
+
+  private async revealLocalSkill(nameValue: unknown): Promise<void> {
+    shell.showItemInFolder(this.localSkillPath(nameValue));
+  }
+
+  private customizationPath(
+    cwd: string,
+    scope: CustomizationScope,
+    kind: CustomizationKind,
+    name: string,
+  ): string {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name))
+      throw new Error(
+        "Names may contain letters, numbers, dots, underscores, and dashes",
+      );
+    const root = this.customizationRoot(cwd, scope);
+    const directory = path.join(root, `${kind}s`);
+    return kind === "skill"
+      ? path.join(directory, name, "SKILL.md")
+      : path.join(directory, `${name}.md`);
+  }
+
+  private async validateCustomizationCwd(value: unknown): Promise<string> {
+    if (typeof value !== "string" || !value.trim())
+      throw new Error("Select a workspace folder first");
+    const cwd = path.resolve(value);
+    if (!(await stat(cwd)).isDirectory())
+      throw new Error("Workspace is not a directory");
+    return cwd;
+  }
+
+  private async getCustomization(cwdValue: unknown): Promise<JsonObject> {
+    const cwd = await this.validateCustomizationCwd(cwdValue);
+    const entries: JsonObject[] = [];
+    for (const scope of ["workspace", "user"] as const) {
+      const root = this.customizationRoot(cwd, scope);
+      for (const kind of ["skill", "command", "agent"] as const) {
+        const directory = path.join(root, `${kind}s`);
+        let names: string[] = [];
+        try {
+          names = (await readdir(directory, { withFileTypes: true })).flatMap(
+            (entry) => {
+              if (kind === "skill" && entry.isDirectory()) return [entry.name];
+              if (
+                kind !== "skill" &&
+                entry.isFile() &&
+                entry.name.endsWith(".md")
+              )
+                return [entry.name.slice(0, -3)];
+              return [];
+            },
+          );
+        } catch {
+          // Missing customization directories are normal on a new workspace.
+        }
+        for (const name of names.sort((a, b) => a.localeCompare(b))) {
+          const file = this.customizationPath(cwd, scope, kind, name);
+          try {
+            entries.push({
+              kind,
+              scope,
+              name,
+              path: file,
+              content: await readFile(file, "utf8"),
+            });
+          } catch {
+            // Ignore partially removed or unreadable entries.
+          }
+        }
+      }
+    }
+    return { cwd, entries };
+  }
+
+  private async saveCustomization(input: unknown): Promise<JsonObject> {
+    if (!isObject(input)) throw new Error("Customization details are required");
+    const cwd = await this.validateCustomizationCwd(input.cwd);
+    const kind = input.kind;
+    const scope = input.scope;
+    const name = stringValue(input.name).trim();
+    const content = stringValue(input.content);
+    if (!(["skill", "command", "agent"] as unknown[]).includes(kind))
+      throw new Error("Unsupported customization kind");
+    if (!(["workspace", "user"] as unknown[]).includes(scope))
+      throw new Error("Unsupported customization scope");
+    if (!content.trim()) throw new Error("Content cannot be empty");
+    if (Buffer.byteLength(content, "utf8") > 1024 * 1024)
+      throw new Error("Customization files are limited to 1 MiB");
+    const file = this.customizationPath(
+      cwd,
+      scope as CustomizationScope,
+      kind as CustomizationKind,
+      name,
+    );
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, content, { encoding: "utf8", mode: 0o600 });
+    return { ok: true, cwd, kind, scope, name, path: file };
+  }
+
+  private async deleteCustomization(input: unknown): Promise<JsonObject> {
+    if (!isObject(input)) throw new Error("Customization details are required");
+    const cwd = await this.validateCustomizationCwd(input.cwd);
+    const kind = input.kind;
+    const scope = input.scope;
+    const name = stringValue(input.name).trim();
+    if (!(["skill", "command", "agent"] as unknown[]).includes(kind))
+      throw new Error("Unsupported customization kind");
+    if (!(["workspace", "user"] as unknown[]).includes(scope))
+      throw new Error("Unsupported customization scope");
+    const file = this.customizationPath(
+      cwd,
+      scope as CustomizationScope,
+      kind as CustomizationKind,
+      name,
+    );
+    await rm(kind === "skill" ? path.dirname(file) : file, {
+      recursive: kind === "skill",
+      force: true,
+    });
+    return { ok: true };
+  }
+
+  private customizationDescription(content: string): string {
+    return (
+      content.match(/^description:\s*["']?(.+?)["']?\s*$/im)?.[1]?.trim() ||
+      content
+        .replace(/^---[\s\S]*?---\s*/m, "")
+        .split(/\r?\n/)
+        .find((line) => line.trim() && !line.trim().startsWith("#"))
+        ?.trim() ||
+      "Local customization"
+    );
+  }
+
+  private async getAgents(): Promise<JsonObject[]> {
+    const roots = new Set<string>([
+      process.cwd(),
+      ...[...this.#sessions.values()].map((session) => session.cwd),
+    ]);
+    const agents = new Map<string, JsonObject>();
+    for (const cwd of roots) {
+      try {
+        const result = await this.getCustomization(cwd);
+        const entries = Array.isArray(result.entries)
+          ? result.entries.filter(isObject)
+          : [];
+        for (const entry of entries) {
+          if (entry.kind !== "agent") continue;
+          const key = `${stringValue(entry.scope)}:${stringValue(entry.name)}`;
+          agents.set(key, {
+            source: "user",
+            name: stringValue(entry.name),
+            description: this.customizationDescription(
+              stringValue(entry.content),
+            ),
+            path: stringValue(entry.path),
+          });
+        }
+      } catch {
+        // Ignore workspaces that disappeared since their last session.
+      }
+    }
+    return [...agents.values()];
+  }
+
+  private async getSupportedCommands(input: unknown): Promise<JsonObject[]> {
+    const details = isObject(input) ? input : {};
+    const session = this.session(details.sessionId);
+    const cwdValue = stringValue(details.cwd) || session?.cwd;
+    if (!cwdValue) return [];
+    try {
+      const result = await this.getCustomization(cwdValue);
+      const entries = Array.isArray(result.entries)
+        ? result.entries.filter(isObject)
+        : [];
+      return entries.flatMap((entry) => {
+        if (entry.kind !== "command" && entry.kind !== "skill") return [];
+        return [
+          {
+            name: stringValue(entry.name),
+            description: this.customizationDescription(
+              stringValue(entry.content),
+            ),
+            argumentHint: "[arguments]",
+            aliases: [],
+            scope: "code",
+            source: stringValue(entry.scope),
+          },
+        ];
+      });
+    } catch {
+      return [];
+    }
   }
 
   private getSession(sessionId: unknown): CodeSession | null {

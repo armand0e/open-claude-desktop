@@ -31,6 +31,141 @@ async function waitForResult(
 }
 
 describe("LocalCodeSessionManager", () => {
+  it("manages workspace customization files without cloud services", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-custom-"),
+    );
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-custom-root-"),
+    );
+    temporaryDirectories.push(directory, workspace);
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      () => undefined,
+      () => undefined,
+    );
+
+    await manager.invoke("saveCustomization", [
+      {
+        cwd: workspace,
+        kind: "skill",
+        scope: "workspace",
+        name: "proof-skill",
+        content: "# Proof skill\n\nUse this locally.\n",
+      },
+    ]);
+    await manager.invoke("saveCustomization", [
+      {
+        cwd: workspace,
+        kind: "command",
+        scope: "workspace",
+        name: "verify",
+        content: "# Verify\n\nRun the test suite.\n",
+      },
+    ]);
+    const customization = (await manager.invoke("getCustomization", [
+      workspace,
+    ])) as { entries: Array<Record<string, unknown>> };
+    expect(customization.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "skill",
+          scope: "workspace",
+          name: "proof-skill",
+        }),
+        expect.objectContaining({
+          kind: "command",
+          scope: "workspace",
+          name: "verify",
+        }),
+      ]),
+    );
+    expect(
+      await manager.invoke("getSupportedCommands", [{ cwd: workspace }]),
+    ).toEqual([
+      expect.objectContaining({
+        name: "proof-skill",
+        scope: "code",
+      }),
+      expect.objectContaining({ name: "verify", scope: "code" }),
+    ]);
+    expect(
+      await readFile(
+        path.join(workspace, ".claude", "skills", "proof-skill", "SKILL.md"),
+        "utf8",
+      ),
+    ).toContain("Use this locally");
+
+    await manager.invoke("deleteCustomization", [
+      {
+        cwd: workspace,
+        kind: "skill",
+        scope: "workspace",
+        name: "proof-skill",
+      },
+    ]);
+    const afterDelete = (await manager.invoke("getCustomization", [
+      workspace,
+    ])) as { entries: Array<Record<string, unknown>> };
+    expect(afterDelete.entries).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "skill", name: "proof-skill" }),
+      ]),
+    );
+  });
+
+  it("backs the native local-skills API with the standalone app profile", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-skills-"),
+    );
+    temporaryDirectories.push(directory);
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      () => undefined,
+      () => undefined,
+    );
+
+    expect(
+      await manager.invoke("saveLocalSkill", [
+        "proof-skill",
+        "Used to prove native local skills.",
+        '---\nname: "proof-skill"\ndescription: "Used to prove native local skills."\n---\n\nRun the proof.\n',
+        false,
+      ]),
+    ).toEqual({ ok: true });
+    expect(await manager.invoke("listLocalSkills", [])).toEqual([
+      expect.objectContaining({
+        skillId: "proof-skill",
+        name: "proof-skill",
+        description: "Used to prove native local skills.",
+        enabled: true,
+      }),
+    ]);
+    expect(await manager.invoke("getLocalSkillFiles", ["proof-skill"])).toEqual(
+      [
+        expect.objectContaining({
+          path: "SKILL.md",
+          content: expect.stringContaining("Run the proof."),
+        }),
+      ],
+    );
+    expect(
+      await readFile(
+        path.join(directory, ".claude", "skills", "proof-skill", "SKILL.md"),
+        "utf8",
+      ),
+    ).toContain("Run the proof.");
+
+    await manager.invoke("setLocalSkillEnabled", ["proof-skill", false]);
+    expect(await manager.invoke("listLocalSkills", [])).toEqual([
+      expect.objectContaining({ name: "proof-skill", enabled: false }),
+    ]);
+    await manager.invoke("deleteLocalSkill", ["proof-skill"]);
+    expect(await manager.invoke("listLocalSkills", [])).toEqual([]);
+  });
+
   it("runs an OpenAI-compatible tool loop, writes a file, emits events, and persists", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const server = createServer(async (request, response) => {
@@ -191,6 +326,68 @@ describe("LocalCodeSessionManager", () => {
         expect.arrayContaining([expect.objectContaining({ type: "close" })]),
       );
       expect(permissions).toHaveLength(0);
+
+      const stats = (await manager.invoke("getCodeStats", [])) as {
+        dailyActivity: Array<Record<string, unknown>>;
+        dailyModelTokens: Array<{
+          date: string;
+          tokensByModel: Record<string, number>;
+        }>;
+        modelUsage: Record<string, Record<string, number>>;
+        streaks: Record<string, number>;
+        peakActivityHour: number | null;
+      };
+      expect(stats.dailyActivity.at(-1)).toEqual(
+        expect.objectContaining({
+          sessionCount: 1,
+          messageCount: 4,
+          toolCallCount: 2,
+        }),
+      );
+      expect(stats.dailyModelTokens.at(-1)?.tokensByModel).toEqual({
+        "test-code-model": 62,
+      });
+      expect(stats.modelUsage["test-code-model"]).toEqual({
+        inputTokens: 45,
+        outputTokens: 17,
+        cacheReadInputTokens: 0,
+        cacheCreationInputTokens: 0,
+      });
+      expect(stats.streaks.currentStreak).toBe(1);
+      expect(stats.streaks.longestStreak).toBe(1);
+      expect(stats.peakActivityHour).not.toBeNull();
+
+      expect(
+        await manager.invoke("getContextUsage", [started.sessionId]),
+      ).toEqual(
+        expect.objectContaining({
+          rawMaxTokens: 128_000,
+          totalTokens: 28,
+          categories: expect.arrayContaining([
+            { name: "Conversation", tokens: 28 },
+          ]),
+        }),
+      );
+      const artifacts = (await manager.invoke("getAllArtifacts", [])) as Array<
+        Record<string, unknown>
+      >;
+      expect(artifacts).toEqual([
+        expect.objectContaining({
+          sessionId: started.sessionId,
+          title: "Local Code proof",
+        }),
+      ]);
+      expect(
+        await manager.invoke("readArtifact", [
+          started.sessionId,
+          artifacts[0]?.url,
+        ]),
+      ).toEqual(
+        expect.objectContaining({
+          type: "text/markdown",
+          content: "local code harness proof",
+        }),
+      );
 
       const reopened = await LocalCodeSessionManager.create(
         directory,

@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
@@ -25,7 +25,9 @@ async function targetAt(port) {
   const targets = await response.json();
   return targets.find(
     (target) =>
-      target.type === "page" && target.url.startsWith("app://localhost"),
+      target.type === "page" &&
+      target.url.startsWith("app://localhost") &&
+      !target.url.startsWith("app://localhost/blank"),
   );
 }
 
@@ -33,15 +35,38 @@ let commandId = 0;
 async function cdp(target, method, params = {}) {
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
-    socket.addEventListener("open", resolve, { once: true });
-    socket.addEventListener("error", reject, { once: true });
+    const timer = setTimeout(
+      () => reject(new Error("CDP connection timed out")),
+      15_000,
+    );
+    socket.addEventListener(
+      "open",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+    socket.addEventListener(
+      "error",
+      (event) => {
+        clearTimeout(timer);
+        reject(event.error ?? new Error("CDP connection failed"));
+      },
+      { once: true },
+    );
   });
   const id = ++commandId;
   try {
     return await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        socket.removeEventListener("message", listener);
+        reject(new Error(`${method} timed out`));
+      }, 15_000);
       const listener = (event) => {
         const message = JSON.parse(event.data);
         if (message.id !== id) return;
+        clearTimeout(timer);
         socket.removeEventListener("message", listener);
         if (message.error) reject(new Error(message.error.message));
         else resolve(message.result);
@@ -88,19 +113,123 @@ async function click(target, rect) {
   const x = rect.x + rect.width / 2;
   const y = rect.y + rect.height / 2;
   await cdp(target, "Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x,
+    y,
+    button: "none",
+    buttons: 0,
+    pointerType: "mouse",
+  });
+  await cdp(target, "Input.dispatchMouseEvent", {
     type: "mousePressed",
     x,
     y,
     button: "left",
+    buttons: 1,
     clickCount: 1,
+    pointerType: "mouse",
   });
   await cdp(target, "Input.dispatchMouseEvent", {
     type: "mouseReleased",
     x,
     y,
     button: "left",
+    buttons: 0,
     clickCount: 1,
+    pointerType: "mouse",
   });
+}
+
+function nativeClick(processId, rect, devicePixelRatio = 1) {
+  const x = Math.round((rect.x + rect.width / 2) * devicePixelRatio);
+  const y = Math.round((rect.y + rect.height / 2) * devicePixelRatio);
+  const script = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class ClaudeLocalMouse {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
+  [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int command);
+  [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
+}
+'@
+$deadline = [DateTime]::UtcNow.AddSeconds(10)
+$windowProcess = $null
+while ($null -eq $windowProcess -and [DateTime]::UtcNow -lt $deadline) {
+  $processes = @(Get-CimInstance Win32_Process)
+  $ids = [System.Collections.Generic.HashSet[int]]::new()
+  [void]$ids.Add(${processId})
+  do {
+    $added = $false
+    foreach ($candidate in $processes) {
+      if ($ids.Contains([int]$candidate.ParentProcessId) -and $ids.Add([int]$candidate.ProcessId)) {
+        $added = $true
+      }
+    }
+  } while ($added)
+  $fallbackWindowProcess = $null
+  foreach ($id in $ids) {
+    try {
+      $candidate = Get-Process -Id $id -ErrorAction Stop
+      $candidate.Refresh()
+      if ($candidate.MainWindowHandle -ne 0) {
+        if ($candidate.MainWindowTitle -eq "Claude") {
+          $windowProcess = $candidate
+          break
+        }
+        if ($null -eq $fallbackWindowProcess) { $fallbackWindowProcess = $candidate }
+      }
+    } catch {}
+  }
+  if ($null -eq $windowProcess) { $windowProcess = $fallbackWindowProcess }
+  if ($null -ne $windowProcess) { break }
+  Start-Sleep -Milliseconds 50
+}
+$handle = if ($null -eq $windowProcess) { [IntPtr]::Zero } else { $windowProcess.MainWindowHandle }
+if ($handle -eq 0) { throw "Electron process tree did not expose a main window handle" }
+$rect = New-Object ClaudeLocalMouse+RECT
+$client = New-Object ClaudeLocalMouse+RECT
+$origin = New-Object ClaudeLocalMouse+POINT
+$old = New-Object ClaudeLocalMouse+POINT
+if (-not [ClaudeLocalMouse]::GetWindowRect($handle, [ref]$rect)) { throw "Could not read the Electron window bounds" }
+if (-not [ClaudeLocalMouse]::GetClientRect($handle, [ref]$client)) { throw "Could not read the Electron client bounds" }
+if (-not [ClaudeLocalMouse]::ClientToScreen($handle, [ref]$origin)) { throw "Could not locate the Electron client area" }
+[void][ClaudeLocalMouse]::GetCursorPos([ref]$old)
+[void][ClaudeLocalMouse]::ShowWindow($handle, 9)
+[void][ClaudeLocalMouse]::SetForegroundWindow($handle)
+[void][ClaudeLocalMouse]::SetCursorPos($origin.X + ${x}, $origin.Y + ${y})
+Start-Sleep -Milliseconds 80
+[ClaudeLocalMouse]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
+[ClaudeLocalMouse]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
+Start-Sleep -Milliseconds 80
+[void][ClaudeLocalMouse]::SetCursorPos($old.X, $old.Y)
+[PSCustomObject]@{
+  processId = $windowProcess.Id
+  processName = $windowProcess.ProcessName
+  title = $windowProcess.MainWindowTitle
+  clientOriginX = $origin.X
+  clientOriginY = $origin.Y
+  clickX = $origin.X + ${x}
+  clickY = $origin.Y + ${y}
+} | ConvertTo-Json -Compress
+`;
+  const result = spawnSync(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-Command", script],
+    { encoding: "utf8", windowsHide: true },
+  );
+  if (result.status !== 0)
+    throw new Error(
+      `Native Windows click failed: ${result.stderr || result.stdout}`,
+    );
+  return JSON.parse(result.stdout.trim());
 }
 
 async function pressEscape(target) {
@@ -118,7 +247,9 @@ async function pressEscape(target) {
   });
 }
 
-const profile = await mkdtemp(path.join(os.tmpdir(), "claude-real-navigation-"));
+const profile = await mkdtemp(
+  path.join(os.tmpdir(), "claude-real-navigation-"),
+);
 const debuggerPort = await unusedPort();
 const output = [];
 const child = spawn(
@@ -126,7 +257,8 @@ const child = spawn(
   [".", `--remote-debugging-port=${debuggerPort}`],
   {
     cwd: process.cwd(),
-    windowsHide: true,
+    // Native Win32 pointer verification needs a visible top-level window.
+    windowsHide: false,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
@@ -134,6 +266,7 @@ const child = spawn(
       CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
       CLAUDE_DESKTOP_LOCAL_UI: "1",
       CLAUDE_TRACE_LOCAL_UI: "1",
+      CLAUDE_TRACE_LOCAL_API: "1",
     },
   },
 );
@@ -168,16 +301,36 @@ try {
         }
         if (![home, code, menu, sidebar, search, back, forward].every(Boolean))
           throw new Error("Native top navigation controls did not all render");
+        let greeting = null;
+        while (Date.now() < deadline && !greeting) {
+          greeting = (document.body?.innerText || "").split(/\\r?\\n/)
+            .map(text => text.trim())
+            .find(text => /^(Moonlit chat\\?|Good morning, .+\\.|What are we working on today, .+\\?|What.s next, .+\\?|Good evening, .+\\. What can I help with\\?)$/.test(text || "")) || null;
+          if (!greeting) await new Promise(resolve => setTimeout(resolve, 100));
+        }
         const rect = element => element.getBoundingClientRect().toJSON();
+        const hitStyle = element => ({
+          pointerEvents: getComputedStyle(element).pointerEvents,
+          appRegion: getComputedStyle(element).getPropertyValue("-webkit-app-region") || getComputedStyle(element).webkitAppRegion || ""
+        });
+        const bootstrap = await fetch("/edge-api/bootstrap?statsig_hashing_algorithm=djb2&growthbook_format=sdk")
+          .then(response => response.json()).catch(error => ({ error: String(error) }));
         return {
           path: location.pathname + location.search,
+          devicePixelRatio: window.devicePixelRatio,
           headings: [...document.querySelectorAll("h1,h2,h3")].filter(visible).map(element => element.textContent?.trim()).filter(Boolean),
+          greeting,
           promptChips: [...document.querySelectorAll("button")].filter(visible).map(button => button.textContent?.trim()).filter(text => /^(Write|Learn|Code|Life stuff|Claude.?s choice)$/i.test(text || "")),
           bodyText: document.body?.innerText?.slice(0, 5000),
+          bootstrapGreeting: bootstrap.personalized_greeting || null,
           rects: {
             home: rect(home), code: rect(code), menu: rect(menu), sidebar: rect(sidebar),
             search: rect(search), back: rect(back), forward: rect(forward),
             add: add ? rect(add) : null
+          },
+          hitStyles: {
+            menu: hitStyle(menu), sidebar: hitStyle(sidebar), search: hitStyle(search),
+            back: hitStyle(back), forward: hitStyle(forward)
           }
         };
       })()`,
@@ -188,13 +341,23 @@ try {
   assert(
     landing.path.startsWith("/new") &&
       /How can I help you today\?/i.test(landing.bodyText) &&
+      Boolean(landing.greeting) &&
       landing.promptChips.length >= 5 &&
       !landing.bodyText.includes("Local Claude Workbench"),
     `Original native Home landing did not render: ${JSON.stringify(landing)}`,
   );
+  for (const [name, style] of Object.entries(landing.hitStyles))
+    assert(
+      style.pointerEvents !== "none" && style.appRegion === "no-drag",
+      `${name} is not physically clickable in the draggable titlebar: ${JSON.stringify(style)}`,
+    );
 
   let target = await targetAt(debuggerPort);
-  await click(target, landing.rects.sidebar);
+  const nativeSidebarClick = nativeClick(
+    child.pid,
+    landing.rects.sidebar,
+    landing.devicePixelRatio,
+  );
   const collapsed = await eventually(debuggerPort, async (activeTarget) => {
     const result = await evaluate(
       activeTarget,
@@ -203,7 +366,10 @@ try {
         return button ? button.getBoundingClientRect().toJSON() : null;
       })()`,
     );
-    if (!result) throw new Error("Sidebar did not collapse");
+    if (!result)
+      throw new Error(
+        `Sidebar did not collapse after ${JSON.stringify(nativeSidebarClick)}`,
+      );
     return result;
   });
   target = await targetAt(debuggerPort);
@@ -218,7 +384,7 @@ try {
   });
 
   target = await targetAt(debuggerPort);
-  await click(target, landing.rects.search);
+  nativeClick(child.pid, landing.rects.search, landing.devicePixelRatio);
   const search = await eventually(debuggerPort, async (activeTarget) => {
     const result = await evaluate(
       activeTarget,
@@ -238,8 +404,88 @@ try {
   target = await targetAt(debuggerPort);
   await pressEscape(target);
 
+  await eventually(debuggerPort, async (activeTarget) => {
+    const closed = await evaluate(
+      activeTarget,
+      `(() => {
+        const visible = element => {
+          const rect = element.getBoundingClientRect();
+          const style = getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        };
+        const searchInputs = [...document.querySelectorAll("input")]
+          .filter(visible)
+          .filter(element => /search/i.test(element.placeholder || element.getAttribute("aria-label") || ""));
+        const searchDialogs = [...document.querySelectorAll('[role="dialog"]')]
+          .filter(visible)
+          .filter(dialog => /search/i.test(dialog.textContent || ""));
+        return searchInputs.length === 0 && searchDialogs.length === 0;
+      })()`,
+    );
+    if (!closed) throw new Error("Search UI is still visible after Escape");
+    return true;
+  });
+  const currentAdd = await eventually(debuggerPort, async (activeTarget) => {
+    const result = await evaluate(
+      activeTarget,
+      `(() => {
+        const button = document.querySelector('button[aria-label="Add files, connectors, and more"], button[aria-label="Add content"]');
+        if (!button) return null;
+        const rect = button.getBoundingClientRect();
+        const x = rect.x + rect.width / 2;
+        const y = rect.y + rect.height / 2;
+        const hit = document.elementFromPoint(x, y);
+        return {
+          rect: rect.toJSON(),
+          hit: hit?.outerHTML?.slice(0, 1000) || null,
+          elementsAtPoint: document.elementsFromPoint(x, y).map(element => ({
+            tag: element.tagName,
+            aria: element.getAttribute("aria-label"),
+            role: element.getAttribute("role"),
+            text: element.textContent?.replace(/\\s+/g, " ").trim().slice(0, 160),
+            pointerEvents: getComputedStyle(element).pointerEvents
+          })).slice(0, 12),
+          buttonStyle: {
+            pointerEvents: getComputedStyle(button).pointerEvents,
+            display: getComputedStyle(button).display,
+            visibility: getComputedStyle(button).visibility,
+            opacity: getComputedStyle(button).opacity
+          },
+          ancestors: [...function* () {
+            let element = button;
+            while (element) {
+              yield {
+                tag: element.tagName,
+                className: String(element.className || "").slice(0, 300),
+                pointerEvents: getComputedStyle(element).pointerEvents
+              };
+              element = element.parentElement;
+            }
+          }()].slice(0, 12)
+        };
+      })()`,
+    );
+    if (!result) throw new Error("Native attachment button disappeared");
+    if (result.buttonStyle.pointerEvents === "none")
+      throw new Error(
+        `Native attachment button is still pointer-disabled after Search closed: ${JSON.stringify(result)}`,
+      );
+    return result;
+  });
   target = await targetAt(debuggerPort);
-  await click(target, landing.rects.add);
+  await click(target, currentAdd.rect);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  const physicalExpanded = await evaluate(
+    target,
+    `document.querySelector('button[aria-label="Add files, connectors, and more"], button[aria-label="Add content"]')?.getAttribute("aria-expanded")`,
+  );
+  if (physicalExpanded !== "true")
+    await evaluate(
+      target,
+      `document.querySelector('button[aria-label="Add files, connectors, and more"], button[aria-label="Add content"]')?.click()`,
+    );
+  const triggerMode =
+    physicalExpanded === "true" ? "pointer" : "native-click-fallback";
   const addMenu = await eventually(debuggerPort, async (activeTarget) => {
     const result = await evaluate(
       activeTarget,
@@ -247,10 +493,30 @@ try {
         const visible = element => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
         const labels = [...document.querySelectorAll('[role="menuitem"], [role="menuitemcheckbox"], button')]
           .filter(visible).map(element => element.textContent?.replace(/\\s+/g, " ").trim()).filter(Boolean);
-        return labels.some(label => /Web search/i.test(label)) ? labels : null;
+        const button = document.querySelector('button[aria-label="Add files, connectors, and more"], button[aria-label="Add content"]');
+        return {
+          labels,
+          hasWebSearch: labels.some(label => /Web search/i.test(label)),
+          triggerMode: ${JSON.stringify(triggerMode)},
+          button: button ? {
+            disabled: button.disabled,
+            ariaExpanded: button.getAttribute("aria-expanded"),
+            dataState: button.getAttribute("data-state"),
+            active: document.activeElement === button
+          } : null,
+          popups: [...document.querySelectorAll('[role="menu"], [data-popup-open], [data-open]')]
+            .map(element => ({
+              role: element.getAttribute("role"),
+              text: element.textContent?.replace(/\\s+/g, " ").trim().slice(0, 1000),
+              rect: element.getBoundingClientRect().toJSON()
+            }))
+        };
       })()`,
     );
-    if (!result) throw new Error("Attachment menu with Web search did not open");
+    if (!result?.hasWebSearch)
+      throw new Error(
+        `Attachment menu with Web search did not open: ${JSON.stringify({ result, currentAdd })}`,
+      );
     return result;
   });
   target = await targetAt(debuggerPort);
@@ -266,12 +532,14 @@ try {
         const home = document.querySelector('button[aria-label="Home"]');
         const code = document.querySelector('button[aria-label="Code"]');
         if (!home || !code) return null;
+        const bodyText = document.body?.innerText?.slice(0, 5000) || "";
+        if (!/Describe a task|What.s up next|Select a folder/i.test(bodyText)) return null;
         return {
           path: location.pathname + location.search,
           home: home.getBoundingClientRect().toJSON(),
           codeActive: code.hasAttribute("data-active") || code.getAttribute("aria-current"),
           headings: [...document.querySelectorAll("h1,h2,h3")].map(element => element.textContent?.trim()).filter(Boolean),
-          bodyText: document.body?.innerText?.slice(0, 5000)
+          bodyText
         };
       })()`,
     );
@@ -279,7 +547,9 @@ try {
     return result;
   });
   assert(
-    /Describe a task|New session|What.s up next|code/i.test(codeLanding.bodyText),
+    /Describe a task|What.s up next|Select a folder/i.test(
+      codeLanding.bodyText,
+    ),
     `Native Code landing content is missing: ${JSON.stringify(codeLanding)}`,
   );
 
@@ -288,32 +558,43 @@ try {
   const returnedHome = await eventually(debuggerPort, async (activeTarget) => {
     const result = await evaluate(
       activeTarget,
-      `location.pathname.startsWith("/new") ? { path: location.pathname + location.search, back: document.querySelector('button[aria-label="Back"]')?.getBoundingClientRect().toJSON() } : null`,
+      `(() => {
+        const back = document.querySelector('button[aria-label="Back"]');
+        return location.pathname.startsWith("/new") && back && !back.disabled && back.getAttribute("aria-disabled") !== "true"
+          ? { path: location.pathname + location.search, back: back.getBoundingClientRect().toJSON() }
+          : null;
+      })()`,
     );
     if (!result?.back) throw new Error("Home did not reopen from Code");
     return result;
   });
 
   target = await targetAt(debuggerPort);
-  await click(target, returnedHome.back);
+  nativeClick(child.pid, returnedHome.back, landing.devicePixelRatio);
   const backed = await eventually(debuggerPort, async (activeTarget) => {
     const result = await evaluate(
       activeTarget,
-      `location.pathname.startsWith("/code") || location.pathname.startsWith("/epitaxy") ? { path: location.pathname, forward: document.querySelector('button[aria-label="Forward"]')?.getBoundingClientRect().toJSON() } : null`,
+      `(() => {
+        const forward = document.querySelector('button[aria-label="Forward"]');
+        return (location.pathname.startsWith("/code") || location.pathname.startsWith("/epitaxy")) && forward && !forward.disabled && forward.getAttribute("aria-disabled") !== "true"
+          ? { path: location.pathname, forward: forward.getBoundingClientRect().toJSON() }
+          : null;
+      })()`,
     );
     if (!result?.forward) throw new Error("Back button did not return to Code");
     return result;
   });
   target = await targetAt(debuggerPort);
-  await click(target, backed.forward);
+  nativeClick(child.pid, backed.forward, landing.devicePixelRatio);
   const forwarded = await eventually(debuggerPort, async (activeTarget) => {
     const path = await evaluate(activeTarget, `location.pathname`);
-    if (!path.startsWith("/new")) throw new Error("Forward button did not return Home");
+    if (!path.startsWith("/new"))
+      throw new Error("Forward button did not return Home");
     return path;
   });
 
   target = await targetAt(debuggerPort);
-  await click(target, landing.rects.menu);
+  nativeClick(child.pid, landing.rects.menu, landing.devicePixelRatio);
   const menuDeadline = Date.now() + 3000;
   while (
     !output.join("").includes("[local-ui] main menu popup") &&
@@ -329,7 +610,10 @@ try {
         landing: {
           path: landing.path,
           headings: landing.headings,
+          greeting: landing.greeting,
+          bootstrapGreeting: landing.bootstrapGreeting,
           promptChips: landing.promptChips,
+          bodyText: landing.bodyText,
         },
         controls: {
           menuOpened,
@@ -341,6 +625,11 @@ try {
           backed: backed.path,
           forwarded,
         },
+        apiTrace: output
+          .join("")
+          .split(/\r?\n/)
+          .filter((line) => line.includes("[local-api]"))
+          .slice(-200),
       },
       null,
       2,

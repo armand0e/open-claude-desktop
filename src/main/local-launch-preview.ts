@@ -39,6 +39,8 @@ interface PreviewEntry {
   logs: Array<{ line: string; timestamp: string }>;
   viewport?: { width: number; height: number };
   colorScheme: "light" | "dark" | "system";
+  selectionEnabled: boolean;
+  selectionGeneration: number;
 }
 
 interface LaunchConfiguration {
@@ -86,7 +88,9 @@ function objectValue(value: unknown): JsonObject {
 function rectangle(value: unknown): Rectangle | null {
   const candidate = objectValue(value);
   const values = [candidate.x, candidate.y, candidate.width, candidate.height];
-  if (!values.every((part) => typeof part === "number" && Number.isFinite(part)))
+  if (
+    !values.every((part) => typeof part === "number" && Number.isFinite(part))
+  )
     return null;
   return {
     x: Math.max(0, Math.round(candidate.x as number)),
@@ -138,9 +142,7 @@ async function isPortAvailable(port: number): Promise<boolean> {
   const server = createServer();
   return new Promise<boolean>((resolve) => {
     server.once("error", () => resolve(false));
-    server.listen(port, "127.0.0.1", () =>
-      server.close(() => resolve(true)),
-    );
+    server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
   });
 }
 
@@ -172,11 +174,217 @@ function escapeHtml(value: string): string {
   );
 }
 
+const CANCEL_ELEMENT_SELECTION_SCRIPT = `(() => {
+  const picker = window.__claudeLocalElementPicker;
+  if (picker && typeof picker.cancel === "function") picker.cancel();
+  return true;
+})()`;
+
+const ELEMENT_SELECTION_SCRIPT = `(() => {
+  const key = "__claudeLocalElementPicker";
+  const previous = window[key];
+  if (previous && typeof previous.cancel === "function") previous.cancel();
+
+  return new Promise((resolve) => {
+    let finished = false;
+    let target = null;
+    const host = document.body || document.documentElement;
+    const overlay = document.createElement("div");
+    const label = document.createElement("div");
+    const cursorStyle = document.createElement("style");
+
+    overlay.dataset.claudeLocalElementPicker = "overlay";
+    Object.assign(overlay.style, {
+      position: "fixed",
+      zIndex: "2147483646",
+      pointerEvents: "none",
+      display: "none",
+      boxSizing: "border-box",
+      border: "2px solid rgb(217, 119, 87)",
+      background: "rgba(217, 119, 87, 0.14)",
+      borderRadius: "3px",
+      boxShadow: "0 0 0 1px rgba(255, 255, 255, 0.7)",
+    });
+    Object.assign(label.style, {
+      position: "absolute",
+      left: "-2px",
+      bottom: "calc(100% + 4px)",
+      maxWidth: "min(420px, 90vw)",
+      overflow: "hidden",
+      padding: "4px 7px",
+      borderRadius: "4px",
+      background: "rgb(35, 33, 31)",
+      color: "white",
+      font: "12px/1.35 ui-monospace, SFMono-Regular, Consolas, monospace",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap",
+      boxShadow: "0 2px 8px rgba(0, 0, 0, 0.28)",
+    });
+    cursorStyle.textContent = "* { cursor: crosshair !important; }";
+    overlay.appendChild(label);
+    host.appendChild(overlay);
+    (document.head || document.documentElement).appendChild(cursorStyle);
+
+    const escapeIdentifier = (value) => {
+      if (window.CSS && typeof window.CSS.escape === "function")
+        return window.CSS.escape(value);
+      return String(value).replace(/[^a-zA-Z0-9_-]/g, (character) =>
+        "\\\\" + character.charCodeAt(0).toString(16) + " ",
+      );
+    };
+    const selectorSegment = (element) => {
+      if (element.id) return "#" + escapeIdentifier(element.id);
+      let segment = element.tagName.toLowerCase();
+      const classes = Array.from(element.classList || []).filter(Boolean).slice(0, 2);
+      if (classes.length)
+        segment += classes.map((name) => "." + escapeIdentifier(name)).join("");
+      const parent = element.parentElement;
+      if (parent) {
+        const peers = Array.from(parent.children).filter(
+          (candidate) => candidate.tagName === element.tagName,
+        );
+        if (peers.length > 1)
+          segment += ":nth-of-type(" + (peers.indexOf(element) + 1) + ")";
+      }
+      return segment;
+    };
+    const selectorFor = (element) => {
+      const parts = [];
+      let current = element;
+      while (current && parts.length < 6) {
+        const segment = selectorSegment(current);
+        parts.unshift(segment);
+        if (segment.startsWith("#") || current === document.body) break;
+        current = current.parentElement;
+      }
+      return parts.join(" > ");
+    };
+    const elementFromEvent = (event) => {
+      const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+      return (
+        path.find(
+          (candidate) =>
+            candidate instanceof Element &&
+            candidate !== overlay &&
+            !overlay.contains(candidate),
+        ) || (event.target instanceof Element ? event.target : null)
+      );
+    };
+    const showTarget = (element) => {
+      if (!element || element === overlay || overlay.contains(element)) return;
+      target = element;
+      const rect = element.getBoundingClientRect();
+      overlay.style.display = "block";
+      overlay.style.left = Math.round(rect.left) + "px";
+      overlay.style.top = Math.round(rect.top) + "px";
+      overlay.style.width = Math.max(1, Math.round(rect.width)) + "px";
+      overlay.style.height = Math.max(1, Math.round(rect.height)) + "px";
+      label.textContent = selectorFor(element);
+      label.style.bottom = rect.top < 34 ? "auto" : "calc(100% + 4px)";
+      label.style.top = rect.top < 34 ? "calc(100% + 4px)" : "auto";
+    };
+    const onMove = (event) => showTarget(elementFromEvent(event));
+    const blockPointer = (event) => {
+      if (!elementFromEvent(event)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    const cleanup = () => {
+      document.removeEventListener("mousemove", onMove, true);
+      document.removeEventListener("pointerdown", blockPointer, true);
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("keydown", onKeyDown, true);
+      overlay.remove();
+      cursorStyle.remove();
+      if (window[key]?.finish === finish) delete window[key];
+    };
+    const finish = (value) => {
+      if (finished) return;
+      finished = true;
+      cleanup();
+      resolve(value);
+    };
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      finish(null);
+    };
+    const onClick = (event) => {
+      const element = elementFromEvent(event) || target;
+      if (!element) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      const rect = element.getBoundingClientRect();
+      const attributes = {};
+      for (const attribute of Array.from(element.attributes || []).slice(0, 50))
+        attributes[String(attribute.name).slice(0, 64)] = String(attribute.value).slice(0, 512);
+      const styleNames = [
+        "display", "position", "inset", "top", "right", "bottom", "left",
+        "z-index", "box-sizing", "width", "height", "min-width", "min-height",
+        "max-width", "max-height", "margin", "padding", "overflow", "opacity",
+        "color", "background", "background-color", "background-image",
+        "border", "border-color", "border-radius", "box-shadow", "font-family",
+        "font-size", "font-style", "font-weight", "line-height", "letter-spacing",
+        "text-align", "text-decoration", "text-transform", "white-space",
+        "flex", "flex-direction", "flex-wrap", "align-items", "justify-content",
+        "gap", "grid-template-columns", "grid-template-rows", "transform",
+        "transition", "cursor"
+      ];
+      const computed = getComputedStyle(element);
+      const computedStyles = {};
+      for (const name of styleNames) {
+        const value = computed.getPropertyValue(name);
+        if (value) computedStyles[name] = String(value).slice(0, 256);
+      }
+      const siblingParts = [
+        element.previousElementSibling,
+        element.nextElementSibling,
+      ]
+        .filter((candidate) => candidate && candidate !== overlay)
+        .map((candidate) => candidate.outerHTML);
+      finish({
+        tagName: element.tagName.toLowerCase().slice(0, 32),
+        id: element.id ? element.id.slice(0, 128) : undefined,
+        classes: Array.from(element.classList || [])
+          .slice(0, 50)
+          .map((value) => String(value).slice(0, 128)),
+        attributes,
+        computedStyles,
+        boundingBox: {
+          x: rect.x,
+          y: rect.y,
+          width: rect.width,
+          height: rect.height,
+        },
+        screenshot: "",
+        innerText:
+          String(element.innerText || element.textContent || "").trim().slice(0, 300) ||
+          undefined,
+        parentPath: selectorFor(element),
+        action: "inspect",
+        outerHTML: String(element.outerHTML || "").slice(0, 6000) || undefined,
+        siblingHTML: siblingParts.join("\\n").slice(0, 4000) || undefined,
+      });
+    };
+
+    window[key] = { cancel: () => finish(null), finish };
+    document.addEventListener("mousemove", onMove, true);
+    document.addEventListener("pointerdown", blockPointer, true);
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("keydown", onKeyDown, true);
+  });
+})()`;
+
 export class LocalLaunchPreview {
   readonly #window: () => BrowserWindow | null;
   readonly #codeSessions: LocalCodeSessionManager;
   readonly #onChange: (servers: readonly LaunchServer[]) => void;
-  readonly #session = electronSession.fromPartition("persist:claude-local-launch");
+  readonly #onElementSelected: (serverId: string, context: JsonObject) => void;
+  readonly #session = electronSession.fromPartition(
+    "persist:claude-local-launch",
+  );
   readonly #entries = new Map<string, PreviewEntry>();
   readonly #tokens = new Map<string, PreviewEntry>();
   readonly #autoVerify = new Map<string, boolean>();
@@ -185,10 +393,12 @@ export class LocalLaunchPreview {
     window: () => BrowserWindow | null,
     codeSessions: LocalCodeSessionManager,
     onChange: (servers: readonly LaunchServer[]) => void,
+    onElementSelected: (serverId: string, context: JsonObject) => void,
   ) {
     this.#window = window;
     this.#codeSessions = codeSessions;
     this.#onChange = onChange;
+    this.#onElementSelected = onElementSelected;
     this.#session.protocol.handle("claude-local-launch", (request) =>
       this.#handle(request),
     );
@@ -207,11 +417,14 @@ export class LocalLaunchPreview {
       const url = new URL(request.url);
       const entry = this.#tokens.get(url.hostname);
       if (!entry) return new Response("Preview expired", { status: 404 });
-      const relative = decodeURIComponent(url.pathname.slice(1)) || "index.html";
+      const relative =
+        decodeURIComponent(url.pathname.slice(1)) || "index.html";
       if (relative === "index.html" && entry.inlineContent !== undefined) {
         return new Response(entry.inlineContent, {
           headers: {
-            "Content-Type": entry.server.filePath?.toLowerCase().endsWith(".svg")
+            "Content-Type": entry.server.filePath
+              ?.toLowerCase()
+              .endsWith(".svg")
               ? "image/svg+xml; charset=utf-8"
               : "text/html; charset=utf-8",
             "Cache-Control": "no-store",
@@ -244,7 +457,9 @@ export class LocalLaunchPreview {
   }
 
   #entry(serverId: unknown): PreviewEntry | undefined {
-    return typeof serverId === "string" ? this.#entries.get(serverId) : undefined;
+    return typeof serverId === "string"
+      ? this.#entries.get(serverId)
+      : undefined;
   }
 
   #createEntry(input: {
@@ -281,6 +496,8 @@ export class LocalLaunchPreview {
       attached: false,
       logs: [],
       colorScheme: "system",
+      selectionEnabled: false,
+      selectionGeneration: 0,
     };
     this.#entries.set(serverId, entry);
     this.#tokens.set(token, entry);
@@ -311,8 +528,72 @@ export class LocalLaunchPreview {
     };
     view.webContents.on("will-navigate", protectNavigation);
     view.webContents.on("will-redirect", protectNavigation);
+    view.webContents.on("did-finish-load", () => {
+      if (!entry.selectionEnabled) return;
+      const generation = ++entry.selectionGeneration;
+      void this.#runElementSelection(entry, generation);
+    });
     entry.view = view;
     return view;
+  }
+
+  async #captureSelectedElement(
+    entry: PreviewEntry,
+    context: JsonObject,
+  ): Promise<string> {
+    const view = entry.view;
+    const bounds = rectangle(context.boundingBox);
+    if (!view || view.webContents.isDestroyed() || !bounds) return "";
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 32 * (attempt + 1)));
+      try {
+        const page = await view.webContents.capturePage();
+        const size = page.getSize();
+        if (size.width < 1 || size.height < 1) continue;
+        const x = Math.max(0, Math.min(bounds.x, size.width - 1));
+        const y = Math.max(0, Math.min(bounds.y, size.height - 1));
+        const width = Math.max(
+          1,
+          Math.min(bounds.width, Math.max(1, size.width - x)),
+        );
+        const height = Math.max(
+          1,
+          Math.min(bounds.height, Math.max(1, size.height - y)),
+        );
+        const cropped = page.crop({ x, y, width, height });
+        const screenshot = (cropped.isEmpty() ? page : cropped)
+          .toPNG()
+          .toString("base64");
+        if (screenshot.length <= 2_000_000) return screenshot;
+      } catch {
+        // A just-finished pointer event can race Chromium's next compositor
+        // frame. The second attempt runs after that frame is available.
+      }
+    }
+    return "";
+  }
+
+  async #runElementSelection(
+    entry: PreviewEntry,
+    generation: number,
+  ): Promise<void> {
+    const view = entry.view;
+    if (!view || view.webContents.isDestroyed()) return;
+    const selected = await view.webContents
+      .executeJavaScript(ELEMENT_SELECTION_SCRIPT, true)
+      .catch(() => null);
+    if (
+      !entry.selectionEnabled ||
+      entry.selectionGeneration !== generation ||
+      !selected ||
+      typeof selected !== "object" ||
+      Array.isArray(selected)
+    )
+      return;
+    entry.selectionEnabled = false;
+    const context = selected as JsonObject;
+    context.screenshot = await this.#captureSelectedElement(entry, context);
+    this.#onElementSelected(entry.server.serverId, context);
   }
 
   #setBounds(entry: PreviewEntry, bounds: Rectangle): void {
@@ -345,13 +626,26 @@ export class LocalLaunchPreview {
       const root = await realpath(path.resolve(cwd)).catch(() => null);
       const candidate = path.resolve(cwd, filePath);
       const canonical = await realpath(candidate).catch(() => null);
-      if (root && canonical && isPathInside(root, canonical)) resolved = canonical;
+      if (root && canonical && isPathInside(root, canonical))
+        resolved = canonical;
     }
     if (!resolved) return null;
     const details = await stat(resolved).catch(() => null);
     if (!details?.isFile() || details.size > MAX_PREVIEW_BYTES) return null;
     const extension = path.extname(resolved).toLowerCase();
-    if (![".html", ".htm", ".svg", ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(extension))
+    if (
+      ![
+        ".html",
+        ".htm",
+        ".svg",
+        ".pdf",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+      ].includes(extension)
+    )
       return null;
     const root = await realpath(path.dirname(resolved));
     const token = randomUUID();
@@ -436,7 +730,8 @@ export class LocalLaunchPreview {
       id.toLowerCase(),
     ])) as JsonObject | null;
     if (!artifact || typeof artifact.content !== "string") return null;
-    const type = typeof artifact.type === "string" ? artifact.type : "text/plain";
+    const type =
+      typeof artifact.type === "string" ? artifact.type : "text/plain";
     const content = artifact.content;
     const rendered =
       type === "text/html" || type === "image/svg+xml"
@@ -472,7 +767,8 @@ export class LocalLaunchPreview {
     const bounds = rectangle(rawBounds);
     if (!entry || !bounds) return false;
     const claimant = typeof claimantId === "string" ? claimantId : undefined;
-    if (claimant && entry.claimantId && claimant !== entry.claimantId) return false;
+    if (claimant && entry.claimantId && claimant !== entry.claimantId)
+      return false;
     const owner = this.#window();
     if (!owner || owner.isDestroyed()) return false;
     const view = this.#ensureView(entry);
@@ -498,6 +794,12 @@ export class LocalLaunchPreview {
     )
       return false;
     const owner = this.#window();
+    entry.selectionEnabled = false;
+    entry.selectionGeneration += 1;
+    if (entry.view && !entry.view.webContents.isDestroyed())
+      void entry.view.webContents
+        .executeJavaScript(CANCEL_ELEMENT_SELECTION_SCRIPT, true)
+        .catch(() => undefined);
     entry.view?.setVisible(false);
     if (owner && !owner.isDestroyed() && entry.view && entry.attached) {
       owner.contentView.removeChildView(entry.view);
@@ -561,6 +863,22 @@ export class LocalLaunchPreview {
     return true;
   }
 
+  toggleSelectionMode(serverId: unknown, enabled: unknown): boolean {
+    const entry = this.#entry(serverId);
+    if (!entry || typeof enabled !== "boolean") return false;
+    const view = this.#ensureView(entry);
+    entry.selectionEnabled = enabled;
+    const generation = ++entry.selectionGeneration;
+    if (!enabled) {
+      void view.webContents
+        .executeJavaScript(CANCEL_ELEMENT_SELECTION_SCRIPT, true)
+        .catch(() => undefined);
+      return true;
+    }
+    void this.#runElementSelection(entry, generation);
+    return true;
+  }
+
   async capturePreviewScreenshot(serverId: unknown): Promise<string | null> {
     const contents = this.#entry(serverId)?.view?.webContents;
     if (!contents) return null;
@@ -571,7 +889,11 @@ export class LocalLaunchPreview {
     }
   }
 
-  setPreviewViewport(serverId: unknown, width: unknown, height: unknown): boolean {
+  setPreviewViewport(
+    serverId: unknown,
+    width: unknown,
+    height: unknown,
+  ): boolean {
     const entry = this.#entry(serverId);
     if (!entry || typeof width !== "number" || typeof height !== "number")
       return false;
@@ -716,9 +1038,15 @@ export class LocalLaunchPreview {
     const resolved = path.resolve(cwd);
     const configPath = path.join(resolved, ".claude", "launch.json");
     try {
-      const parsed = objectValue(JSON.parse(await readFile(configPath, "utf8")));
+      const parsed = objectValue(
+        JSON.parse(await readFile(configPath, "utf8")),
+      );
       parsed.autoVerify = enabled;
-      await writeFile(configPath, `${JSON.stringify(parsed, null, 2)}\n`, "utf8");
+      await writeFile(
+        configPath,
+        `${JSON.stringify(parsed, null, 2)}\n`,
+        "utf8",
+      );
       this.#autoVerify.set(resolved, enabled);
       return true;
     } catch {
@@ -881,7 +1209,8 @@ export class LocalLaunchPreview {
   }
 
   dispose(): void {
-    for (const serverId of [...this.#entries.keys()]) this.destroyPreview(serverId);
+    for (const serverId of [...this.#entries.keys()])
+      this.destroyPreview(serverId);
     void this.#session.protocol.unhandle("claude-local-launch");
   }
 }

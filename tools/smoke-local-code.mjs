@@ -9,26 +9,28 @@ import electron from "electron";
 const realMode = process.argv.includes("real");
 const allToolsMode = process.argv.includes("all-tools");
 const permissionMode = process.argv.includes("permission");
+const bypassMode = process.argv.includes("bypass");
+const toolPermissionMode = permissionMode || bypassMode;
 const terminalMode = process.argv.includes("terminal");
-const expectedReasoning = permissionMode
+const expectedReasoning = toolPermissionMode
   ? "I should request approval before running the command."
   : "I should inspect fixture.txt before writing the proof.";
 const expectedReply = realMode
   ? allToolsMode
     ? "LIVE_CODE_ALL_TOOLS_OK"
-    : permissionMode
+    : toolPermissionMode
       ? "LIVE_CODE_PERMISSION_OK"
       : "LIVE_CODE_OK"
-  : permissionMode
+  : toolPermissionMode
     ? "Local Code permission smoke complete"
     : "Local Code smoke complete";
 const initialPrompt = realMode
   ? allToolsMode
     ? "Use every named tool in this exact workflow: (1) Glob for **/*.txt, (2) Grep for native Code renderer proof phrase, (3) Read fixture.txt, (4) Write all-tools.md containing '# All tools' and 'phase=one' and the fixture phrase, (5) Edit all-tools.md to replace phase=one with phase=two, (6) Bash to print all-tools-bash-ok, (7) Artifact with action publish and file_path all-tools.md and title SDK Artifact Proof, and (8) mcp__desktop__present_artifact with title MCP Artifact Proof, type text/html, and content <html><body>MCP_ARTIFACT_OK</body></html>. Use the tools, do not merely describe them. After every tool succeeds, reply with exactly LIVE_CODE_ALL_TOOLS_OK."
-    : permissionMode
+    : toolPermissionMode
       ? "Use the Bash tool to run node -e \"process.stdout.write('live permission proof')\". After the approved command succeeds, reply with exactly LIVE_CODE_PERMISSION_OK."
       : "Use Read to read fixture.txt. Then use Write to create code-smoke-proof.md containing the fixture phrase. After both tools succeed, reply with exactly LIVE_CODE_OK."
-  : permissionMode
+  : toolPermissionMode
     ? "Run a harmless command to prove the permission flow."
     : "Read fixture.txt, then create a Markdown proof file.";
 
@@ -200,11 +202,11 @@ const provider = createHttpServer(async (request, response) => {
               message: {
                 role: "assistant",
                 reasoning_content: expectedReasoning,
-                content: permissionMode
+                content: toolPermissionMode
                   ? "I’ll run a harmless verification command."
                   : "I’ll inspect the fixture first.",
                 tool_calls: [
-                  permissionMode
+                  toolPermissionMode
                     ? {
                         id: "call_permission_bash",
                         type: "function",
@@ -235,7 +237,7 @@ const provider = createHttpServer(async (request, response) => {
       );
       return;
     }
-    if (permissionMode) {
+    if (toolPermissionMode) {
       response.end(
         JSON.stringify({
           choices: [
@@ -452,25 +454,59 @@ try {
       const folderButton = [...document.querySelectorAll("button")].find(button =>
         visible(button) && /select folder/i.test(button.textContent || "")
       );
-      if (!folderButton) throw new Error("Native folder selector was not found");
-      folderButton.click();
-      const folderDeadline = Date.now() + 10000;
-      let folderChoice;
-      while (!folderChoice && Date.now() < folderDeadline) {
-        const label = [...document.querySelectorAll("*")].find(element =>
-          element !== folderButton &&
-          visible(element) &&
-          (element.textContent || "").trim() === ${JSON.stringify(path.basename(workspace))}
-        );
-        folderChoice = label?.closest('button, [role="option"], [role="menuitem"]') || label;
-        if (!folderChoice) await new Promise(resolve => setTimeout(resolve, 100));
+      if (folderButton) {
+        folderButton.click();
+        const folderDeadline = Date.now() + 10000;
+        let folderChoice;
+        while (!folderChoice && Date.now() < folderDeadline) {
+          const label = [...document.querySelectorAll("*")].find(element =>
+            element !== folderButton &&
+            visible(element) &&
+            (element.textContent || "").trim() === ${JSON.stringify(path.basename(workspace))}
+          );
+          folderChoice = label?.closest('button, [role="option"], [role="menuitem"]') || label;
+          if (!folderChoice) await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (!folderChoice)
+          throw new Error("Seeded workspace was not offered by the native folder selector despite hydrated projects: " + JSON.stringify(detectedProjects) + "\\n" + document.body?.innerText?.slice(-2000));
+        folderChoice.click();
+      } else if (!document.body?.innerText?.includes(${JSON.stringify(path.basename(workspace))})) {
+        throw new Error("Native Code landing had neither a folder selector nor the seeded workspace: " + document.body?.innerText?.slice(-2500));
       }
-      if (!folderChoice)
-        throw new Error("Seeded workspace was not offered by the native folder selector despite hydrated projects: " + JSON.stringify(detectedProjects) + "\\n" + document.body?.innerText?.slice(-2000));
-      folderChoice.click();
+      if (${JSON.stringify(bypassMode)}) {
+        const modeButton = [...document.querySelectorAll("button")].find(button =>
+          visible(button) && /^accept edits$/i.test(button.textContent?.trim() || "")
+        );
+        if (!modeButton) throw new Error("Accept edits permission control was not found");
+        modeButton.click();
+        const modeDeadline = Date.now() + 5000;
+        let bypass;
+        while (!bypass && Date.now() < modeDeadline) {
+          const label = [...document.querySelectorAll("*")].find(element =>
+            visible(element) && /^bypass permissions$/i.test(element.textContent?.trim() || "")
+          );
+          bypass = label?.closest('button,[role="menuitem"],[role="option"]') || label;
+          if (!bypass) await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (!bypass)
+          throw new Error("Bypass permissions option did not open: " + document.body?.innerText?.slice(-2000));
+        bypass.click();
+        const confirmDeadline = Date.now() + 5000;
+        let confirm;
+        while (!confirm && Date.now() < confirmDeadline) {
+          confirm = [...document.querySelectorAll("button")].find(button =>
+            visible(button) && /^bypass permissions$/i.test(button.textContent?.trim() || "")
+          );
+          if (!confirm) await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (!confirm)
+          throw new Error("Bypass permissions confirmation did not open: " + document.body?.innerText?.slice(-2000));
+        confirm.click();
+        await new Promise(resolve => setTimeout(resolve, 400));
+      }
       const composer = [...document.querySelectorAll('[contenteditable="true"]')]
         .find(element => visible(element) && element.getAttribute("aria-label") === "Prompt");
-      if (!composer) throw new Error("Native Code prompt composer was not found");
+      if (!composer) throw new Error("Native Code prompt composer was not found: " + JSON.stringify({ body: document.body?.innerText?.slice(-3000), editables: [...document.querySelectorAll('[contenteditable]')].map(element => ({ aria: element.getAttribute('aria-label'), visible: visible(element), html: element.outerHTML.slice(0, 800) })) }));
       composer.focus();
       document.execCommand("insertText", false, ${JSON.stringify(initialPrompt)});
       composer.dispatchEvent(new InputEvent("input", {
@@ -494,12 +530,22 @@ try {
         );
         if (!session) await new Promise(resolve => setTimeout(resolve, 100));
       }
-      return session ? { sessionId: session.sessionId } : null;
+      const skills = await window["claude.web"].LocalAgentModeSessions?.listLocalSkills?.() || [];
+      return session ? {
+        sessionId: session.sessionId,
+        skillNames: skills.map(skill => skill.name),
+        builtinSkills: skills.filter(skill => skill.builtIn).map(skill => skill.name)
+      } : null;
     })()`,
   );
   assert(
     started?.sessionId,
     "Native Code launcher did not start a local session",
+  );
+  assert(
+    started.skillNames?.includes("frontend-design") &&
+      started.skillNames?.includes("skill-creator"),
+    `Built-in local skills were not available through the native API: ${JSON.stringify(started)}`,
   );
 
   let permissionDiagnostics = null;
@@ -588,7 +634,7 @@ try {
     workspace,
     allToolsMode ? "all-tools.md" : "code-smoke-proof.md",
   );
-  const proof = permissionMode ? "" : await readFile(proofPath, "utf8");
+  const proof = toolPermissionMode ? "" : await readFile(proofPath, "utf8");
   let lifecycleDiagnostics = null;
   if (realMode) {
     lifecycleDiagnostics = await evaluateEventually(
@@ -884,8 +930,8 @@ try {
     : null;
   if (!realMode) {
     assert(
-      requests.length === (permissionMode ? 2 : 3),
-      `Expected ${permissionMode ? "two" : "three"} model turns, got ${requests.length}`,
+      requests.length === (toolPermissionMode ? 2 : 3),
+      `Expected ${toolPermissionMode ? "two" : "three"} model turns, got ${requests.length}`,
     );
     assert(
       requests[0].tools?.some((tool) => tool.function?.name === "Read") &&
@@ -898,17 +944,17 @@ try {
       requests[1].messages?.some(
         (message) =>
           message.role === "tool" &&
-          (permissionMode
+          (toolPermissionMode
             ? message.tool_call_id === "call_permission_bash" &&
               message.content?.includes("permission proof")
             : message.tool_call_id === "call_read_fixture" &&
               message.content?.includes("native Code renderer proof phrase")),
       ),
-      `${permissionMode ? "Bash" : "Read"} result was not returned to the provider`,
+      `${toolPermissionMode ? "Bash" : "Read"} result was not returned to the provider`,
     );
     assert(
       rendered.thinkingBlocks?.some((thinking) =>
-        /request approval|inspect fixture\.txt/i.test(thinking)
+        /request approval|inspect fixture\.txt/i.test(thinking),
       ),
       `Provider reasoning was not preserved in the native Code transcript: ${JSON.stringify(rendered.thinkingBlocks)}`,
     );
@@ -918,11 +964,17 @@ try {
       `Native Code Thinking transcript view did not expose provider reasoning: ${JSON.stringify(thinkingViewDiagnostics)}`,
     );
   }
-  if (!permissionMode)
+  if (!toolPermissionMode)
     assert(
       proof.includes("native Code renderer proof phrase") &&
         (!allToolsMode || proof.includes("phase=two")),
       `The model-requested proof file was not written correctly: ${JSON.stringify({ proof, toolNames: rendered.toolNames, transcriptTypes: rendered.transcriptTypes })}`,
+    );
+  if (bypassMode)
+    assert(
+      rendered.session?.permissionMode === "bypassPermissions" &&
+        rendered.session?.pendingToolPermissions?.length === 0,
+      `Bypass permissions did not survive native session start: ${JSON.stringify(rendered.session)}`,
     );
   if (allToolsMode) {
     for (const tool of [
@@ -958,7 +1010,7 @@ try {
   assert(
     rendered.rendered &&
       rendered.session?.isRunning === false &&
-      (permissionMode
+      (toolPermissionMode
         ? rendered.toolNames?.includes("Bash")
         : rendered.toolNames?.includes("Read") &&
           rendered.toolNames?.includes("Write")) &&

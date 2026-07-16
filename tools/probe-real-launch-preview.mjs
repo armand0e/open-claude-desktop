@@ -83,7 +83,7 @@ await writeFile(
 );
 await writeFile(
   path.join(workspace, "index.html"),
-  '<!doctype html><link rel="stylesheet" href="style.css"><h1>Native Launch preview proof</h1>',
+  '<!doctype html><link rel="stylesheet" href="style.css"><h1 id="selection-target" class="hero proof" data-probe="element-selection">Native Launch preview proof</h1>',
   "utf8",
 );
 await writeFile(
@@ -110,7 +110,9 @@ await writeFile(
         artifacts: [
           {
             title: "Native Launch preview proof",
-            url: new URL(`file:///${path.join(workspace, "index.html").replaceAll("\\", "/")}`).toString(),
+            url: new URL(
+              `file:///${path.join(workspace, "index.html").replaceAll("\\", "/")}`,
+            ).toString(),
             path: path.join(workspace, "index.html"),
             updatedAt: new Date().toISOString(),
             version: "launch-probe-version",
@@ -123,16 +125,20 @@ await writeFile(
 );
 
 const stderr = [];
-const child = spawn(electron, [".", `--remote-debugging-port=${debuggerPort}`], {
-  cwd: process.cwd(),
-  windowsHide: true,
-  stdio: ["ignore", "ignore", "pipe"],
-  env: {
-    ...process.env,
-    CLAUDE_LOCAL_USER_DATA_DIR: profile,
-    CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
+const child = spawn(
+  electron,
+  [".", `--remote-debugging-port=${debuggerPort}`],
+  {
+    cwd: process.cwd(),
+    windowsHide: true,
+    stdio: ["ignore", "ignore", "pipe"],
+    env: {
+      ...process.env,
+      CLAUDE_LOCAL_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
+    },
   },
-});
+);
 child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderr.push(chunk));
 
@@ -140,7 +146,9 @@ try {
   const appTarget = await waitForTarget(
     debuggerPort,
     (candidate) =>
-      candidate.type === "page" && candidate.url.startsWith("app://localhost"),
+      candidate.type === "page" &&
+      candidate.url.startsWith("app://localhost") &&
+      !candidate.url.startsWith("app://localhost/blank"),
     child,
   );
   const result = await evaluate(
@@ -186,6 +194,48 @@ try {
       else addEventListener("load", done, { once: true });
     })`,
   );
+  const selectionStarted = await evaluate(
+    appTarget,
+    `(async () => {
+      const launch = window["claude.web"].Launch;
+      window.__localElementSelection = null;
+      window.__localElementSelectionDispose?.();
+      window.__localElementSelectionDispose = launch.onElementSelected((serverId, context) => {
+        window.__localElementSelection = { serverId, context };
+      });
+      return launch.toggleSelectionMode(${JSON.stringify(result.serverId)}, true, "default");
+    })()`,
+  );
+  const picker = await evaluate(
+    previewTarget,
+    `(async () => {
+      const deadline = Date.now() + 10000;
+      while (!window.__claudeLocalElementPicker && Date.now() < deadline)
+        await new Promise(resolve => setTimeout(resolve, 50));
+      const target = document.querySelector("#selection-target");
+      const rect = target.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      target.dispatchEvent(new MouseEvent("mousemove", {
+        bubbles: true, cancelable: true, clientX: x, clientY: y
+      }));
+      const highlighted = document.querySelector("[data-claude-local-element-picker=overlay]")?.style.display === "block";
+      target.dispatchEvent(new MouseEvent("click", {
+        bubbles: true, cancelable: true, clientX: x, clientY: y
+      }));
+      return { active: Boolean(window.__claudeLocalElementPicker), highlighted };
+    })()`,
+  );
+  const selection = await evaluate(
+    appTarget,
+    `(async () => {
+      const deadline = Date.now() + 10000;
+      while (!window.__localElementSelection && Date.now() < deadline)
+        await new Promise(resolve => setTimeout(resolve, 50));
+      window.__localElementSelectionDispose?.();
+      return window.__localElementSelection;
+    })()`,
+  );
   const capture = await evaluate(
     appTarget,
     `window["claude.web"].Launch.capturePreviewScreenshot(${JSON.stringify(result.serverId)})`,
@@ -197,7 +247,27 @@ try {
   if (!rendered?.text?.includes("Native Launch preview proof"))
     throw new Error(`Launch HTML did not render: ${JSON.stringify(rendered)}`);
   if (rendered.background !== "rgb(24, 46, 68)")
-    throw new Error(`Launch relative assets failed: ${JSON.stringify(rendered)}`);
+    throw new Error(
+      `Launch relative assets failed: ${JSON.stringify(rendered)}`,
+    );
+  if (selectionStarted !== true || !picker?.highlighted)
+    throw new Error(
+      `Element selection did not activate: ${JSON.stringify({ selectionStarted, picker })}`,
+    );
+  if (
+    selection?.serverId !== result.serverId ||
+    selection.context?.tagName !== "h1" ||
+    selection.context?.id !== "selection-target" ||
+    !selection.context?.classes?.includes("hero") ||
+    selection.context?.attributes?.["data-probe"] !== "element-selection" ||
+    !selection.context?.innerText?.includes("Native Launch preview proof") ||
+    !selection.context?.parentPath?.includes("#selection-target") ||
+    typeof selection.context?.screenshot !== "string" ||
+    selection.context.screenshot.length < 100
+  )
+    throw new Error(
+      `Selected element context was incomplete: ${JSON.stringify(selection)}`,
+    );
   if (typeof capture !== "string" || capture.length < 100)
     throw new Error("Launch screenshot did not return a PNG");
   if (hidden !== true) throw new Error("Launch preview did not hide cleanly");
@@ -206,6 +276,15 @@ try {
       {
         ...result,
         rendered,
+        selection: {
+          tagName: selection.context.tagName,
+          id: selection.context.id,
+          classes: selection.context.classes,
+          selector: selection.context.parentPath,
+          screenshotBytes: Math.floor(
+            selection.context.screenshot.length * 0.75,
+          ),
+        },
         captureBytes: Math.floor(capture.length * 0.75),
         hidden,
       },

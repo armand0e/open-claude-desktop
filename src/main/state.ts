@@ -22,7 +22,12 @@ const DEFAULT_STATE: PersistentState = {
   appConfig: {
     features: {},
     mcpServers: {},
-    preferences: {},
+    preferences: {
+      // Local Code has no organization policy layer. Keep its explicit,
+      // user-visible bypass option available; the confirmation dialog still
+      // communicates the risk before a session starts in this mode.
+      bypassPermissionsModeEnabled: true,
+    },
     isUsingBuiltInNodeForMcp: true,
     isDxtAutoUpdatesEnabled: true,
   },
@@ -83,7 +88,10 @@ function normalizeState(value: unknown): PersistentState {
       ...appConfig,
       features: objectValue(appConfig.features),
       mcpServers: objectValue(appConfig.mcpServers),
-      preferences: objectValue(appConfig.preferences),
+      preferences: {
+        ...DEFAULT_STATE.appConfig.preferences,
+        ...objectValue(appConfig.preferences),
+      },
     },
     stores: {
       ...DEFAULT_STATE.stores,

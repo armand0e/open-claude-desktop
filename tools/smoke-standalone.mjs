@@ -70,6 +70,22 @@ async function stop(child) {
   ]);
 }
 
+async function removeProfileWithRetry(directory) {
+  const deadline = Date.now() + 10_000;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      await rm(directory, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!["EBUSY", "EPERM", "ENOTEMPTY"].includes(error?.code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  throw lastError;
+}
+
 const appData = await mkdtemp(path.join(os.tmpdir(), "claude-local-identity-"));
 const expectedUserData = path.join(appData, "Claude Local");
 const output = [];
@@ -155,5 +171,5 @@ try {
       path.basename(resolved).startsWith("claude-local-identity-"),
     `Refusing to remove unexpected identity test directory: ${resolved}`,
   );
-  await rm(resolved, { recursive: true, force: true });
+  await removeProfileWithRetry(resolved);
 }

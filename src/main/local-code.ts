@@ -22,6 +22,7 @@ import { promisify } from "node:util";
 import { shell } from "electron";
 import { spawn as spawnPty, type IPty } from "node-pty";
 import type { LocalProviderConfig } from "./local-backend";
+import { BUILTIN_SKILL_NAMES, BUILTIN_SKILLS } from "./builtin-skills";
 import { isPathInside } from "./file-access";
 import { WEB_TOOLS, type WebToolRunner } from "./local-web-tools";
 
@@ -743,6 +744,7 @@ export class LocalCodeSessionManager {
     } catch {
       // First run or a corrupt store starts with an empty, recoverable history.
     }
+    await manager.seedBuiltinSkills();
     return manager;
   }
 
@@ -1236,11 +1238,22 @@ export class LocalCodeSessionManager {
     systemPromptAppend?: string,
     localCustomization?: string,
   ): JsonObject[] {
+    const workspaceContext = [
+      "<workspace_context>",
+      `Operating system: ${process.platform}`,
+      `Current workspace root: ${session.cwd}`,
+      "All relative file paths and shell commands start in that workspace. Never assume /home/user, /workspace, or another generic sandbox path. Prefer workspace-relative paths in tool calls.",
+      session.additionalDirectories.length
+        ? `Additional allowed roots: ${session.additionalDirectories.join(", ")}`
+        : "Additional allowed roots: none",
+      "</workspace_context>",
+    ].join("\n");
     const messages: JsonObject[] = [
       {
         role: "system",
         content: [
           CODE_SYSTEM_PROMPT,
+          workspaceContext,
           localCustomization,
           systemPrompt,
           systemPromptAppend,
@@ -1259,7 +1272,7 @@ export class LocalCodeSessionManager {
         if (text) messages.push({ role: "assistant", content: text });
       }
     }
-    return messages.slice(-80);
+    return [messages[0], ...messages.slice(1).slice(-79)];
   }
 
   private async localCustomizationPrompt(
@@ -1623,7 +1636,13 @@ export class LocalCodeSessionManager {
   private lexicalPath(session: StoredCodeSession, input: unknown): string {
     if (typeof input !== "string" || !input || input.includes("\0"))
       throw new Error("A valid file path is required");
-    const candidate = path.resolve(session.cwd, input);
+    // Some OpenAI-compatible coding models have a learned `/home/user`
+    // sandbox default. Treat only that exact placeholder root as the selected
+    // local workspace; every other outside absolute path remains denied.
+    const normalized = /^\/home\/user(?:\/|$)/u.test(input)
+      ? input.replace(/^\/home\/user\/?/u, "") || "."
+      : input;
+    const candidate = path.resolve(session.cwd, normalized);
     if (!this.roots(session).some((root) => isPathInside(root, candidate)))
       throw new Error("Path is outside the selected workspace roots");
     return candidate;
@@ -2321,6 +2340,7 @@ export class LocalCodeSessionManager {
           description: this.customizationDescription(content),
           updatedAt: details.mtime.toISOString(),
           enabled: enabled[entry.name] !== false,
+          builtIn: BUILTIN_SKILL_NAMES.has(entry.name),
         });
       } catch {
         // Ignore incomplete skill directories.
@@ -2356,6 +2376,28 @@ export class LocalCodeSessionManager {
       await this.writeLocalSkillState(state);
     }
     return { ok: true };
+  }
+
+  private async seedBuiltinSkills(): Promise<void> {
+    for (const skill of BUILTIN_SKILLS) {
+      const file = this.localSkillPath(skill.name);
+      const exists = await stat(file).then(
+        () => true,
+        () => false,
+      );
+      if (exists) {
+        const existingContent = await readFile(file, "utf8").catch(() => "");
+        const existingHash = createHash("sha256")
+          .update(existingContent)
+          .digest("hex");
+        if (!skill.legacyContentHashes?.includes(existingHash)) continue;
+      }
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, skill.content, {
+        encoding: "utf8",
+        mode: 0o600,
+      });
+    }
   }
 
   private async deleteLocalSkill(nameValue: unknown): Promise<JsonObject> {

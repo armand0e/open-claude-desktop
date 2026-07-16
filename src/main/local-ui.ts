@@ -1,5 +1,6 @@
 import { access, stat } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -42,6 +43,13 @@ interface ClientPatch {
 // in-memory copy; the installed Anthropic asset is never modified.
 const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
   {
+    id: "localize-general-instructions-copy",
+    assetUrlPath: "/i18n/en-US.json",
+    find: '"9t2atF49M0": "Claude will keep these in mind across chats and Cowork within <aupLink>Anthropic’s guidelines</aupLink>. <learnMoreLink>Learn more</learnMoreLink>"',
+    replace:
+      '"9t2atF49M0": "Claude Local will keep these in mind across chats on this device."',
+  },
+  {
     id: "define-local-chat-route-component",
     find: "lts={withSidebar:[],root:[]},cts=(()=>",
     replace:
@@ -54,9 +62,27 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       't=t=>q$({getParentRoute:()=>A7n,path:t,...("new"===t?{component:K3t}:"chat/$uuid"===t?{component:Lcs}:{beforeLoad:e})})',
   },
   {
+    id: "keep-chat-new-on-native-chat-landing",
+    find: 'n=ER?q$({getParentRoute:()=>A7n,path:"chat/new",component:ABt}):null',
+    replace:
+      'n=ER?q$({getParentRoute:()=>A7n,path:"chat/new",component:K3t}):null',
+  },
+  {
     id: "keep-new-route-in-web-chat",
     find: "}(l);e.useEffect(()=>{u&&!l&&d.replace(u)},[u,l,d]);",
     replace: "}(true);e.useEffect(()=>{u&&!l&&d.replace(u)},[u,l,d]);",
+  },
+  {
+    id: "bind-native-greeting-to-local-account",
+    find: "function F3t({incognito:e=!1}){const t=G$(),{data:n}=IT(),s=uf(()=>new Date,null);",
+    replace:
+      "function F3t({incognito:e=!1}){const t=G$(),{data:n}=IT(),{account:a}=Y(),s=uf(()=>new Date,null);",
+  },
+  {
+    id: "fallback-native-greeting-to-local-schedule",
+    find: '}(n.personalized_greeting,"chat",s)||t.formatMessage({defaultMessage:"How can I help you today?",id:"XLcM6WHfQR"}):""}',
+    replace:
+      '}(n.personalized_greeting,"chat",s)||t.formatMessage({defaultMessage:"How can I help you today?",id:"XLcM6WHfQR"}):(()=>{const e=a?.display_name||a?.full_name||"",t=s.getHours();return t<5?"Moonlit chat?":t<11?"Good morning, "+e+".":t<14?"What are we working on today, "+e+"?":t<18?"What’s next, "+e+"?":t<22?"Good evening, "+e+". What can I help with?":"Moonlit chat?"})()}',
   },
   {
     id: "dispatch-local-chat-after-navigation",
@@ -105,17 +131,15 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
   {
     id: "bind-native-artifact-gallery-to-local-desktop-store",
     assetUrlPath: "/assets/v1/c47ad434c-D_dYPjVp.js",
-    find:
-      'function ie(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=F(),n=s?.uuid,i=c(),d=ne(),p=f(',
+    find: "function ie(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=F(),n=s?.uuid,i=c(),d=ne(),p=f(",
     replace:
-      'function ie(e=!1,t){const r=c(),[a,s]=g.useState({artifacts:[],isPending:!0,isError:!1});return g.useEffect(()=>{let e=!1;const t=window["claude.web"]?.CoworkArtifacts?.getAllArtifacts?.();return Promise.resolve(t).then(t=>{e||s({artifacts:Array.isArray(t)?t:[],isPending:!1,isError:!1})}).catch(()=>{e||s({artifacts:[],isPending:!1,isError:!0})}),()=>{e=!0}},[]),{enabled:!0,includeShared:!1,items:a.artifacts.map(e=>({key:`frame:${e.id}`,source:"frame",rel:"mine",title:e.title??"Artifact",description:e.sessionTitle,extraSearchText:[e.sessionTitle,e.path].filter(e=>"string"==typeof e),href:`/code/artifact/${e.id}?org=00000000-0000-4000-8000-000000000001&open_in_browser=1`,newTab:r,updatedAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,createdAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,audience:"owner",softDeleted:!1,starred:!1})),isPending:a.isPending,isError:a.isError,capped:!1,isPartial:!1,isPartialError:!1,starsEnabled:!1}}function ieCloudUnused(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=F(),n=s?.uuid,i=c(),d=ne(),p=f(',
+      'function ie(e=!1,t){const r=c(),[a,s]=g.useState({artifacts:[],isPending:!0,isError:!1});return g.useEffect(()=>{let e=!1;const t=window["claude.web"]?.CoworkArtifacts?.getAllArtifacts?.();return Promise.resolve(t).then(t=>{e||s({artifacts:Array.isArray(t)?t:[],isPending:!1,isError:!1})}).catch(()=>{e||s({artifacts:[],isPending:!1,isError:!0})}),()=>{e=!0}},[]),{enabled:!0,includeShared:!1,items:a.artifacts.map(e=>({key:`frame:${e.id}`,source:"frame",rel:"mine",title:e.title??"Artifact",description:e.sessionTitle,extraSearchText:[e.sessionTitle,e.path].filter(e=>"string"==typeof e),href:`/epitaxy/${e.sessionId}?open_local_artifact=${e.id}`,newTab:!1,updatedAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,createdAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,audience:"owner",softDeleted:!1,starred:!1})),isPending:a.isPending,isError:a.isError,capped:!1,isPartial:!1,isPartialError:!1,starsEnabled:!1}}function ieCloudUnused(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=F(),n=s?.uuid,i=c(),d=ne(),p=f(',
   },
   {
     id: "use-local-code-artifact-gallery-source",
     assetUrlPath: "/assets/v1/ce569194f-YKjvV2xt.js",
     find: 'function Je(){const e=z(),s=i(),r=Ke("chat",{relTabs:!0});',
-    replace:
-      'function Je(){const e=z(),s=i(),r=Ke("frame",{relTabs:!0});',
+    replace: 'function Je(){const e=z(),s=i(),r=Ke("frame",{relTabs:!0});',
   },
   {
     id: "defer-local-terminal-pty-delivery",
@@ -411,6 +435,7 @@ function currentUserAccess(): Record<string, unknown> {
       "claude_code_desktop",
       "skills",
       "cobalt_plinth",
+      "web_search",
     ].map((feature) => ({
       feature,
       status: "available",
@@ -421,6 +446,61 @@ function currentUserAccess(): Record<string, unknown> {
 const LOCAL_ORG_UUID = "00000000-0000-4000-8000-000000000001";
 const LOCAL_ACCOUNT_UUID = "00000000-0000-4000-8000-000000000002";
 const LOCAL_CREATED_AT = "2026-01-01T00:00:00.000Z";
+
+let cachedLocalDisplayName: string | undefined;
+
+function localDisplayName(): string {
+  if (cachedLocalDisplayName) return cachedLocalDisplayName;
+  const configured = process.env.CLAUDE_LOCAL_USER_NAME?.trim();
+  if (configured) return (cachedLocalDisplayName = configured);
+  if (process.platform === "win32") {
+    try {
+      const fullName = execFileSync(
+        "powershell.exe",
+        [
+          "-NoLogo",
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "(Get-LocalUser -Name $env:USERNAME).FullName",
+        ],
+        {
+          encoding: "utf8",
+          timeout: 2_000,
+          windowsHide: true,
+          stdio: ["ignore", "pipe", "ignore"],
+        },
+      ).trim();
+      const firstName = fullName.split(/\s+/u)[0]?.trim();
+      if (firstName) return (cachedLocalDisplayName = firstName);
+    } catch {
+      // Fall through to the portable username-derived label.
+    }
+  }
+  const username = (process.env.USERNAME || process.env.USER || "").trim();
+  if (!username) return (cachedLocalDisplayName = "Local User");
+  return (cachedLocalDisplayName = username
+    .replace(/[._-]+/gu, " ")
+    .replace(/\b\p{L}/gu, (letter) => letter.toLocaleUpperCase()));
+}
+
+function personalizedGreeting(
+  name = localDisplayName(),
+): Array<Record<string, unknown>> {
+  return [
+    {
+      surface: "chat",
+      default_slots: [
+        { until: 5, text: "Moonlit chat?" },
+        { until: 11, text: `Good morning, ${name}.` },
+        { until: 14, text: `What are we working on today, ${name}?` },
+        { until: 18, text: `What’s next, ${name}?` },
+        { until: 22, text: `Good evening, ${name}. What can I help with?` },
+        { until: 24, text: "Moonlit chat?" },
+      ],
+    },
+  ];
+}
 
 function localModelId(configuredModel?: string): string {
   return (
@@ -450,13 +530,31 @@ function localOrganization(configuredModel?: string): Record<string, unknown> {
   };
 }
 
-function localAccount(configuredModel?: string): Record<string, unknown> {
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function localAccount(
+  configuredModel?: string,
+  profile: Record<string, unknown> = {},
+  accountSettings: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const fullName =
+    (typeof profile.full_name === "string" && profile.full_name.trim()) ||
+    localDisplayName();
+  const displayName =
+    (typeof profile.display_name === "string" && profile.display_name.trim()) ||
+    fullName;
+  const profileSettings = objectValue(profile.settings);
   return {
+    ...profile,
     tagged_id: `local_${LOCAL_ACCOUNT_UUID}`,
     uuid: LOCAL_ACCOUNT_UUID,
     email_address: "local@localhost",
-    full_name: "Local User",
-    display_name: "Local User",
+    full_name: fullName,
+    display_name: displayName,
     created_at: LOCAL_CREATED_AT,
     updated_at: LOCAL_CREATED_AT,
     accepted_clickwrap_versions: {},
@@ -475,6 +573,8 @@ function localAccount(configuredModel?: string): Record<string, unknown> {
     invites: [],
     settings: {
       enabled_geolocation: false,
+      ...accountSettings,
+      ...profileSettings,
     },
   };
 }
@@ -542,9 +642,14 @@ function growthbookFeatures(configuredModel?: string): Record<string, unknown> {
   };
 }
 
-function bootstrapPayload(configuredModel?: string): Record<string, unknown> {
+function bootstrapPayload(
+  configuredModel?: string,
+  profile: Record<string, unknown> = {},
+  accountSettings: Record<string, unknown> = {},
+): Record<string, unknown> {
+  const account = localAccount(configuredModel, profile, accountSettings);
   return {
-    account: localAccount(configuredModel),
+    account,
     current_user_access: currentUserAccess(),
     locale: null,
     statsig: {
@@ -555,6 +660,11 @@ function bootstrapPayload(configuredModel?: string): Record<string, unknown> {
     growthbook: { features: growthbookFeatures(configuredModel) },
     model_selector_config: modelSelectorConfig(configuredModel),
     model_selector_state: modelSelectorState(configuredModel),
+    personalized_greeting: personalizedGreeting(
+      typeof account.display_name === "string"
+        ? account.display_name
+        : localDisplayName(),
+    ),
     intercom_account_hash: null,
     system_prompts: {},
   };
@@ -616,9 +726,7 @@ async function localApiResponse(
     normalized === "/api/published_artifacts/view_counts"
   )
     return jsonResponse([]);
-  const localFrameMatch = normalized.match(
-    /^\/api\/frame\/([0-9a-f-]{36})$/i,
-  );
+  const localFrameMatch = normalized.match(/^\/api\/frame\/([0-9a-f-]{36})$/i);
   if (localFrameMatch) {
     if (request.method === "DELETE") {
       const deleted = await codeSessions.invoke("deleteArtifactById", [
@@ -720,7 +828,13 @@ async function localApiResponse(
     (normalized.startsWith("/api/bootstrap/") &&
       normalized.endsWith("/app_start"))
   )
-    return jsonResponse(bootstrapPayload(backend.provider().model));
+    return jsonResponse(
+      bootstrapPayload(
+        backend.provider().model,
+        backend.accountProfile(),
+        backend.accountSettings(),
+      ),
+    );
   if (
     normalized.startsWith("/api/bootstrap/") &&
     normalized.endsWith("/current_user_access")
@@ -733,18 +847,41 @@ async function localApiResponse(
   ) {
     return jsonResponse({});
   }
-  if (normalized === "/api/account_profile" && request.method === "GET")
-    return jsonResponse({
-      ...localAccount(backend.provider().model),
-      locale: null,
-    });
+  if (normalized === "/api/account_profile") {
+    if (request.method === "PUT")
+      await backend.updateAccountProfile(await request.json());
+    if (request.method === "GET" || request.method === "PUT")
+      return jsonResponse({
+        ...localAccount(
+          backend.provider().model,
+          backend.accountProfile(),
+          backend.accountSettings(),
+        ),
+        locale: null,
+      });
+    return new Response(null, { status: 405 });
+  }
   if (normalized === "/v1/privacy-consents") {
     return request.method === "GET"
       ? jsonResponse({ consents: [] })
       : jsonResponse({});
   }
   if (normalized === "/api/account/settings" && request.method === "PATCH")
-    return jsonResponse({});
+    return jsonResponse(
+      await backend.updateAccountSettings(await request.json()),
+    );
+  if (normalized === "/api/account" && request.method === "PUT") {
+    const input = objectValue(await request.json());
+    await backend.updateAccountProfile(input);
+    if (input.settings) await backend.updateAccountSettings(input.settings);
+    return jsonResponse(
+      localAccount(
+        backend.provider().model,
+        backend.accountProfile(),
+        backend.accountSettings(),
+      ),
+    );
+  }
   if (
     request.method === "GET" &&
     /^\/api\/organizations\/[^/]+\/notification\/preferences$/.test(normalized)

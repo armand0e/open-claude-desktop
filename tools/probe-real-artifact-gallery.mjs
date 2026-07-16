@@ -32,7 +32,8 @@ async function evaluate(target, expression) {
     return await new Promise((resolve, reject) => {
       socket.addEventListener(
         "close",
-        () => reject(new Error("CDP target closed before evaluation completed")),
+        () =>
+          reject(new Error("CDP target closed before evaluation completed")),
         { once: true },
       );
       socket.addEventListener("message", (event) => {
@@ -77,7 +78,9 @@ async function waitForTarget(port, predicate, child, timeout = 30_000) {
 }
 
 const debuggerPort = await unusedPort();
-const profile = await mkdtemp(path.join(os.tmpdir(), "claude-gallery-profile-"));
+const profile = await mkdtemp(
+  path.join(os.tmpdir(), "claude-gallery-profile-"),
+);
 const workspace = await mkdtemp(
   path.join(os.tmpdir(), "claude-gallery-workspace-"),
 );
@@ -85,7 +88,7 @@ const sessionId = "artifact-gallery-session";
 const title = "Native local artifact gallery proof";
 const artifactPath = path.join(workspace, "gallery-proof.html");
 const content =
-  '<!doctype html><style>body{background:rgb(31,53,75);color:white}</style><h1>Native artifact opened locally</h1>';
+  "<!doctype html><style>body{background:rgb(31,53,75);color:white}</style><h1>Native artifact opened locally</h1>";
 await writeFile(artifactPath, content, "utf8");
 await writeFile(
   path.join(profile, "local-code-sessions.json"),
@@ -125,16 +128,20 @@ await writeFile(
 
 const stderr = [];
 const keepAlive = setInterval(() => {}, 1_000);
-const child = spawn(electron, [".", `--remote-debugging-port=${debuggerPort}`], {
-  cwd: process.cwd(),
-  windowsHide: true,
-  stdio: ["ignore", "ignore", "pipe"],
-  env: {
-    ...process.env,
-    CLAUDE_LOCAL_USER_DATA_DIR: profile,
-    CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
+const child = spawn(
+  electron,
+  [".", `--remote-debugging-port=${debuggerPort}`],
+  {
+    cwd: process.cwd(),
+    windowsHide: true,
+    stdio: ["ignore", "ignore", "pipe"],
+    env: {
+      ...process.env,
+      CLAUDE_LOCAL_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
+    },
   },
-});
+);
 child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderr.push(chunk));
 
@@ -147,33 +154,44 @@ try {
     child,
   );
   process.stderr.write("artifact-gallery-probe: app ready\n");
-  await evaluate(
+  await new Promise((resolve) => setTimeout(resolve, 3_000));
+  const codeClick = await evaluate(
     appTarget,
     `(() => {
-      const code = [...document.querySelectorAll("button")].find(button =>
-        button.getAttribute("aria-label") === "Code" || button.textContent?.trim() === "Code"
-      );
+      const candidates = [...document.querySelectorAll("button")].filter(button => button.textContent?.trim() === "Code");
+      const code = document.querySelector('button[data-mode="code"]') || candidates.find(button => button.closest(".df-pills")) || candidates[0];
       code?.click();
-      return Boolean(code);
+      return { clicked: Boolean(code), count: candidates.length, html: code?.outerHTML?.slice(0, 1000), path: location.pathname };
     })()`,
+  );
+  process.stderr.write(
+    `artifact-gallery-probe: code click ${JSON.stringify(codeClick)}\n`,
   );
   await new Promise((resolve) => setTimeout(resolve, 3_000));
-  await evaluate(
+  const artifactClick = await evaluate(
     appTarget,
     `(() => {
-      const artifacts = [...document.querySelectorAll("button")].find(button =>
-        button.getAttribute("aria-label") === "Artifacts" || button.textContent?.trim() === "Artifacts"
+      const labels = [...document.querySelectorAll("[aria-label],.truncate,span")].filter(control =>
+        control.getAttribute("aria-label") === "Artifacts" || control.textContent?.trim() === "Artifacts"
       );
+      const candidates = labels.map(label => label.closest("button,a,[role=button]") || label);
+      const artifacts = candidates.find(control => !control.hasAttribute("data-local-artifacts-button"));
       artifacts?.click();
-      return Boolean(artifacts);
+      return { clicked: Boolean(artifacts), count: new Set(candidates).size, tags: candidates.map(control => control.tagName), html: artifacts?.outerHTML?.slice(0, 1200), path: location.pathname };
     })()`,
   );
-  await new Promise((resolve) => setTimeout(resolve, 2_000));
-  appTarget = await waitForTarget(
-    debuggerPort,
-    (candidate) => candidate.url === "app://localhost/epitaxy/apps",
-    child,
+  process.stderr.write(
+    `artifact-gallery-probe: click ${JSON.stringify(artifactClick)}\n`,
   );
+  await new Promise((resolve) => setTimeout(resolve, 2_000));
+  const routeAfterClick = await evaluate(
+    appTarget,
+    `({ path: location.pathname, href: location.href, body: document.body?.innerText?.slice(0, 1200) })`,
+  );
+  if (routeAfterClick.path !== "/epitaxy/apps")
+    throw new Error(
+      `Artifacts control did not navigate: ${JSON.stringify({ artifactClick, routeAfterClick })}`,
+    );
   process.stderr.write("artifact-gallery-probe: gallery route ready\n");
   await new Promise((resolve) => setTimeout(resolve, 8_000));
   const gallery = await evaluate(
@@ -190,14 +208,58 @@ try {
       };
     })()`,
   );
-  process.stderr.write(`artifact-gallery-probe: evaluated ${JSON.stringify(gallery)}\n`);
-  if (!gallery.nativePage || !gallery.titleVisible || gallery.customOverlayPresent)
+  process.stderr.write(
+    `artifact-gallery-probe: evaluated ${JSON.stringify(gallery)}\n`,
+  );
+  if (
+    !gallery.nativePage ||
+    !gallery.titleVisible ||
+    gallery.customOverlayPresent
+  )
     throw new Error(
       `Native gallery failed: ${JSON.stringify(gallery)}\n${stderr.join("").slice(-6000)}`,
     );
+  const cardClick = await evaluate(
+    appTarget,
+    `(() => {
+      const labels = [...document.querySelectorAll("*")].filter(element =>
+        element.innerText?.trim() === ${JSON.stringify(title)}
+      );
+      const label = labels[0];
+      const control = document.querySelector('a[aria-label=${JSON.stringify(title)}]') || label?.closest("button,a,[role=button]") || label;
+      control?.click();
+      return { clicked: Boolean(control), matches: labels.length, html: label?.parentElement?.parentElement?.parentElement?.parentElement?.outerHTML?.slice(0, 6000), path: location.pathname };
+    })()`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 4_000));
+  const openTargets = await targets(debuggerPort);
+  const opened = await evaluate(
+    appTarget,
+    `({
+      path: location.pathname,
+      href: location.href,
+      bodyText: document.body?.innerText?.slice(0, 2500),
+      titleVisible: document.body?.innerText?.includes(${JSON.stringify(title)})
+    })`,
+  );
+  const previewTarget = openTargets.find((candidate) =>
+    candidate.url?.startsWith("claude-local-preview://"),
+  );
+  const previewText = previewTarget
+    ? await evaluate(previewTarget, "document.body?.innerText")
+    : "";
+  if (
+    !cardClick.clicked ||
+    !opened.path.startsWith("/epitaxy/") ||
+    !previewTarget ||
+    !previewText?.includes("Native artifact opened locally")
+  )
+    throw new Error(
+      `Artifact card did not open its native local preview: ${JSON.stringify({ cardClick, opened, targetUrls: openTargets.map((target) => target.url) })}`,
+    );
   process.stderr.write("artifact-gallery-probe: assertions passed\n");
   process.stdout.write(
-    `${JSON.stringify({ gallery }, null, 2)}\n`,
+    `${JSON.stringify({ gallery, cardClick, opened, previewUrl: previewTarget.url, previewText }, null, 2)}\n`,
   );
 } finally {
   clearInterval(keepAlive);

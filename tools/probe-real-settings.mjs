@@ -1,12 +1,36 @@
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import electron from "electron";
 
-const baseUrl = process.env.CLAUDE_REAL_BASE_URL || "http://127.0.0.1:1234/v1";
+let baseUrl = process.env.CLAUDE_REAL_BASE_URL || "http://127.0.0.1:1234/v1";
 const model = process.env.CLAUDE_REAL_MODEL || "llm";
+let fallbackProvider = null;
+try {
+  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/models`, {
+    signal: AbortSignal.timeout(2_000),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+} catch {
+  fallbackProvider = createHttpServer((_request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(JSON.stringify({ data: [{ id: model }] }));
+  });
+  const port = await new Promise((resolve, reject) => {
+    fallbackProvider
+      .listen(0, "127.0.0.1", () => {
+        const address = fallbackProvider.address();
+        if (!address || typeof address === "string")
+          reject(new Error("Fallback provider did not bind"));
+        else resolve(address.port);
+      })
+      .once("error", reject);
+  });
+  baseUrl = `http://127.0.0.1:${port}/v1`;
+}
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -28,7 +52,9 @@ async function targetAt(port) {
   const targets = await response.json();
   return targets.find(
     (target) =>
-      target.type === "page" && target.url.startsWith("app://localhost"),
+      target.type === "page" &&
+      target.url.startsWith("app://localhost") &&
+      !target.url.startsWith("app://localhost/blank"),
   );
 }
 
@@ -36,15 +62,38 @@ let commandId = 0;
 async function cdp(target, method, params = {}) {
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => {
-    socket.addEventListener("open", resolve, { once: true });
-    socket.addEventListener("error", reject, { once: true });
+    const timer = setTimeout(
+      () => reject(new Error("CDP connection timed out")),
+      15_000,
+    );
+    socket.addEventListener(
+      "open",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+    socket.addEventListener(
+      "error",
+      (event) => {
+        clearTimeout(timer);
+        reject(event.error ?? new Error("CDP connection failed"));
+      },
+      { once: true },
+    );
   });
   const id = ++commandId;
   try {
     return await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        socket.removeEventListener("message", listener);
+        reject(new Error(`${method} timed out`));
+      }, 15_000);
       const listener = (event) => {
         const message = JSON.parse(event.data);
         if (message.id !== id) return;
+        clearTimeout(timer);
         socket.removeEventListener("message", listener);
         if (message.error) reject(new Error(message.error.message));
         else resolve(message.result);
@@ -233,16 +282,54 @@ try {
         return {
           url: location.href,
           localModelLabel: button.textContent?.trim().replace(/\s+/g, ' '),
-          rect: button.getBoundingClientRect().toJSON()
+          rect: button.getBoundingClientRect().toJSON(),
+          visibleLabels: [...dialog.querySelectorAll('nav[aria-label="Settings"] button')]
+            .filter(candidate => candidate.getClientRects().length > 0 && getComputedStyle(candidate).display !== 'none')
+            .map(candidate => candidate.querySelector('.truncate')?.textContent?.trim() || candidate.textContent?.trim())
+            .filter(Boolean),
+          localInstructionsCopy: [...dialog.querySelectorAll('p,span')]
+            .map(candidate => candidate.textContent?.trim())
+            .find(text => text?.includes('Claude Local will keep these in mind')) || null
         };
       })()`,
     );
-    if (!state) throw new Error("Local model item is not in Settings yet");
+    if (!state) throw new Error("Model item is not in Settings yet");
     return state;
   });
   assert(
-    settings.localModelLabel?.endsWith("Local model"),
+    settings.localModelLabel?.endsWith("Model"),
     `Unexpected Settings item: ${JSON.stringify(settings)}`,
+  );
+  assert(
+    ["Privacy", "Connectors", "Cowork"].every(
+      (label) => !settings.visibleLabels.includes(label),
+    ),
+    `Cloud-only Settings sections are still visible: ${JSON.stringify(settings.visibleLabels)}`,
+  );
+
+  const nativeSave = await evaluate(
+    target,
+    `(async () => {
+      const profileResponse = await fetch('/api/account_profile', {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({full_name:'Settings Save Proof', display_name:'Proof', conversation_preferences:'Keep it local.'})
+      });
+      const settingsResponse = await fetch('/api/account/settings', {
+        method: 'PATCH', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({theme:'dark', chat_font:'anthropic-serif'})
+      });
+      const profile = await fetch('/api/account_profile').then(response => response.json());
+      const bootstrap = await fetch('/edge-api/bootstrap?statsig_hashing_algorithm=djb2&growthbook_format=sdk').then(response => response.json());
+      return { profileStatus: profileResponse.status, settingsStatus: settingsResponse.status, profile, bootstrapAccount: bootstrap.account };
+    })()`,
+  );
+  assert(
+    nativeSave.profileStatus === 200 &&
+      nativeSave.settingsStatus === 200 &&
+      nativeSave.profile?.full_name === "Settings Save Proof" &&
+      nativeSave.bootstrapAccount?.display_name === "Proof" &&
+      nativeSave.bootstrapAccount?.settings?.theme === "dark",
+    `Native Settings save contract failed: ${JSON.stringify(nativeSave)}`,
   );
 
   target = await targetAt(debuggerPort);
@@ -264,6 +351,8 @@ try {
           root.activeElement !== input
         ) return null;
         const rect = input.getBoundingClientRect();
+        const discover = root.querySelector("#models-button");
+        const discoverStyle = discover ? getComputedStyle(discover) : null;
         const composer = document.querySelector('[contenteditable="true"]');
         return {
           inSettingsDialog: Boolean(host.closest('[role="dialog"]')),
@@ -275,16 +364,31 @@ try {
             rect.x + rect.width / 2,
             rect.y + rect.height / 2,
           )?.id,
+          heading: root.querySelector("h1")?.textContent?.trim(),
+          discoverButton: discover ? {
+            text: discover.textContent?.trim(),
+            color: discoverStyle?.color,
+            backgroundColor: discoverStyle?.backgroundColor
+          } : null,
           nativeHidden: [...host.parentElement.children]
             .filter(child => child !== host && child.dataset.localClaudeSettingsHidden === "true")
             .length
         };
       })()`,
     );
-    if (!state) throw new Error("Local model Settings page is not open yet");
+    if (!state) throw new Error("Model Settings page is not open yet");
     return state;
   });
   assert(opened.inSettingsDialog, "Provider form escaped the Settings modal");
+  assert(
+    opened.heading === "Model",
+    `Model heading is wrong: ${JSON.stringify(opened)}`,
+  );
+  assert(
+    opened.discoverButton?.text === "Discover models" &&
+      opened.discoverButton.color !== opened.discoverButton.backgroundColor,
+    `Discover models button is not visible: ${JSON.stringify(opened.discoverButton)}`,
+  );
   assert(opened.focused, `Endpoint did not focus: ${JSON.stringify(opened)}`);
   assert(
     opened.shadowHit === "base-url",
@@ -467,11 +571,13 @@ try {
         },
         menu: { pointerClickObserved, nativePopupRequested: true },
         settings,
+        nativeSave,
         opened,
         endpointTyped,
         discovered,
         beforeSave,
         saved,
+        providerMode: fallbackProvider ? "fallback-catalog" : "live",
       },
       null,
       2,
@@ -488,5 +594,7 @@ try {
     new Promise((resolve) => child.once("exit", resolve)),
     new Promise((resolve) => setTimeout(resolve, 3000)),
   ]);
+  if (fallbackProvider)
+    await new Promise((resolve) => fallbackProvider.close(resolve));
   await rm(profile, { recursive: true, force: true });
 }

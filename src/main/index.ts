@@ -358,26 +358,39 @@ function createMainWindow(): BrowserWindow {
   updateViewBounds();
   installNavigationPolicy(view.webContents);
 
+  const broadcastNavigationState = () => {
+    if (view.webContents.isDestroyed()) return;
+    const channel = eventChannel(
+      "claude.web.BrowserNavigation",
+      "navigationState_$store$_update",
+    );
+    if (channel)
+      broadcast(channel, {
+        canGoBack: view.webContents.navigationHistory.canGoBack(),
+        canGoForward: view.webContents.navigationHistory.canGoForward(),
+      });
+  };
+
   view.webContents.on(
     "did-start-navigation",
     (_event, url, sameDocument, isMainFrame) => {
       if (!isMainFrame) return;
+      // The native Code preview is a child WebContentsView, not part of the
+      // routed page. Release it (and its consumer lock) whenever the main app
+      // changes route so it cannot cover Chat or block a later reopen.
+      localFilePreview?.hide();
       if (process.env.CLAUDE_TRACE_LOCAL_API === "1")
         console.error(
           `[local-navigation] ${sameDocument ? "same-document" : "document"} ${url}`,
         );
-      const channel = eventChannel(
-        "claude.web.BrowserNavigation",
-        "navigationState_$store$_update",
-      );
-      if (channel) {
-        broadcast(channel, {
-          canGoBack: view.webContents.navigationHistory.canGoBack(),
-          canGoForward: view.webContents.navigationHistory.canGoForward(),
-        });
-      }
+      // Chromium updates its history entry after this event for same-document
+      // router transitions, so report once now and once after the current turn.
+      broadcastNavigationState();
+      setTimeout(broadcastNavigationState, 0);
     },
   );
+  view.webContents.on("did-navigate", broadcastNavigationState);
+  view.webContents.on("did-navigate-in-page", broadcastNavigationState);
   view.webContents.on(
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
@@ -463,6 +476,8 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
   ipcMain.removeHandler("request-open-mcp-settings");
   ipcMain.removeHandler("local-pick-directory");
   ipcMain.removeHandler("local-open-settings");
+  ipcMain.removeHandler("local-code-artifact-details");
+  ipcMain.removeHandler("local-show-code-artifact");
   ipcMain.handle("list-mcp-servers", (event) => {
     assertTrustedIpcSender(event);
     return dispatcher.listMcpServers();
@@ -496,6 +511,39 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
     broadcast(channel, "/settings/desktop");
     return true;
   });
+  ipcMain.handle("local-code-artifact-details", async (event, id) => {
+    assertTrustedIpcSender(event);
+    if (!codeSessions || typeof id !== "string") return null;
+    const artifact = await codeSessions.invoke("readArtifactById", [id]);
+    if (!artifact || typeof artifact !== "object") return null;
+    const value = artifact as Record<string, unknown>;
+    return typeof value.sessionId === "string" && typeof value.path === "string"
+      ? {
+          id,
+          sessionId: value.sessionId,
+          path: value.path,
+          title: typeof value.title === "string" ? value.title : "Artifact",
+        }
+      : null;
+  });
+  ipcMain.handle(
+    "local-show-code-artifact",
+    async (event, id, bounds, consumerId) => {
+      assertTrustedIpcSender(event);
+      if (!codeSessions || !localFilePreview || typeof id !== "string")
+        return { ok: false, declineReason: "unavailable" };
+      const artifact = await codeSessions.invoke("readArtifactById", [id]);
+      if (!artifact || typeof artifact !== "object")
+        return { ok: false, declineReason: "missing_artifact" };
+      const value = artifact as Record<string, unknown>;
+      return localFilePreview.show(
+        value.sessionId,
+        value.path,
+        bounds,
+        consumerId,
+      );
+    },
+  );
 }
 
 function dispatchDeepLink(url: string): void {
@@ -524,7 +572,10 @@ if (!gotLock) {
     .whenReady()
     .then(async () => {
       state = new StateStore(app.getPath("userData"));
-      localWebTools = new LocalWebTools(app.getPath("userData"), app.getAppPath());
+      localWebTools = new LocalWebTools(
+        app.getPath("userData"),
+        app.getAppPath(),
+      );
       let localBackend: LocalBackend | null = null;
       const ionRoot = await localUiRoot();
       const useLocalUi =
@@ -583,6 +634,10 @@ if (!gotLock) {
             "activeServers_$store$_update",
           );
           if (channel) broadcast(channel, servers);
+        },
+        (serverId, context) => {
+          const channel = eventChannel("claude.web.Launch", "elementSelected");
+          if (channel) broadcast(channel, serverId, context);
         },
       );
       if (useLocalUi && ionRoot && localBackend)

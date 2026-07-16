@@ -83,13 +83,20 @@ describe("LocalCodeSessionManager", () => {
     );
     expect(
       await manager.invoke("getSupportedCommands", [{ cwd: workspace }]),
-    ).toEqual([
-      expect.objectContaining({
-        name: "proof-skill",
-        scope: "code",
-      }),
-      expect.objectContaining({ name: "verify", scope: "code" }),
-    ]);
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "proof-skill",
+          scope: "code",
+        }),
+        expect.objectContaining({ name: "verify", scope: "code" }),
+        expect.objectContaining({
+          name: "frontend-design",
+          scope: "code",
+        }),
+        expect.objectContaining({ name: "skill-creator", scope: "code" }),
+      ]),
+    );
     expect(
       await readFile(
         path.join(workspace, ".claude", "skills", "proof-skill", "SKILL.md"),
@@ -135,14 +142,43 @@ describe("LocalCodeSessionManager", () => {
         false,
       ]),
     ).toEqual({ ok: true });
-    expect(await manager.invoke("listLocalSkills", [])).toEqual([
+    expect(await manager.invoke("listLocalSkills", [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          skillId: "frontend-design",
+          builtIn: true,
+          enabled: true,
+        }),
+        expect.objectContaining({
+          skillId: "skill-creator",
+          builtIn: true,
+          enabled: true,
+        }),
+        expect.objectContaining({
+          skillId: "proof-skill",
+          name: "proof-skill",
+          description: "Used to prove native local skills.",
+          enabled: true,
+        }),
+      ]),
+    );
+    expect(
+      await manager.invoke("getLocalSkillFiles", ["frontend-design"]),
+    ).toEqual([
       expect.objectContaining({
-        skillId: "proof-skill",
-        name: "proof-skill",
-        description: "Used to prove native local skills.",
-        enabled: true,
+        path: "SKILL.md",
+        content: expect.stringContaining(
+          "Process: brainstorm, explore, plan, critique, build, critique again",
+        ),
       }),
     ]);
+    expect(
+      (
+        (await manager.invoke("getLocalSkillFiles", [
+          "frontend-design",
+        ])) as Array<{ content: string }>
+      )[0]?.content,
+    ).toContain("license: Complete terms in LICENSE.txt");
     expect(await manager.invoke("getLocalSkillFiles", ["proof-skill"])).toEqual(
       [
         expect.objectContaining({
@@ -159,11 +195,17 @@ describe("LocalCodeSessionManager", () => {
     ).toContain("Run the proof.");
 
     await manager.invoke("setLocalSkillEnabled", ["proof-skill", false]);
-    expect(await manager.invoke("listLocalSkills", [])).toEqual([
-      expect.objectContaining({ name: "proof-skill", enabled: false }),
-    ]);
+    expect(await manager.invoke("listLocalSkills", [])).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "proof-skill", enabled: false }),
+      ]),
+    );
     await manager.invoke("deleteLocalSkill", ["proof-skill"]);
-    expect(await manager.invoke("listLocalSkills", [])).toEqual([]);
+    expect(await manager.invoke("listLocalSkills", [])).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "proof-skill" }),
+      ]),
+    );
   });
 
   it("runs an OpenAI-compatible tool loop, writes a file, emits events, and persists", async () => {
@@ -188,7 +230,7 @@ describe("LocalCodeSessionManager", () => {
                       function: {
                         name: "Write",
                         arguments: JSON.stringify({
-                          file_path: "proof.md",
+                          file_path: "/home/user/proof.md",
                           content: "local code harness proof",
                         }),
                       },
@@ -284,6 +326,16 @@ describe("LocalCodeSessionManager", () => {
         "local code harness proof",
       );
       expect(requests).toHaveLength(3);
+      expect(requests[0].messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringContaining(
+              `Current workspace root: ${workspace}`,
+            ),
+          }),
+        ]),
+      );
       expect(requests[0].tools).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

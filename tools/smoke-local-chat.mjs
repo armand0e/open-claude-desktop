@@ -492,6 +492,55 @@ try {
     );
   }
 
+  const artifactLifecycle = artifactMode
+    ? await evaluateEventually(
+        debuggerPort,
+        `(async () => {
+          const close = document.querySelector('button[aria-label="Close artifact"]');
+          if (!close) return { closed: false, reopened: false, reason: "close_missing" };
+          close.click();
+          const closeDeadline = Date.now() + 5000;
+          const visibleArtifact = () => {
+            const frame = document.querySelector('iframe[src^="app://artifacts.local"]');
+            if (!frame) return false;
+            const rect = frame.getBoundingClientRect();
+            const style = getComputedStyle(frame);
+            return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+          };
+          while (visibleArtifact() && Date.now() < closeDeadline)
+            await new Promise(resolve => setTimeout(resolve, 50));
+          const closed = !visibleArtifact();
+          const view = document.querySelector('button[aria-label="View Local Artifact Demo"]');
+          view?.click();
+          const openDeadline = Date.now() + 8000;
+          while (!visibleArtifact() && Date.now() < openDeadline)
+            await new Promise(resolve => setTimeout(resolve, 50));
+          return {
+            closed,
+            reopened: visibleArtifact(),
+            viewPresent: Boolean(view),
+            viewHtml: view?.outerHTML?.slice(0, 1800),
+            frameAncestors: (() => {
+              const result = [];
+              let element = document.querySelector('iframe[src^="app://artifacts.local"]');
+              while (element && result.length < 10) {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                result.push({ tag: element.tagName, className: String(element.className).slice(0, 300), display: style.display, visibility: style.visibility, width: rect.width, height: rect.height });
+                element = element.parentElement;
+              }
+              return result;
+            })()
+          };
+        })()`,
+      )
+    : null;
+  if (artifactMode)
+    assert(
+      artifactLifecycle?.closed && artifactLifecycle?.reopened,
+      `Chat artifact did not close and reopen: ${JSON.stringify(artifactLifecycle)}`,
+    );
+
   const streamSettled = await evaluateEventually(
     debuggerPort,
     `(async () => {
@@ -593,6 +642,56 @@ try {
     );
   }
 
+  const artifactNavigation = artifactMode
+    ? await evaluateEventually(
+        debuggerPort,
+        `(async () => {
+          const newChat = [...document.querySelectorAll('button')].find(button =>
+            /^new chat/i.test(button.textContent?.trim() || '')
+          );
+          newChat?.click();
+          const newDeadline = Date.now() + 8000;
+          while (!location.pathname.startsWith('/new') && Date.now() < newDeadline)
+            await new Promise(resolve => setTimeout(resolve, 50));
+          const artifactVisible = () => {
+            const frame = document.querySelector('iframe[src^="app://artifacts.local"]');
+            if (!frame) return false;
+            const rect = frame.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0 && getComputedStyle(frame).visibility !== 'hidden';
+          };
+          const closedOnLeave = !artifactVisible();
+          const leakedWelcome = [...document.querySelectorAll('h1,h2,h3')]
+            .some(heading => heading.textContent?.trim() === 'What can I help you with?');
+          const back = document.querySelector('button[aria-label="Back"]');
+          back?.click();
+          const backDeadline = Date.now() + 8000;
+          while (!location.pathname.startsWith('/chat/') && Date.now() < backDeadline)
+            await new Promise(resolve => setTimeout(resolve, 50));
+          const view = document.querySelector('button[aria-label="View Local Artifact Demo"]');
+          if (!artifactVisible()) view?.click();
+          const reopenDeadline = Date.now() + 8000;
+          while (!artifactVisible() && Date.now() < reopenDeadline)
+            await new Promise(resolve => setTimeout(resolve, 50));
+          return {
+            path: location.pathname,
+            closedOnLeave,
+            leakedWelcome,
+            returnedToConversation: location.pathname.startsWith('/chat/'),
+            reopenedAfterVisit: artifactVisible()
+          };
+        })()`,
+        30_000,
+      )
+    : null;
+  if (artifactMode)
+    assert(
+      artifactNavigation?.closedOnLeave &&
+        !artifactNavigation?.leakedWelcome &&
+        artifactNavigation?.returnedToConversation &&
+        artifactNavigation?.reopenedAfterVisit,
+      `Artifact navigation lifecycle failed: ${JSON.stringify(artifactNavigation)}`,
+    );
+
   process.stdout.write(
     `${JSON.stringify(
       {
@@ -607,6 +706,8 @@ try {
                 buttons: rendered.artifactButtons,
                 rendererSignal: rendered.localArtifactRendered,
               },
+              artifactLifecycle,
+              artifactNavigation,
             }
           : {}),
         reloaded: reloaded.rendered,

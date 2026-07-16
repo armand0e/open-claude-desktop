@@ -307,6 +307,11 @@ export class ServiceDispatcher {
       storeNameFromMethod(parsed.method) === "activeServers"
     )
       return this.context.launchPreview.servers;
+    if (
+      key === "claude.web.BrowserNavigation" &&
+      storeNameFromMethod(parsed.method) === "navigationState"
+    )
+      return this.browserNavigation(parsed.method, event);
     if (storeNameFromMethod(parsed.method))
       return defaultStoreValue(this.context, parsed);
 
@@ -782,6 +787,11 @@ export class ServiceDispatcher {
   ): unknown {
     const contents = this.context.mainView()?.webContents;
     if (!contents || contents.isDestroyed()) return null;
+    if (method.startsWith("navigationState_$store$_"))
+      return {
+        canGoBack: contents.navigationHistory.canGoBack(),
+        canGoForward: contents.navigationHistory.canGoForward(),
+      };
     if (method === "goBack" && contents.navigationHistory.canGoBack())
       contents.navigationHistory.goBack();
     if (method === "goForward" && contents.navigationHistory.canGoForward())
@@ -1099,12 +1109,7 @@ export class ServiceDispatcher {
       return error ? { ok: false, error } : { ok: true };
     }
     if (method === "showSessionFilePreview")
-      return this.context.filePreview.show(
-        args[0],
-        args[1],
-        args[2],
-        args[3],
-      );
+      return this.context.filePreview.show(args[0], args[1], args[2], args[3]);
     return this.context.codeSessions.invoke(method, args);
   }
 
@@ -1114,12 +1119,7 @@ export class ServiceDispatcher {
     if (method === "isOpenInDefaultAppEnabled" || method === "isVmReady")
       return true;
     if (method === "show")
-      return this.context.filePreview.show(
-        args[0],
-        args[1],
-        args[2],
-        args[3],
-      );
+      return this.context.filePreview.show(args[0], args[1], args[2], args[3]);
     if (method === "hide") return this.context.filePreview.hide(args[0]);
     if (method === "parkAndCapture")
       return this.context.filePreview.parkAndCapture(args[0], args[1]);
@@ -1136,6 +1136,17 @@ export class ServiceDispatcher {
       return this.context.codeSessions.invoke("deleteArtifactById", [args[0]]);
     if (method === "getArtifactMetadata")
       return this.context.codeSessions.invoke("readArtifactById", [args[0]]);
+    if (method === "getArtifactIndexHtmlPath")
+      return this.context.codeSessions
+        .invoke("readArtifactById", [args[0]])
+        .then((artifact) =>
+          artifact &&
+          typeof artifact === "object" &&
+          "path" in artifact &&
+          typeof artifact.path === "string"
+            ? artifact.path
+            : "",
+        );
     if (method === "isAutoPublishEnabled") return true;
     if (method === "isSharingEnabled") return false;
     if (method === "getArtifactThumbnail") return null;
@@ -1220,9 +1231,10 @@ export class ServiceDispatcher {
       case "setActivePreviewTab":
       case "closePreviewTab":
       case "closeAllPreviewTabs":
-      case "toggleSelectionMode":
       case "clearPreviewAllowedOrigins":
         return true;
+      case "toggleSelectionMode":
+        return preview.toggleSelectionMode(args[0], args[1]);
       case "getPreviewAllowedOrigins":
         return [];
       case "addPreviewAllowedOrigin":

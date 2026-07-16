@@ -178,8 +178,7 @@ export const localClaudeApi = {
   version: 1,
 };
 
-let mermaidModule: Promise<(typeof import("mermaid"))["default"]> | null =
-  null;
+let mermaidModule: Promise<(typeof import("mermaid"))["default"]> | null = null;
 let mermaidDiagramId = 0;
 
 function loadMermaid(): Promise<(typeof import("mermaid"))["default"]> {
@@ -268,8 +267,19 @@ export function installLocalWorkbench(): void {
         /* The retained client requires an internal identity object to build
            conversation queries, but local mode has no user account. */
         [data-testid="user-menu-button"] { display: none !important; }
-        button[data-mode="cowork"] { display: none !important; }
+        button[data-mode="cowork"], button[aria-label="Cowork"] { display: none !important; }
         [data-local-cloud-only="true"] { display: none !important; }
+        button[aria-label="Menu"],
+        button[aria-label="Collapse sidebar"],
+        button[aria-label="Expand sidebar"],
+        button[aria-label="Search"],
+        button[aria-label="Back"],
+        button[aria-label="Forward"] {
+          -webkit-app-region: no-drag !important;
+          pointer-events: auto !important;
+          position: relative;
+          z-index: 3;
+        }
       `;
       document.head.append(style);
     }
@@ -285,33 +295,32 @@ export function installLocalWorkbench(): void {
         :host([hidden]) { display: none !important; }
         * { box-sizing: border-box; }
         button, input { font: inherit; }
-        #panel { width: min(100%, 660px); padding: 4px 0 28px; }
-        h1 { margin: 0 0 6px; font: 600 24px/1.25 ui-serif, Georgia, serif; }
-        .lede { margin: 0 0 24px; color: var(--cds-text-secondary, #6b675f); }
-        .section { display: grid; gap: 14px; padding: 20px; border: 1px solid var(--cds-border, rgba(110,104,94,.22)); border-radius: 14px; background: var(--cds-surface-1, rgba(255,255,255,.38)); }
-        label { display: grid; gap: 6px; font-weight: 600; }
-        input { width: 100%; border: 1px solid var(--cds-border, rgba(110,104,94,.32)); border-radius: 9px; padding: 9px 11px; background: var(--cds-bg-000, #fff); color: inherit; outline: none; }
+        #panel { width: 100%; padding: 0 24px 32px; }
+        h1 { margin: 0; padding: 4px 0 22px; font: 650 20px/1.25 ui-sans-serif, system-ui, sans-serif; }
+        .section { border-top: 1px solid var(--cds-border, rgba(110,104,94,.18)); }
+        .row { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(260px, 1.45fr); gap: 28px; align-items: center; min-height: 72px; padding: 14px 0; border-bottom: 1px solid var(--cds-border, rgba(110,104,94,.18)); }
+        .copy { display: grid; gap: 3px; min-width: 0; }
+        .label { font-weight: 650; }
+        input { width: 100%; border: 0; border-radius: 10px; padding: 10px 12px; background: var(--cds-bg-200, rgba(110,104,94,.16)); color: inherit; outline: none; }
         input:focus { border-color: #d97757; box-shadow: 0 0 0 2px color-mix(in srgb, #d97757 25%, transparent); }
-        .hint { margin: -7px 0 0; color: var(--cds-text-secondary, #6b675f); font-size: 12px; }
-        .actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 2px; }
-        .actions button { border: 1px solid var(--cds-border, rgba(110,104,94,.3)); border-radius: 9px; padding: 8px 12px; cursor: pointer; background: var(--cds-bg-000, #fff); color: inherit; }
+        .hint { margin: 0; color: var(--cds-text-secondary, #8a8781); font-size: 12px; font-weight: 400; }
+        .actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 9px; padding: 18px 0 8px; }
+        .actions button { border: 1px solid var(--cds-border, rgba(110,104,94,.3)); border-radius: 9px; padding: 8px 12px; cursor: pointer; background: var(--cds-bg-200, rgba(110,104,94,.16)); color: inherit; }
         .actions .primary { background: #d97757; border-color: #d97757; color: #fff; }
-        #status { min-height: 18px; margin: 0; color: var(--cds-text-secondary, #6b675f); font-size: 12px; white-space: pre-wrap; }
+        #status { min-height: 18px; margin: 0; text-align: right; color: var(--cds-text-secondary, #6b675f); font-size: 12px; white-space: pre-wrap; }
         #models { max-height: 160px; overflow: auto; display: grid; gap: 5px; }
         #models:empty { display: none; }
         #models button { text-align: left; border: 0; border-radius: 7px; padding: 6px 8px; background: var(--cds-fill-ghost-hover, rgba(110,104,94,.08)); cursor: pointer; color: inherit; }
+        @media (max-width: 720px) { .row { grid-template-columns: 1fr; gap: 8px; } }
       </style>
-      <section id="panel" aria-label="Local model settings">
-        <h1>Local model</h1>
-        <p class="lede">Configure the OpenAI-compatible provider used by both Chat and Code.</p>
+      <section id="panel" aria-label="Model settings">
+        <h1>Model</h1>
         <div class="section">
-          <label>OpenAI-compatible URL<input id="base-url" type="url" spellcheck="false"></label>
-          <p class="hint">Ollama: http://127.0.0.1:11434/v1 · LM Studio: http://127.0.0.1:1234/v1</p>
-          <label>Model<input id="model" type="text" spellcheck="false"></label>
-          <label>Context window (tokens)<input id="context-window" type="number" min="1024" step="1024" inputmode="numeric"></label>
-          <p class="hint">Used by Code for its live context meter. Match the context length configured in your local model server.</p>
-          <label>API key<input id="api-key" type="password" autocomplete="off" placeholder="Leave blank to keep current key"></label>
-          <div class="actions"><button id="models-button" type="button">Discover models</button><button id="save" class="primary" type="button">Save</button></div>
+          <label class="row"><span class="copy"><span class="label">OpenAI-compatible URL</span><span class="hint">LM Studio usually uses http://127.0.0.1:1234/v1</span></span><input id="base-url" type="url" spellcheck="false"></label>
+          <label class="row"><span class="copy"><span class="label">Model</span><span class="hint">The model ID exposed by your local server</span></span><input id="model" type="text" spellcheck="false"></label>
+          <label class="row"><span class="copy"><span class="label">Context window</span><span class="hint">Used by Code for its live context meter</span></span><input id="context-window" type="number" min="1024" step="1024" inputmode="numeric"></label>
+          <label class="row"><span class="copy"><span class="label">API key</span><span class="hint">Optional for local OpenAI-compatible servers</span></span><input id="api-key" type="password" autocomplete="off" placeholder="Leave blank to keep current key"></label>
+          <div class="actions"><button id="models-button" type="button">Discover models</button><button id="save" class="primary" type="button">Save changes</button></div>
           <div id="models"></div><p id="status" role="status"></p>
         </div>
       </section>`;
@@ -882,35 +891,9 @@ export function installLocalWorkbench(): void {
         });
       }
 
-      const customize = [
-        ...document.querySelectorAll<HTMLButtonElement>("button"),
-      ].find((button) =>
-        [...button.querySelectorAll<HTMLElement>(".truncate")].some(
-          (label) => label.textContent?.trim() === "Customize",
-        ),
-      );
-      const actions = customize?.parentElement;
-      if (
-        customize &&
-        actions &&
-        !actions.querySelector("[data-local-artifacts-button]")
-      ) {
-        const artifactsButton = customize.cloneNode(true) as HTMLButtonElement;
-        artifactsButton.dataset.localArtifactsButton = "";
-        artifactsButton.removeAttribute("aria-current");
-        artifactsButton.removeAttribute("data-selected");
-        artifactsButton.setAttribute("aria-label", "Artifacts");
-        const artifactLabel =
-          artifactsButton.querySelector<HTMLElement>(".truncate");
-        if (artifactLabel) artifactLabel.textContent = "Artifacts";
-        const icon =
-          artifactsButton.querySelector<HTMLElement>("[data-cds='Icon']");
-        if (icon) icon.textContent = "◫";
-        artifactsButton.addEventListener("click", () =>
-          location.assign("app://localhost/epitaxy/apps"),
-        );
-        actions.insertBefore(artifactsButton, customize);
-      }
+      // Older local builds injected a second Artifacts row. The retained client
+      // now has its own native entry, so remove any stale injected copy.
+      document.querySelector("[data-local-artifacts-button]")?.remove();
 
       if (
         /^\/customize\/(connectors|plugins)(?:\/|$)/.test(location.pathname)
@@ -933,8 +916,7 @@ export function installLocalWorkbench(): void {
             candidate.getAttribute("title")?.trim() ??
             candidate.textContent?.trim() ??
             "";
-          if (!cloudOnlyLabels.has(label))
-            continue;
+          if (!cloudOnlyLabels.has(label)) continue;
           const control = candidate.closest<HTMLElement>("a,button");
           (control ?? candidate).dataset.localCloudOnly = "true";
         }
@@ -1014,6 +996,33 @@ export function installLocalWorkbench(): void {
         const existingButtons = [
           ...navigation.querySelectorAll<HTMLButtonElement>("button"),
         ];
+        const cloudOnlySettings = new Set(["Privacy", "Connectors", "Cowork"]);
+        for (const button of existingButtons) {
+          const label =
+            button
+              .querySelector<HTMLElement>(".truncate")
+              ?.textContent?.trim() ??
+            button.textContent?.trim() ??
+            "";
+          if (cloudOnlySettings.has(label))
+            (button.closest("li") ?? button).dataset.localCloudOnly = "true";
+        }
+        const instructionCopy = [
+          ...dialog.querySelectorAll<HTMLElement>("div,p,span"),
+        ]
+          .filter((candidate) =>
+            candidate.textContent?.includes(
+              "Claude will keep these in mind across chats and Cowork",
+            ),
+          )
+          .sort(
+            (left, right) =>
+              (left.textContent?.length ?? 0) -
+              (right.textContent?.length ?? 0),
+          )[0];
+        if (instructionCopy)
+          instructionCopy.textContent =
+            "Claude Local will keep these in mind across chats on this device.";
         const activeTemplate = existingButtons.find((button) =>
           button.hasAttribute("aria-current"),
         );
@@ -1034,12 +1043,15 @@ export function installLocalWorkbench(): void {
           const button = document.createElement("button");
           button.type = "button";
           button.className = inactiveNavigationClass;
-          button.innerHTML = `<span aria-hidden="true" style="width:1em;height:1em;display:flex;align-items:center;justify-content:center;font-size:17px">&#9881;</span><span class="min-w-0 flex-1 truncate">Local model</span>`;
+          button.innerHTML = `<span aria-hidden="true" style="width:1em;height:1em;display:flex;align-items:center;justify-content:center;font-size:17px">&#9881;</span><span class="min-w-0 flex-1 truncate">Model</span>`;
           item.append(button);
           desktopList.prepend(item);
         }
         const localButton = item.querySelector<HTMLButtonElement>("button");
         if (!localButton) continue;
+        const localLabel = localButton.querySelector<HTMLElement>(".truncate");
+        if (localLabel && localLabel.textContent?.trim() !== "Model")
+          localLabel.textContent = "Model";
         localNavigationButton = localButton;
         if (!wiredButtons.has(localButton)) {
           wiredButtons.add(localButton);
@@ -1104,12 +1116,133 @@ export function installLocalWorkbench(): void {
       }
     });
 
+    let artifactOwnerPath: string | null = null;
+    let artifactClosePending = false;
+    let openedCodeArtifactId: string | null = null;
+    const wireArtifactLifecycle = () => {
+      const close = document.querySelector<HTMLButtonElement>(
+        'button[aria-label="Close artifact"]',
+      );
+      if (!close) {
+        artifactOwnerPath = null;
+        return;
+      }
+      if (artifactOwnerPath === null) {
+        artifactOwnerPath = location.pathname;
+        return;
+      }
+      if (artifactOwnerPath !== location.pathname && !artifactClosePending) {
+        artifactClosePending = true;
+        close.click();
+        artifactOwnerPath = null;
+        queueMicrotask(() => {
+          artifactClosePending = false;
+        });
+      }
+    };
+    const wireCodeArtifactRoute = () => {
+      const id = new URL(location.href).searchParams.get("open_local_artifact");
+      if (!id) {
+        openedCodeArtifactId = null;
+        return;
+      }
+      if (openedCodeArtifactId === id) return;
+      openedCodeArtifactId = id;
+      setTimeout(() => {
+        const previewWidth = Math.max(420, Math.round(innerWidth * 0.48));
+        void ipcRenderer.invoke(
+          "local-show-code-artifact",
+          id,
+          {
+            x: Math.max(0, innerWidth - previewWidth),
+            y: 48,
+            width: previewWidth,
+            height: Math.max(200, innerHeight - 48),
+          },
+          `gallery:${id}`,
+        );
+      }, 650);
+    };
+    const artifactPane = (): HTMLElement | null => {
+      let element = document.querySelector<HTMLElement>(
+        'iframe[src^="app://artifacts.local"]',
+      );
+      while (element) {
+        if (
+          typeof element.className === "string" &&
+          element.className.includes("md:flex-grow-0") &&
+          element.className.includes("overflow-hidden")
+        )
+          return element;
+        element = element.parentElement;
+      }
+      return null;
+    };
+    const setArtifactPaneOpen = (open: boolean) => {
+      const pane = artifactPane();
+      if (!pane) return;
+      if (open) {
+        pane.dataset.localArtifactPaneOpen = "true";
+        pane.style.setProperty(
+          "flex-basis",
+          `${Math.max(420, Math.round(innerWidth * 0.46))}px`,
+          "important",
+        );
+        pane.style.setProperty("flex-grow", "0", "important");
+        pane.style.setProperty("flex-shrink", "0", "important");
+        let content = document.querySelector<HTMLElement>(
+          'iframe[src^="app://artifacts.local"]',
+        );
+        while (content && content !== pane) {
+          content.dataset.localArtifactContentOpen = "true";
+          if (getComputedStyle(content).display !== "contents") {
+            content.style.setProperty("width", "100%", "important");
+            content.style.setProperty("min-width", "100%", "important");
+            content.style.setProperty("height", "100%", "important");
+            content.style.setProperty("min-height", "100%", "important");
+          }
+          content = content.parentElement;
+        }
+      } else {
+        delete pane.dataset.localArtifactPaneOpen;
+        pane.style.removeProperty("flex-basis");
+        pane.style.removeProperty("flex-grow");
+        pane.style.removeProperty("flex-shrink");
+        for (const content of document.querySelectorAll<HTMLElement>(
+          "[data-local-artifact-content-open]",
+        )) {
+          delete content.dataset.localArtifactContentOpen;
+          content.style.removeProperty("width");
+          content.style.removeProperty("min-width");
+          content.style.removeProperty("height");
+          content.style.removeProperty("min-height");
+        }
+      }
+    };
+    document.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const button = target.closest<HTMLButtonElement>("button[aria-label]");
+        const label = button?.getAttribute("aria-label") ?? "";
+        if (label === "Close artifact") setArtifactPaneOpen(false);
+        else if (label.startsWith("View ")) {
+          setTimeout(() => setArtifactPaneOpen(true), 0);
+          setTimeout(() => setArtifactPaneOpen(true), 150);
+        }
+      },
+      true,
+    );
+
     document.documentElement.append(host);
     const wireLocalUi = () => {
       wireLocalNavigation();
       wireSidebarSettings();
       wireSettingsDialog();
       wireInlineMermaidDiagrams();
+      wireArtifactLifecycle();
+      wireCodeArtifactRoute();
     };
     const observer = new MutationObserver(wireLocalUi);
     observer.observe(document.documentElement, {

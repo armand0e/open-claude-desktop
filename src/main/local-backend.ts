@@ -148,6 +148,8 @@ interface LocalConversation {
 interface LocalData {
   version: 3;
   provider: LocalProviderConfig;
+  accountProfile: JsonObject;
+  accountSettings: JsonObject;
   conversations: LocalConversation[];
   artifacts: LocalArtifact[];
   files: LocalStoredFile[];
@@ -251,6 +253,15 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function plainJsonObject(value: unknown): JsonObject {
+  if (!isObject(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "__proto__" && key !== "constructor")
+      .map(([key, entry]) => [key, structuredClone(entry)]),
+  );
+}
+
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
@@ -279,8 +290,7 @@ function normalizeAttachment(value: unknown): LocalAttachment | null {
     extracted_content: extractedContent,
     origin: stringValue(value.origin) || "user_upload",
     kind: stringValue(value.kind) || "file",
-};
-
+  };
 }
 
 const CHAT_TOOLS = [ARTIFACT_TOOL, ...WEB_TOOLS];
@@ -288,8 +298,9 @@ const CHAT_TOOLS = [ARTIFACT_TOOL, ...WEB_TOOLS];
 function reasoningRequest(body: JsonObject): JsonObject {
   const thinking = isObject(body.thinking) ? body.thinking : {};
   let effort =
-    stringValue(body.reasoning_effort || body.effort || thinking.effort)
-      ?.toLowerCase() ?? "";
+    stringValue(
+      body.reasoning_effort || body.effort || thinking.effort,
+    )?.toLowerCase() ?? "";
   if (thinking.type === "disabled") effort = "off";
   if (!effort || effort === "auto") return {};
   if (effort === "off")
@@ -416,7 +427,8 @@ function configuredProvider(
       input?.model?.trim() ||
       DEFAULT_PROVIDER.model,
     contextWindow:
-      Number.isFinite(configuredContextWindow) && configuredContextWindow >= 1024
+      Number.isFinite(configuredContextWindow) &&
+      configuredContextWindow >= 1024
         ? Math.floor(configuredContextWindow)
         : DEFAULT_PROVIDER.contextWindow,
     ...(process.env.CLAUDE_LOCAL_API_KEY?.trim() || input?.apiKey
@@ -718,6 +730,8 @@ export class LocalBackend {
     const files = Array.isArray(input.files)
       ? (input.files as LocalStoredFile[])
       : [];
+    const accountProfile = plainJsonObject(input.accountProfile);
+    const accountSettings = plainJsonObject(input.accountSettings);
     return new LocalBackend(
       filePath,
       {
@@ -728,6 +742,8 @@ export class LocalBackend {
           contextWindow: Number(provider.contextWindow),
           apiKey: stringValue(provider.apiKey),
         }),
+        accountProfile,
+        accountSettings,
         conversations,
         artifacts,
         files,
@@ -738,6 +754,32 @@ export class LocalBackend {
 
   provider(): LocalProviderConfig {
     return structuredClone(this.#data.provider);
+  }
+
+  accountProfile(): JsonObject {
+    return structuredClone(this.#data.accountProfile);
+  }
+
+  accountSettings(): JsonObject {
+    return structuredClone(this.#data.accountSettings);
+  }
+
+  async updateAccountProfile(input: unknown): Promise<JsonObject> {
+    this.#data.accountProfile = {
+      ...this.#data.accountProfile,
+      ...plainJsonObject(input),
+    };
+    await this.#persist();
+    return this.accountProfile();
+  }
+
+  async updateAccountSettings(input: unknown): Promise<JsonObject> {
+    this.#data.accountSettings = {
+      ...this.#data.accountSettings,
+      ...plainJsonObject(input),
+    };
+    await this.#persist();
+    return this.accountSettings();
   }
 
   async #persist(): Promise<void> {
@@ -1191,18 +1233,13 @@ export class LocalBackend {
                 };
                 if (delta.id) accumulated.id = delta.id;
                 if (delta.name) accumulated.name += delta.name;
-                if (delta.arguments)
-                  accumulated.arguments += delta.arguments;
+                if (delta.arguments) accumulated.arguments += delta.arguments;
                 toolCalls.set(delta.index, accumulated);
               }
               const hasToolCall = [...toolCalls.values()].some(
-                (toolCall) =>
-                  toolCall.name.trim() && toolCall.arguments.trim(),
+                (toolCall) => toolCall.name.trim() && toolCall.arguments.trim(),
               );
-              if (
-                assistantText.slice(attemptTextStart).trim() ||
-                hasToolCall
-              )
+              if (assistantText.slice(attemptTextStart).trim() || hasToolCall)
                 break;
               if (attempt === 2)
                 throw new Error(
@@ -1235,9 +1272,7 @@ export class LocalBackend {
             for (const toolCall of webCalls) {
               let input: JsonObject = {};
               try {
-                const parsed: unknown = JSON.parse(
-                  toolCall.arguments || "{}",
-                );
+                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
                 if (isObject(parsed)) input = parsed;
               } catch {
                 // The tool receives an empty object and returns a clear error.

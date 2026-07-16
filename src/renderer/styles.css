@@ -26,21 +26,6 @@ body,
   position: relative;
 }
 
-.drag-region {
-  position: absolute;
-  inset: 0 140px auto 0;
-  height: 38px;
-  -webkit-app-region: drag;
-  display: flex;
-  align-items: center;
-  padding-left: 14px;
-}
-
-.wordmark {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 15px;
-}
-
 .loading {
   display: flex;
   align-items: center;

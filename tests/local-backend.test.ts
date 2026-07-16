@@ -16,6 +16,34 @@ afterEach(async () => {
 });
 
 describe("LocalBackend", () => {
+  it("persists native account profile and settings changes locally", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "local-account-"));
+    temporaryDirectories.push(directory);
+    const backend = await LocalBackend.create(directory);
+
+    await backend.updateAccountProfile({
+      full_name: "Local Person",
+      display_name: "Local",
+      conversation_preferences: "Keep answers concise.",
+    });
+    await backend.updateAccountSettings({
+      theme: "dark",
+      chat_font: "anthropic-serif",
+    });
+
+    const reopened = await LocalBackend.create(directory);
+    expect(reopened.accountProfile()).toEqual(
+      expect.objectContaining({
+        full_name: "Local Person",
+        display_name: "Local",
+        conversation_preferences: "Keep answers concise.",
+      }),
+    );
+    expect(reopened.accountSettings()).toEqual(
+      expect.objectContaining({ theme: "dark", chat_font: "anthropic-serif" }),
+    );
+  });
+
   it("persists conversations and translates OpenAI streaming output", async () => {
     const requests: unknown[] = [];
     const server = createServer(async (request, response) => {

@@ -469,6 +469,16 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       "X(`/api/organizations/${s}/published_artifacts?${a.toString()}`,{custom3pCompatible:!0,staleTime:0,queryKey:[sb,{orgUuid:s,includeDeletedArtifacts:t?.includeDeletedArtifacts,noToast:t?.noToast}],enabled:!!s&&(t?.enabled??!0),meta:{noToast:t?.noToast}})",
   },
   {
+    id: "enable-local-code-plugins-access",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // The plugins section on the Code surface needs this statsig-backed
+    // skills-access gate; the local bootstrap ships empty statsig values,
+    // so it read false and the (fully backed) LocalPlugins UI never
+    // rendered.
+    find: 'function aNe(){const e=av("claudeai_skills_claude_code_access"),t=gpe(),n=BL();return e&&t&&n}',
+    replace: "function aNe(){return!0}",
+  },
+  {
     id: "grant-local-project-edit-permissions",
     assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
     // The permission hook derives knowledge/settings edit rights from
@@ -1256,6 +1266,10 @@ async function localApiResponse(
       );
     }
   }
+  // Client telemetry batches have no local sink; acknowledge them so the
+  // console stays free of 503 noise on every surface.
+  if (normalized.startsWith("/api/event_logging/"))
+    return jsonResponse({ ok: true });
   // Session inventory for the preload's directory-grouped Code sidebar.
   if (normalized === "/api/local/code/sessions") {
     const sessions = (await codeSessions.invoke("getAll", [])) as Array<

@@ -3473,6 +3473,9 @@ export class LocalBackend {
           status,
           headers: { "Content-Type": "application/json" },
         });
+      // Matches the fixed local account identity served by the bootstrap
+      // payload; the client treats mismatched creators as read-only.
+      const localAccountUuid = "00000000-0000-4000-8000-000000000002";
       const summary = (project: LocalProject) => ({
         uuid: project.uuid,
         name: project.name,
@@ -3480,13 +3483,17 @@ export class LocalBackend {
         is_private: project.is_private,
         is_starred: project.is_starred,
         is_archived: project.is_archived,
+        archived_at: project.is_archived ? project.updated_at : null,
         prompt_template: project.prompt_template,
         created_at: project.created_at,
         updated_at: project.updated_at,
         type: "project",
-        creator: this.#data.accountProfile.display_name
-          ? { display_name: this.#data.accountProfile.display_name }
-          : { display_name: "Local User" },
+        creator_uuid: localAccountUuid,
+        creator: {
+          uuid: localAccountUuid,
+          display_name:
+            stringValue(this.#data.accountProfile.display_name) ?? "Local User",
+        },
       });
       const projectUuid = projectsRoute[2]
         ? decodeURIComponent(projectsRoute[2])

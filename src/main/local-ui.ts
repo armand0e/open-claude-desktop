@@ -324,7 +324,16 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
     // custom3pCompatible, and the enabled chain requires cloud org state the
     // local build does not model. The local /memory endpoint is always safe.
     find: "enabled:Boolean(r)&&(t?.enabled??!0)&&s&&!i},e=>E2.parse(e))",
-    replace: "custom3pCompatible:!0,enabled:t?.enabled??!0},e=>E2.parse(e))",
+    replace:
+      'custom3pCompatible:!0,refetchOnMount:"always",refetchOnWindowFocus:!0,enabled:t?.enabled??!0},e=>E2.parse(e))',
+  },
+  {
+    id: "enable-memory-edit-resynthesize",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // Without this gate, saving a memory edit stores the controls but never
+    // regenerates the summary, so edits look like they did nothing.
+    find: 'I2=()=>dv("claudeai_saffron_frontend","edit_resynthesize_enabled",!1,yv)',
+    replace: "I2=()=>!0",
   },
   {
     id: "unblock-memory-settings-query",
@@ -1796,17 +1805,20 @@ export async function installLocalUiProtocol(
       codeSessions,
     );
     if (apiResponse) {
-      // Publishing spins up the public share tunnel; the last unpublish
-      // tears it down.
-      if (tunnel && apiResponse.status < 400) {
+      // Publishing spins up the public share tunnel; it tears down whenever
+      // nothing remains published — explicit unpublish OR deleting a chat
+      // that owned the published artifact (even when the request 404s
+      // because the content is already gone).
+      if (tunnel) {
         if (
+          apiResponse.status < 400 &&
           request.method === "POST" &&
           /\/publish_artifact$/.test(url.pathname)
         )
           void tunnel.ensureStarted();
         else if (
           request.method === "DELETE" &&
-          /\/published_artifacts\//.test(url.pathname)
+          /\/(published_artifacts|chat_conversations)\//.test(url.pathname)
         )
           tunnel.stopIfIdle();
       }

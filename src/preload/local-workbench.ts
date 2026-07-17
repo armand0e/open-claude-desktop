@@ -618,6 +618,16 @@ export function installLocalWorkbench(): void {
           <div id="models"></div><p id="status" role="status"></p>
         </div>
       </section>
+      <section id="memory-panel" aria-label="Memory" hidden>
+        <h1>Memory</h1>
+        <div class="section">
+          <div class="row"><span class="copy"><span class="label">Auto-generate memories</span><span class="hint">Summarize your recent chats into memory in the background. Incognito chats are never used.</span></span>
+            <span class="checks"><label><input id="memory-auto" type="checkbox"> Enabled</label></span></div>
+          <div class="row"><span class="copy"><span class="label">Maintenance</span><span class="hint">Regenerate rebuilds the summary from recent chats; reset clears everything Claude remembers.</span></span>
+            <span class="checks"><button id="memory-regenerate" type="button">Regenerate now</button><button id="memory-reset" type="button">Reset memory…</button></span></div>
+          <p id="memory-status" role="status"></p>
+        </div>
+      </section>
       <section id="export-panel" aria-label="Data export" hidden>
         <h1>Data export</h1>
         <div class="section">
@@ -672,12 +682,75 @@ export function installLocalWorkbench(): void {
     const exportAfter = element<HTMLInputElement>("#export-after");
     const exportBefore = element<HTMLInputElement>("#export-before");
     const exportMinTurns = element<HTMLInputElement>("#export-min-turns");
-    let activeLocalPanel: "model" | "export" = "model";
-    const showLocalPanel = (panel: "model" | "export") => {
+    const memoryPanel = element<HTMLElement>("#memory-panel");
+    const memoryAuto = element<HTMLInputElement>("#memory-auto");
+    const memoryStatus = element<HTMLElement>("#memory-status");
+    let activeLocalPanel: "model" | "export" | "memory" = "model";
+    const showLocalPanel = (panel: "model" | "export" | "memory") => {
       activeLocalPanel = panel;
       modelPanel.hidden = panel !== "model";
       exportPanel.hidden = panel !== "export";
+      memoryPanel.hidden = panel !== "memory";
     };
+    const loadMemorySettings = async () => {
+      try {
+        const settings = (await (
+          await fetch("/api/organizations/local/memory/settings")
+        ).json()) as { enabled_saffron?: unknown };
+        memoryAuto.checked = settings.enabled_saffron !== false;
+        memoryStatus.textContent = "";
+      } catch (error) {
+        memoryStatus.textContent =
+          error instanceof Error ? error.message : String(error);
+      }
+    };
+    memoryAuto.addEventListener("change", async () => {
+      try {
+        await fetch("/api/organizations/local/memory/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled_saffron: memoryAuto.checked }),
+        });
+        memoryStatus.textContent = memoryAuto.checked
+          ? "Auto-generated memories are on."
+          : "Auto-generated memories are off. Existing memory stays until you reset it.";
+      } catch (error) {
+        memoryStatus.textContent =
+          error instanceof Error ? error.message : String(error);
+      }
+    });
+    element("#memory-regenerate").addEventListener("click", async () => {
+      memoryStatus.textContent = "Regenerating memory…";
+      try {
+        const response = await fetch(
+          "/api/organizations/local/memory/synthesize",
+          { method: "POST" },
+        );
+        const payload = (await response.json()) as {
+          memory?: string;
+          error?: { message?: string };
+        };
+        if (payload.error?.message) throw new Error(payload.error.message);
+        memoryStatus.textContent = payload.memory?.trim()
+          ? "Memory regenerated."
+          : "Nothing to summarize yet — have a few chats first.";
+      } catch (error) {
+        memoryStatus.textContent =
+          error instanceof Error ? error.message : String(error);
+      }
+    });
+    element("#memory-reset").addEventListener("click", async () => {
+      if (!confirm("Clear everything Claude remembers about you?")) return;
+      try {
+        await fetch("/api/organizations/local/memory/reset", {
+          method: "POST",
+        });
+        memoryStatus.textContent = "Memory cleared.";
+      } catch (error) {
+        memoryStatus.textContent =
+          error instanceof Error ? error.message : String(error);
+      }
+    });
     const loadExportConversations = async () => {
       try {
         const payload = (await (
@@ -841,7 +914,7 @@ export function installLocalWorkbench(): void {
       scroll: HTMLElement,
       navigationButton: HTMLButtonElement,
       navigationRoot: HTMLElement,
-      panel: "model" | "export" = "model",
+      panel: "model" | "export" | "memory" = "model",
     ) => {
       restoreNativeSettings();
       activeScroll = scroll;
@@ -865,6 +938,10 @@ export function installLocalWorkbench(): void {
       if (panel === "export") {
         exportStatus.textContent = "";
         void loadExportConversations();
+        return;
+      }
+      if (panel === "memory") {
+        void loadMemorySettings();
         return;
       }
       void loadConfiguration().finally(() => {
@@ -893,7 +970,10 @@ export function installLocalWorkbench(): void {
         const isExportTab = Boolean(
           button.closest("[data-local-export-settings]"),
         );
-        if (!isModelTab && !isExportTab) {
+        const isMemoryTab = Boolean(
+          button.closest("[data-local-memory-settings]"),
+        );
+        if (!isModelTab && !isExportTab && !isMemoryTab) {
           if (activeScroll && !host.hidden) restoreNativeSettings();
           return;
         }
@@ -912,7 +992,7 @@ export function installLocalWorkbench(): void {
           scroll,
           button,
           navigation,
-          isExportTab ? "export" : "model",
+          isMemoryTab ? "memory" : isExportTab ? "export" : "model",
         );
       },
       true,
@@ -1584,17 +1664,32 @@ export function installLocalWorkbench(): void {
     // row: memory glyph, breadcrumb to the topic, content line beneath, and
     // a link to the memory page.
     const wireMemorySaveRows = () => {
-      const pills = [
+      // Only the innermost row whose own text IS the save-memory label may
+      // transform: outer chain pills contain the same text plus thinking and
+      // other steps, and replacing those destroys the chain.
+      const candidates = [
         ...document.querySelectorAll<HTMLElement>("button"),
-      ].filter(
+      ].filter((button) => {
+        const text = button.textContent ?? "";
+        if (!text.includes("Saved memory") || !text.includes("⁣")) return false;
+        if (
+          [...button.querySelectorAll("button")].some((inner) =>
+            (inner.textContent ?? "").includes("⁣"),
+          )
+        )
+          return false;
+        const match = text.match(/^\s*Saved memory(?: · (.*?))?⁣(.*?)\s*$/s);
+        return Boolean(match);
+      });
+      const pills = candidates.filter(
         (button) =>
-          !button.dataset.localMemoryRow &&
-          (button.textContent ?? "").includes("Saved memory") &&
-          (button.textContent ?? "").includes("⁣"),
+          // React re-renders restore the original label; re-apply whenever
+          // our rebuilt markup is missing, regardless of the marker.
+          !button.querySelector("[data-local-memory-content]"),
       );
       for (const pill of pills) {
         const match = (pill.textContent ?? "").match(
-          /Saved memory(?: · (.*?))?⁣(.*)$/s,
+          /^\s*Saved memory(?: · (.*?))?⁣(.*?)\s*$/s,
         );
         if (!match) continue;
         const topic = (match[1] ?? "").trim();
@@ -1659,20 +1754,23 @@ export function installLocalWorkbench(): void {
               new PopStateEvent("popstate", { state: history.state }),
             );
           });
-        pill.addEventListener(
-          "click",
-          (event) => {
-            if (
-              !(event.target as Element | null)?.closest(
-                "[data-local-memory-link]",
-              )
-            ) {
-              event.preventDefault();
-              event.stopImmediatePropagation();
-            }
-          },
-          true,
-        );
+        if (!pill.dataset.localMemoryRowWired) {
+          pill.dataset.localMemoryRowWired = "1";
+          pill.addEventListener(
+            "click",
+            (event) => {
+              if (
+                !(event.target as Element | null)?.closest(
+                  "[data-local-memory-link]",
+                )
+              ) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+              }
+            },
+            true,
+          );
+        }
       }
     };
 
@@ -1848,6 +1946,23 @@ export function installLocalWorkbench(): void {
         const exportButton =
           exportItem.querySelector<HTMLButtonElement>("button");
         if (exportButton) wiredButtons.add(exportButton);
+
+        let memoryItem = desktopList.querySelector<HTMLElement>(
+          "[data-local-memory-settings]",
+        );
+        if (!memoryItem) {
+          memoryItem = document.createElement("li");
+          memoryItem.dataset.localMemorySettings = "";
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = inactiveNavigationClass;
+          button.innerHTML = `<span aria-hidden="true" style="width:1em;height:1em;display:flex;align-items:center;justify-content:center;font-size:15px;font-family:var(--font-anthropicons, Anthropicons-Variable)">&#57512;</span><span class="min-w-0 flex-1 truncate">Memory</span>`;
+          memoryItem.append(button);
+          exportItem.after(memoryItem);
+        }
+        const memoryButton =
+          memoryItem.querySelector<HTMLButtonElement>("button");
+        if (memoryButton) wiredButtons.add(memoryButton);
 
         for (const button of existingButtons) {
           if (wiredButtons.has(button)) continue;

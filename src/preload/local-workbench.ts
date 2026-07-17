@@ -1767,6 +1767,109 @@ export function installLocalWorkbench(): void {
     );
 
     document.documentElement.append(host);
+    // Local batch dictation: a mic button beside the composer records with
+    // MediaRecorder and transcribes through the provider's OpenAI-compatible
+    // /audio/transcriptions endpoint when the recording stops.
+    let dictationRecorder: MediaRecorder | null = null;
+    let dictationChunks: Blob[] = [];
+    const dictationInsert = (text: string) => {
+      const editor = [
+        ...document.querySelectorAll<HTMLElement>('[contenteditable="true"]'),
+      ].find((candidate) => {
+        const label = candidate.getAttribute("aria-label") ?? "";
+        return (
+          candidate.getClientRects().length > 0 &&
+          (label === "Write your prompt to Claude" || label === "Prompt")
+        );
+      });
+      if (!editor) return;
+      editor.focus();
+      document.execCommand("insertText", false, text);
+    };
+    const stopDictation = async (button: HTMLButtonElement) => {
+      const recorder = dictationRecorder;
+      dictationRecorder = null;
+      if (!recorder) return;
+      button.dataset.state = "busy";
+      button.style.color = "";
+      const finished = new Promise<void>((resolve) => {
+        recorder.addEventListener("stop", () => resolve(), { once: true });
+      });
+      recorder.stop();
+      recorder.stream.getTracks().forEach((track) => track.stop());
+      await finished;
+      try {
+        const blob = new Blob(dictationChunks, {
+          type: recorder.mimeType || "audio/webm",
+        });
+        dictationChunks = [];
+        if (blob.size === 0) return;
+        const response = await fetch("/api/local/dictation/transcribe", {
+          method: "POST",
+          headers: { "Content-Type": blob.type },
+          body: blob,
+        });
+        const payload = (await response.json()) as {
+          text?: string;
+          error?: { message?: string };
+        };
+        if (payload.error?.message) throw new Error(payload.error.message);
+        if (payload.text?.trim()) dictationInsert(payload.text.trim());
+      } catch (error) {
+        button.title =
+          error instanceof Error ? error.message : "Transcription failed";
+      } finally {
+        delete button.dataset.state;
+      }
+    };
+    const startDictation = async (button: HTMLButtonElement) => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+        dictationChunks = [];
+        const recorder = new MediaRecorder(stream);
+        recorder.addEventListener("dataavailable", (event) => {
+          if (event.data.size > 0) dictationChunks.push(event.data);
+        });
+        recorder.start();
+        dictationRecorder = recorder;
+        button.dataset.state = "recording";
+        button.style.color = "#d97757";
+      } catch (error) {
+        button.title =
+          error instanceof Error ? error.message : "Microphone unavailable";
+      }
+    };
+    const wireDictationButton = () => {
+      if (document.querySelector('[data-testid="local-dictate-button"]'))
+        return;
+      const anchor = [
+        ...document.querySelectorAll<HTMLButtonElement>("button"),
+      ].find(
+        (candidate) =>
+          candidate.getClientRects().length > 0 &&
+          candidate.getAttribute("aria-label") ===
+            "Add files, connectors, and more",
+      );
+      if (!anchor?.parentElement) return;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.testid = "local-dictate-button";
+      button.setAttribute("aria-label", "Dictate");
+      button.title = "Dictate (records locally, transcribed by your provider)";
+      button.className = anchor.className;
+      button.innerHTML =
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (button.dataset.state === "busy") return;
+        if (dictationRecorder) void stopDictation(button);
+        else void startDictation(button);
+      });
+      anchor.parentElement.insertBefore(button, anchor.nextSibling);
+    };
     // A Skill row in the Code chain links to /customize/skills?skill=<name>.
     // The native Customize page has no deep-link support, so select the
     // matching row once it renders.
@@ -1803,6 +1906,7 @@ export function installLocalWorkbench(): void {
       wireInlineMermaidDiagrams();
       wireCodeArtifactRoute();
       wireCustomizeSkillSelection();
+      wireDictationButton();
     };
     const observer = new MutationObserver(wireLocalUi);
     observer.observe(document.documentElement, {

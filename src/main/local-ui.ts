@@ -1087,6 +1087,69 @@ async function localApiResponse(
     }
     return jsonResponse({ ok: true });
   }
+  if (
+    normalized === "/api/local/dictation/transcribe" &&
+    request.method === "POST"
+  ) {
+    // Batch speech-to-text against the provider's OpenAI-compatible
+    // /audio/transcriptions endpoint (faster-whisper-server, LocalAI, ...).
+    // Cloud dictation streams over a WebSocket; local mode records and
+    // transcribes when the recording stops.
+    try {
+      const provider = backend.provider();
+      const audio = Buffer.from(await request.arrayBuffer());
+      if (audio.length === 0)
+        return jsonResponse({ error: { message: "Empty recording" } }, 400);
+      if (audio.length > 25_000_000)
+        return jsonResponse({ error: { message: "Recording too long" } }, 400);
+      const mime = request.headers.get("content-type") || "audio/webm";
+      const form = new FormData();
+      form.append(
+        "file",
+        new Blob([audio], { type: mime }),
+        mime.includes("ogg") ? "recording.ogg" : "recording.webm",
+      );
+      form.append(
+        "model",
+        process.env.CLAUDE_LOCAL_TRANSCRIBE_MODEL || "whisper-1",
+      );
+      const upstream = await fetch(`${provider.baseUrl}/audio/transcriptions`, {
+        method: "POST",
+        headers: provider.apiKey
+          ? { Authorization: `Bearer ${provider.apiKey}` }
+          : {},
+        body: form,
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!upstream.ok) {
+        const detail = (await upstream.text().catch(() => "")).slice(0, 300);
+        return jsonResponse(
+          {
+            error: {
+              message:
+                upstream.status === 404
+                  ? "The provider has no /audio/transcriptions endpoint. Run a Whisper-compatible server (for example faster-whisper-server) at the same base URL, or set CLAUDE_LOCAL_TRANSCRIBE_MODEL."
+                  : `Transcription failed: HTTP ${upstream.status}${detail ? ` — ${detail}` : ""}`,
+            },
+          },
+          502,
+        );
+      }
+      const payload = (await upstream.json()) as { text?: unknown };
+      return jsonResponse({
+        text: typeof payload.text === "string" ? payload.text : "",
+      });
+    } catch (error) {
+      return jsonResponse(
+        {
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+          },
+        },
+        502,
+      );
+    }
+  }
   if (normalized === "/api/local/export/conversations") {
     return jsonResponse({
       conversations: backend

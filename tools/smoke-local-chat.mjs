@@ -433,7 +433,7 @@ try {
       const capture = () => {
         const text = document.body?.innerText || "";
         const state = {
-          thoughtProcess: text.includes("Thought process"),
+          thoughtProcess: /Thought process|Thought for|Thinking/.test(text),
           firstTextFragment: text.includes("I’ll create Local"),
           secondTextFragment: text.includes("Artifact Demo now."),
           finalTextFragment: text.includes("The streamed artifact is ready."),
@@ -448,7 +448,7 @@ try {
         }
         return text;
       };
-      while ((!capture().includes(${JSON.stringify(replyMarker)}) || (${artifactMode ? "!window.__localArtifactRendered" : "false"}) || (${diagramMode ? '!document.querySelector(".local-inline-mermaid svg")' : "false"}) || (${mixedFlowMode ? '!document.body?.innerText?.includes("The streamed artifact is ready.") || !document.body?.innerText?.includes("Thought process")' : "false"})) && Date.now() < deadline) {
+      while ((!capture().includes(${JSON.stringify(replyMarker)}) || (${artifactMode ? "!window.__localArtifactRendered" : "false"}) || (${diagramMode ? '!document.querySelector(".local-inline-mermaid svg")' : "false"}) || (${mixedFlowMode ? '!document.body?.innerText?.includes("The streamed artifact is ready.") || !/Thought process|Thought for/.test(document.body?.innerText || "")' : "false"})) && Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       capture();
@@ -548,7 +548,7 @@ try {
         `(async () => {
           const deadline = Date.now() + 10000;
           const control = [...document.querySelectorAll("button")]
-            .find(button => button.textContent?.trim() === "Thought process");
+            .find(button => /^(Thought process|Thought for )/.test(button.textContent?.trim() || ""));
           if (!control) return { control: false, rendered: false };
           control.click();
           while (!document.body?.innerText?.includes(${JSON.stringify(reasoningText)}) && Date.now() < deadline)
@@ -563,7 +563,7 @@ try {
     : null;
   if (reasoningMode) {
     assert(
-      rendered.bodyText?.includes("Thought process"),
+      /Thought process|Thought for /.test(rendered.bodyText ?? ""),
       `Native Thought process control did not render: ${JSON.stringify(rendered)}`,
     );
     assert(

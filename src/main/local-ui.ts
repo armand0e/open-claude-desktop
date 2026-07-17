@@ -1391,12 +1391,16 @@ export async function installLocalUiProtocol(
       ? requested
       : path.join(absoluteRoot, "index.html");
     const patchedAsset = patchedAssets.get(path.resolve(candidate));
+    // Asset URLs keep the same version-hashed filenames across Open-Claude
+    // releases while their patched contents change, so the renderer must
+    // never revive them from its profile HTTP cache after an upgrade.
     if (patchedAsset) {
       return new Response(patchedAsset.source, {
         status: 200,
         headers: {
           "Content-Type": MIME_TYPES[".js"],
           "Content-Security-Policy": csp,
+          "Cache-Control": "no-store",
           "X-Content-Type-Options": "nosniff",
           "X-Local-Claude-Patches": patchedAsset.ids.join(","),
         },
@@ -1408,6 +1412,7 @@ export async function installLocalUiProtocol(
         headers: {
           "Content-Type": MIME_TYPES[".html"],
           "Content-Security-Policy": csp,
+          "Cache-Control": "no-store",
           "X-Content-Type-Options": "nosniff",
         },
       });
@@ -1416,6 +1421,7 @@ export async function installLocalUiProtocol(
     const headers = new Headers(response.headers);
     const mime = MIME_TYPES[path.extname(candidate).toLowerCase()];
     if (mime) headers.set("Content-Type", mime);
+    headers.set("Cache-Control", "no-store");
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Content-Security-Policy", csp);
     return new Response(response.body, { status: response.status, headers });

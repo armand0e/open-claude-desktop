@@ -1030,7 +1030,11 @@ describe("LocalBackend", () => {
       expect(events).toContain('"type":"tool_use"');
       expect(events).toContain('"name":"artifacts"');
       expect(events).toContain('"type":"input_json_delta"');
-      expect(events).toContain("<h1>Hello artifact</h1>");
+      // The artifacts tool_use block streams the provider's raw argument
+      // fragments as they arrive (live generating card), so the content
+      // spans two input_json_delta events.
+      expect(events).toContain("<h1>Hello ");
+      expect(events).toContain("artifact</h1>");
       expect(events).toContain('"stop_reason":"tool_use"');
       expect(events).toContain('"type":"thinking"');
       expect(events).toContain(

@@ -1345,21 +1345,21 @@ export function installLocalWorkbench(): void {
         )
           element.textContent = "Artifacts";
       // Copy the native Artifacts glyph from the (possibly hidden) Code
-      // sidebar row; sidebar icons are icon-font glyphs, not SVGs.
+      // sidebar row; sidebar icons are icon-font glyphs, not SVGs. The native
+      // row only exists in Code mode, so fall back to its known glyph
+      // (U+E017) when injecting into the chat sidebar.
       const nativeRow = [
         ...document.querySelectorAll<HTMLElement>("a,button"),
       ].find((row) => stripped(row) === "Artifacts" && !row.dataset.testid);
       const glyphOf = (element: Element | undefined | null) =>
         element?.textContent?.match(/[\uE000-\uF8FF]/u)?.[0];
-      const nativeGlyph = glyphOf(nativeRow);
-      if (nativeGlyph) {
-        const iconHost = [...button.querySelectorAll<HTMLElement>("*")].find(
-          (element) =>
-            element.childElementCount === 0 &&
-            /^[\uE000-\uF8FF]$/u.test(element.textContent ?? ""),
-        );
-        if (iconHost) iconHost.textContent = nativeGlyph;
-      }
+      const nativeGlyph = glyphOf(nativeRow) ?? "\uE017";
+      const iconHost = [...button.querySelectorAll<HTMLElement>("*")].find(
+        (element) =>
+          element.childElementCount === 0 &&
+          /^[\uE000-\uF8FF]$/u.test(element.textContent ?? ""),
+      );
+      if (iconHost) iconHost.textContent = nativeGlyph;
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopImmediatePropagation();

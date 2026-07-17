@@ -1124,6 +1124,10 @@ export class LocalBackend {
   readonly #secretCodec?: LocalSecretCodec;
   #skillSource?: LocalSkillSource;
   #writeChain = Promise.resolve();
+  // One in-flight completion per conversation: a retry, edit, or new send
+  // during generation supersedes (and aborts) the previous provider stream,
+  // exactly like the Stop button's fetch cancellation.
+  readonly #activeCompletions = new Map<string, AbortController>();
 
   private constructor(
     filePath: string,
@@ -1714,11 +1718,35 @@ export class LocalBackend {
     return response;
   }
 
+  #abortActiveCompletion(conversationUuid: string): void {
+    const active = this.#activeCompletions.get(conversationUuid);
+    if (!active) return;
+    this.#activeCompletions.delete(conversationUuid);
+    active.abort();
+  }
+
+  #clearActiveCompletion(
+    conversationUuid: string,
+    controller: AbortController,
+  ): void {
+    if (this.#activeCompletions.get(conversationUuid) === controller)
+      this.#activeCompletions.delete(conversationUuid);
+  }
+
   async #completion(
     request: Request,
     conversationUuid: string,
     retryRequested = false,
   ): Promise<Response> {
+    this.#abortActiveCompletion(conversationUuid);
+    const completionAbort = new AbortController();
+    this.#activeCompletions.set(conversationUuid, completionAbort);
+    if (request.signal.aborted) completionAbort.abort();
+    else
+      request.signal.addEventListener("abort", () => completionAbort.abort(), {
+        once: true,
+      });
+    const completionSignal = completionAbort.signal;
     const body = await jsonBody(request);
     let conversation = this.#conversation(conversationUuid);
     const createsConversation = !conversation;
@@ -1822,7 +1850,7 @@ export class LocalBackend {
       conversation,
       messageBranch(conversation, human.uuid),
       webSearchEnabled,
-      request.signal,
+      completionSignal,
     );
     const providerOptions = reasoningRequest(
       body,
@@ -1835,7 +1863,7 @@ export class LocalBackend {
     const firstProviderResponse = await this.#providerCompletion(
       conversation,
       providerHistory,
-      request.signal,
+      completionSignal,
       webSearchEnabled,
       false,
       [],
@@ -1884,6 +1912,68 @@ export class LocalBackend {
             activeTextBlock = undefined;
           };
           const continuation: JsonObject[] = [];
+          // Live artifact cards: an artifacts tool call streams its tool_use
+          // block while the provider is still generating the arguments, so
+          // the retained client shows the generating (shimmering) card
+          // immediately instead of after the completion settles.
+          interface LiveArtifactBlock {
+            blockIndex: number;
+            sent: number;
+            closed: boolean;
+          }
+          const liveArtifactBlocks = new WeakMap<object, LiveArtifactBlock>();
+          const openLiveArtifacts: LiveArtifactBlock[] = [];
+          const closeLiveArtifactBlocks = () => {
+            for (const live of openLiveArtifacts)
+              if (!live.closed) {
+                controller.enqueue(
+                  sse("content_block_stop", {
+                    type: "content_block_stop",
+                    index: live.blockIndex,
+                  }),
+                );
+                live.closed = true;
+              }
+          };
+          const streamLiveArtifact = (toolCall: {
+            id: string;
+            name: string;
+            arguments: string;
+          }) => {
+            let live = liveArtifactBlocks.get(toolCall);
+            if (live?.closed) return;
+            if (!live) {
+              closeTextBlock();
+              live = { blockIndex: nextBlockIndex++, sent: 0, closed: false };
+              liveArtifactBlocks.set(toolCall, live);
+              openLiveArtifacts.push(live);
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: live.blockIndex,
+                  content_block: {
+                    type: "tool_use",
+                    id: toolCall.id,
+                    name: "artifacts",
+                    input: {},
+                  },
+                }),
+              );
+            }
+            if (toolCall.arguments.length > live.sent) {
+              controller.enqueue(
+                sse("content_block_delta", {
+                  type: "content_block_delta",
+                  index: live.blockIndex,
+                  delta: {
+                    type: "input_json_delta",
+                    partial_json: toolCall.arguments.slice(live.sent),
+                  },
+                }),
+              );
+              live.sent = toolCall.arguments.length;
+            }
+          };
           let prefetchedProviderResponse: Response | undefined =
             firstProviderResponse;
           let terminalTurn = false;
@@ -1894,6 +1984,7 @@ export class LocalBackend {
             const emitReasoning = (text: string) => {
               if (!text) return;
               if (thinkingBlockIndex === undefined) {
+                closeLiveArtifactBlocks();
                 thinkingBlockIndex = nextBlockIndex++;
                 const timestamp = new Date().toISOString();
                 activeThinkingBlock = {
@@ -1963,7 +2054,7 @@ export class LocalBackend {
                 (await backend.#providerCompletion(
                   conversation,
                   providerHistory,
-                  request.signal,
+                  completionSignal,
                   webSearchEnabled,
                   attempt > 0,
                   continuation,
@@ -1981,6 +2072,10 @@ export class LocalBackend {
                 if (delta.type === "text") {
                   closeThinkingBlock();
                   if (textBlockIndex === undefined) {
+                    // Trailing text after streamed artifact arguments starts
+                    // a fresh block; the client's reducer needs the open
+                    // artifact block closed first.
+                    closeLiveArtifactBlocks();
                     textBlockIndex = nextBlockIndex++;
                     activeTextBlock = {
                       type: "text",
@@ -2017,6 +2112,8 @@ export class LocalBackend {
                 if (delta.name) accumulated.name += delta.name;
                 if (delta.arguments) accumulated.arguments += delta.arguments;
                 toolCalls.set(delta.index, accumulated);
+                if (accumulated.name === "artifacts")
+                  streamLiveArtifact(accumulated);
               }
               closeThinkingBlock();
               const hasToolCall = [...toolCalls.values()].some(
@@ -2175,7 +2272,7 @@ export class LocalBackend {
                   ? await backend.#webTools.execute(
                       toolCall.name,
                       input,
-                      request.signal,
+                      completionSignal,
                     )
                   : "Local web tools are not available in this runtime.";
               } catch (error) {
@@ -2325,6 +2422,32 @@ export class LocalBackend {
                 return [];
               }
             });
+          // Close every live-streamed artifact block before opening any other
+          // block: the retained client's SSE reducer expects a strictly
+          // sequential block lifecycle, and an interleaved status-text block
+          // while a tool_use block is still open breaks rendering entirely.
+          for (const { toolCall } of artifactToolCalls) {
+            const live = liveArtifactBlocks.get(toolCall);
+            if (!live || live.closed) continue;
+            const remainder = toolCall.arguments.slice(live.sent);
+            if (remainder)
+              controller.enqueue(
+                sse("content_block_delta", {
+                  type: "content_block_delta",
+                  index: live.blockIndex,
+                  delta: { type: "input_json_delta", partial_json: remainder },
+                }),
+              );
+            controller.enqueue(
+              sse("content_block_stop", {
+                type: "content_block_stop",
+                index: live.blockIndex,
+              }),
+            );
+            live.closed = true;
+            live.sent = toolCall.arguments.length;
+          }
+          closeLiveArtifactBlocks();
           if (!assistantText.trim() && artifactToolCalls.length > 0) {
             const first = artifactToolCalls[0].parsed;
             const verb = first.command === "create" ? "Created" : "Updated";
@@ -2372,6 +2495,11 @@ export class LocalBackend {
               input,
             };
             assistantBlocks.push(block);
+            // A live-streamed block already delivered its raw arguments and
+            // was closed above; re-emitting it here would duplicate the card.
+            // The persisted message carries the materialized input, exactly
+            // like claude.ai's post-stream refresh.
+            if (liveArtifactBlocks.has(toolCall)) continue;
             const blockIndex = nextBlockIndex++;
             const partialJson = JSON.stringify(input);
             controller.enqueue(
@@ -2451,17 +2579,23 @@ export class LocalBackend {
           conversation.current_leaf_message_uuid = assistant.uuid;
           conversation.updated_at = assistant.updated_at;
           await backend.#persist();
+          backend.#clearActiveCompletion(conversationUuid, completionAbort);
           controller.close();
         } catch (error) {
+          backend.#clearActiveCompletion(conversationUuid, completionAbort);
           const message =
             error instanceof Error ? error.message : String(error);
-          controller.enqueue(
-            sse("error", {
-              type: "error",
-              error: { type: "api_error", message },
-            }),
-          );
-          controller.close();
+          try {
+            controller.enqueue(
+              sse("error", {
+                type: "error",
+                error: { type: "api_error", message },
+              }),
+            );
+            controller.close();
+          } catch {
+            // A superseded or client-aborted stream may already be closed.
+          }
         }
       },
     });
@@ -3000,6 +3134,7 @@ export class LocalBackend {
           headers: { "Content-Type": "application/json" },
         });
       if (request.method === "DELETE") {
+        this.#abortActiveCompletion(uuid);
         const candidateFiles = new Set(
           conversation.chat_messages.flatMap((message) =>
             message.files.map((file) => file.file_uuid),

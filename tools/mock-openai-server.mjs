@@ -176,7 +176,7 @@ export function createMockOpenAiHandler({
     await pause();
     sse(response, delta({ content: MOCK_ASSISTANT_TEXT.slice(0, 22) }));
     await pause();
-    sse(response, delta({ content: MOCK_ASSISTANT_TEXT.slice(22, 38) }));
+    sse(response, delta({ content: MOCK_ASSISTANT_TEXT.slice(22, 37) }));
     await pause();
 
     const argumentsJson = toolCall.function.arguments;
@@ -226,7 +226,10 @@ export function createMockOpenAiHandler({
       }),
     );
     await pause();
-    sse(response, delta({ content: MOCK_ASSISTANT_TEXT.slice(38) }));
+    // Resume at the sentence boundary: the post-tool text opens a fresh
+    // content block in the local SSE translation, exactly as a provider
+    // resuming after tool arguments would start a new sentence.
+    sse(response, delta({ content: MOCK_ASSISTANT_TEXT.slice(37) }));
     await pause();
     sse(response, delta({}, "tool_calls"));
     response.end("data: [DONE]\n\n");

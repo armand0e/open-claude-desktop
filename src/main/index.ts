@@ -699,8 +699,14 @@ if (!gotLock) {
           if (channel) broadcast(channel, serverId, context);
         },
       );
-      if (useLocalUi && ionRoot && localBackend)
+      if (useLocalUi && ionRoot && localBackend) {
         await installLocalUiProtocol(ionRoot, localBackend, codeSessions);
+        // Earlier releases served app:// assets without Cache-Control while
+        // keeping stable version-hashed URLs, so an upgraded install could
+        // revive stale renderer chunks from the profile HTTP cache. Assets
+        // are served no-store now; purge whatever an old build left behind.
+        await session.defaultSession.clearCache().catch(() => undefined);
+      }
       const context: ServiceContext = {
         state,
         codeSessions,

@@ -1256,6 +1256,22 @@ async function localApiResponse(
       );
     }
   }
+  // Session inventory for the preload's directory-grouped Code sidebar.
+  if (normalized === "/api/local/code/sessions") {
+    const sessions = (await codeSessions.invoke("getAll", [])) as Array<
+      Record<string, unknown>
+    >;
+    return jsonResponse({
+      sessions: sessions.map((session) => ({
+        sessionId: session.sessionId,
+        title: session.title,
+        cwd: session.cwd,
+        lastActivityAt: session.lastActivityAt,
+        isRunning: session.isRunning === true,
+        isArchived: session.isArchived === true,
+      })),
+    });
+  }
   if (normalized === "/api/local/export/conversations") {
     return jsonResponse({
       conversations: backend

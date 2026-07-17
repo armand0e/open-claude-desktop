@@ -151,36 +151,71 @@ try {
       history.pushState(history.state, "", "/epitaxy");
       window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
       await new Promise(resolve => setTimeout(resolve, 3500));
-      const carets = [...document.querySelectorAll('button[aria-expanded="false"]')]
-        .filter(el => el.getClientRects().length > 0 && !(el.textContent || "").trim());
-      let expandedDump = null;
-      if (carets.length > 0) {
-        carets[0].click();
-        await new Promise(resolve => setTimeout(resolve, 800));
-        const host = carets[0].closest("div[class*=group], li, div");
-        expandedDump = {
-          ariaLabel: carets[0].getAttribute("aria-label"),
-          hostHtml: host?.outerHTML?.slice(0, 1400) ?? null,
-        };
-      }
-      const rows = [...document.querySelectorAll("aside a, aside button, nav a, nav button, [class*=sidebar] a, [class*=sidebar] button")]
-        .filter(el => el.getClientRects().length > 0)
-        .map(el => ({
-          text: (el.textContent || "").trim().slice(0, 48),
+      const audit = () => {
+        const tree = document.querySelector('[data-testid="local-code-dir-groups"]');
+        if (!tree) return null;
+        return [...tree.children].map(el => ({
+          text: (el.textContent || "").trim().slice(0, 40),
           left: Math.round(el.getBoundingClientRect().left),
           expanded: el.getAttribute("aria-expanded"),
-        }))
-        .filter(row => row.text);
+          isHeader: el.hasAttribute("aria-expanded"),
+        }));
+      };
+      // The tree renders after the first sessions fetch.
+      const treeDeadline = Date.now() + 15000;
+      while (!audit() && Date.now() < treeDeadline)
+        await new Promise(resolve => setTimeout(resolve, 300));
+      const before = audit();
+      // Collapse the first directory header and re-audit.
+      const firstHeader = document.querySelector('[data-testid="local-code-dir-groups"] button[aria-expanded]');
+      firstHeader?.click();
+      await new Promise(resolve => setTimeout(resolve, 400));
+      const collapsed = audit();
+      firstHeader && document.querySelector('[data-testid="local-code-dir-groups"] button[aria-expanded="false"]')?.click();
+      await new Promise(resolve => setTimeout(resolve, 400));
+      // Click a session row and verify navigation.
+      const sessionRow = document.querySelector('[data-testid="local-code-dir-groups"] button[data-session-id]');
+      sessionRow?.click();
+      await new Promise(resolve => setTimeout(resolve, 1200));
       return {
         created,
         path: location.pathname,
-        rows: rows.slice(0, 40),
-        expandedDump,
+        tree: before,
+        collapsedTree: collapsed,
+        nativeHidden: Boolean(document.querySelector("[data-local-hidden-for-groups]")),
       };
     })()`,
     60_000,
   );
   console.log(JSON.stringify(report, null, 2));
+  const headers = report.tree.filter((row) => row.isHeader);
+  const children = report.tree.filter((row) => !row.isHeader);
+  if (headers.length !== 2)
+    throw new Error(`Expected 2 directory headers, saw ${headers.length}`);
+  if (children.length !== 3)
+    throw new Error(`Expected 3 session rows, saw ${children.length}`);
+  if (
+    !headers.every((row) => row.left < Math.min(...children.map((c) => c.left)))
+  )
+    throw new Error("Directory headers are not out-dented from sessions");
+  const firstGroupSize = (() => {
+    let count = 0;
+    for (const row of report.tree.slice(1)) {
+      if (row.isHeader) break;
+      count += 1;
+    }
+    return count;
+  })();
+  const remaining = report.collapsedTree.filter((row) => !row.isHeader).length;
+  if (remaining !== children.length - firstGroupSize)
+    throw new Error(
+      `Collapsing the first directory (${firstGroupSize} sessions) left ${remaining} rows`,
+    );
+  if (!/^\/epitaxy\/[0-9a-f-]{36}$/.test(report.path))
+    throw new Error(`Clicking a session did not navigate: ${report.path}`);
+  if (!report.nativeHidden)
+    throw new Error("Native flat session rows were not hidden");
+  console.log("PROBE PASS: code sidebar groups sessions by directory");
 } catch (error) {
   console.error("PROBE FAIL:", error.message);
   console.error(output.join("").slice(-3000));

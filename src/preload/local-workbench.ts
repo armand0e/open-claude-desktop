@@ -2507,6 +2507,218 @@ export function installLocalWorkbench(): void {
       customizeSkillHandledUrl = url;
       candidates[0].click();
     };
+    // Directory-grouped Code sidebar: the native session-groups feature is
+    // cloud-only, so the Recents list on the Code surface is regrouped here —
+    // an un-indented, expandable directory header per working directory with
+    // its sessions indented beneath.
+    interface CodeSidebarSession {
+      sessionId: string;
+      title: string;
+      cwd: string;
+      lastActivityAt: number;
+      isRunning: boolean;
+      isArchived: boolean;
+    }
+    let codeSidebarSessions: CodeSidebarSession[] = [];
+    let codeSidebarSignature = "";
+    let codeSidebarFetching = false;
+    let codeSidebarFetchedAt = 0;
+    const collapsedCodeDirs = new Set<string>(
+      (() => {
+        try {
+          const stored = JSON.parse(
+            localStorage.getItem("local-code-dir-collapsed") ?? "[]",
+          ) as unknown;
+          return Array.isArray(stored)
+            ? stored.filter(
+                (entry): entry is string => typeof entry === "string",
+              )
+            : [];
+        } catch {
+          return [];
+        }
+      })(),
+    );
+    const persistCollapsedCodeDirs = () => {
+      try {
+        localStorage.setItem(
+          "local-code-dir-collapsed",
+          JSON.stringify([...collapsedCodeDirs]),
+        );
+      } catch {
+        // Collapse state is a convenience only.
+      }
+    };
+    const refreshCodeSidebarSessions = async () => {
+      if (codeSidebarFetching) return;
+      codeSidebarFetching = true;
+      try {
+        const payload = (await (
+          await fetch("/api/local/code/sessions")
+        ).json()) as { sessions?: CodeSidebarSession[] };
+        codeSidebarSessions = (payload.sessions ?? []).filter(
+          (session) => !session.isArchived && session.cwd,
+        );
+        codeSidebarFetchedAt = Date.now();
+      } catch {
+        // The next poll retries.
+      } finally {
+        codeSidebarFetching = false;
+      }
+    };
+    const renderCodeSidebarGroups = (tree: HTMLElement) => {
+      const groups = new Map<string, CodeSidebarSession[]>();
+      for (const session of codeSidebarSessions) {
+        const bucket = groups.get(session.cwd) ?? [];
+        bucket.push(session);
+        groups.set(session.cwd, bucket);
+      }
+      const ordered = [...groups.entries()]
+        .map(([cwd, sessions]) => ({
+          cwd,
+          sessions: sessions.sort(
+            (left, right) => right.lastActivityAt - left.lastActivityAt,
+          ),
+          latest: Math.max(...sessions.map((s) => s.lastActivityAt)),
+        }))
+        .sort((left, right) => right.latest - left.latest);
+      const activeId = location.pathname.split("/")[2] ?? "";
+      const signature = JSON.stringify([
+        ordered.map((group) => [
+          group.cwd,
+          collapsedCodeDirs.has(group.cwd),
+          group.sessions.map((s) => [s.sessionId, s.title, s.isRunning]),
+        ]),
+        activeId,
+      ]);
+      if (tree.dataset.signature === signature) return;
+      tree.dataset.signature = signature;
+      tree.replaceChildren();
+      const baseName = (cwd: string) =>
+        cwd.replaceAll("\\", "/").split("/").filter(Boolean).at(-1) ?? cwd;
+      for (const group of ordered) {
+        const collapsed = collapsedCodeDirs.has(group.cwd);
+        const header = document.createElement("button");
+        header.type = "button";
+        header.setAttribute("aria-expanded", String(!collapsed));
+        header.title = group.cwd;
+        header.style.cssText =
+          "display:flex;align-items:center;gap:6px;width:100%;padding:4px 8px;border:0;background:none;color:var(--cds-text-secondary,#8a8781);font:inherit;font-size:var(--df-row-font,13px);cursor:pointer;border-radius:8px;text-align:left;";
+        header.innerHTML = `<span aria-hidden="true" style="width:10px;display:inline-flex;justify-content:center">${collapsed ? "▸" : "▾"}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600">${""}</span><span style="margin-left:auto;font-size:11px;opacity:.7">${group.sessions.length}</span>`;
+        (header.children[1] as HTMLElement).textContent = baseName(group.cwd);
+        header.addEventListener("click", () => {
+          if (collapsedCodeDirs.has(group.cwd))
+            collapsedCodeDirs.delete(group.cwd);
+          else collapsedCodeDirs.add(group.cwd);
+          persistCollapsedCodeDirs();
+          delete tree.dataset.signature;
+          renderCodeSidebarGroups(tree);
+        });
+        tree.append(header);
+        if (collapsed) continue;
+        for (const session of group.sessions) {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.dataset.sessionId = session.sessionId;
+          const active = session.sessionId === activeId;
+          row.style.cssText = `display:flex;align-items:center;gap:7px;width:calc(100% - 16px);margin-left:16px;padding:4px 8px;border:0;background:${active ? "var(--cds-bg-300,rgba(110,104,94,.18))" : "none"};color:${active ? "var(--cds-text-primary,#292724)" : "var(--cds-text-secondary,#6b675f)"};font:inherit;font-size:var(--df-row-font,13px);cursor:pointer;border-radius:8px;text-align:left;`;
+          const dot = document.createElement("span");
+          dot.setAttribute("aria-hidden", "true");
+          dot.style.cssText = `width:6px;height:6px;border-radius:50%;flex-shrink:0;background:${session.isRunning ? "#4caf50" : "var(--cds-border,rgba(110,104,94,.35))"};`;
+          const label = document.createElement("span");
+          label.style.cssText =
+            "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+          label.textContent = session.title || "Untitled session";
+          row.append(dot, label);
+          row.addEventListener("mouseenter", () => {
+            if (!active)
+              row.style.background = "var(--cds-bg-200,rgba(110,104,94,.1))";
+          });
+          row.addEventListener("mouseleave", () => {
+            if (!active) row.style.background = "none";
+          });
+          row.addEventListener("click", () => {
+            history.pushState(
+              history.state,
+              "",
+              `/epitaxy/${encodeURIComponent(session.sessionId)}`,
+            );
+            window.dispatchEvent(
+              new PopStateEvent("popstate", { state: history.state }),
+            );
+          });
+          tree.append(row);
+        }
+      }
+      if (ordered.length === 0) {
+        const empty = document.createElement("div");
+        empty.style.cssText =
+          "padding:4px 8px;color:var(--cds-text-secondary,#8a8781);font-size:12px;";
+        empty.textContent = "No sessions yet";
+        tree.append(empty);
+      }
+    };
+    const wireCodeSidebarGroups = () => {
+      const onCode = location.pathname.startsWith("/epitaxy");
+      const existing = document.querySelector<HTMLElement>(
+        '[data-testid="local-code-dir-groups"]',
+      );
+      const hiddenNative = document.querySelector<HTMLElement>(
+        "[data-local-hidden-for-groups]",
+      );
+      if (!onCode) {
+        existing?.remove();
+        if (hiddenNative) {
+          hiddenNative.style.display = "";
+          delete hiddenNative.dataset.localHiddenForGroups;
+        }
+        return;
+      }
+      const recentsHeader = [
+        ...document.querySelectorAll<HTMLElement>("button"),
+      ].find(
+        (button) =>
+          button.getClientRects().length > 0 &&
+          (button.textContent ?? "").replace(/[\uE000-\uF8FF]/gu, "").trim() ===
+            "Recents",
+      );
+      if (!recentsHeader) return;
+      let sectionRoot: HTMLElement | null = recentsHeader;
+      while (
+        sectionRoot &&
+        !(sectionRoot.className ?? "").includes("group/section")
+      )
+        sectionRoot = sectionRoot.parentElement;
+      if (!sectionRoot) return;
+      // Hide the native flat rows; our grouped tree renders in their place.
+      for (const child of [...sectionRoot.children]) {
+        if (
+          child instanceof HTMLElement &&
+          !child.contains(recentsHeader) &&
+          !child.dataset.testid?.includes("local-code-dir-groups")
+        ) {
+          child.dataset.localHiddenForGroups = "1";
+          child.style.display = "none";
+        }
+      }
+      let tree = sectionRoot.querySelector<HTMLElement>(
+        '[data-testid="local-code-dir-groups"]',
+      );
+      if (!tree) {
+        tree = document.createElement("div");
+        tree.dataset.testid = "local-code-dir-groups";
+        tree.style.cssText = "display:flex;flex-direction:column;gap:1px;";
+        sectionRoot.append(tree);
+      }
+      if (Date.now() - codeSidebarFetchedAt > 3_000)
+        void refreshCodeSidebarSessions().then(() => {
+          const current = document.querySelector<HTMLElement>(
+            '[data-testid="local-code-dir-groups"]',
+          );
+          if (current) renderCodeSidebarGroups(current);
+        });
+      renderCodeSidebarGroups(tree);
+    };
     const wireLocalUi = () => {
       wireLocalNavigation();
       wireSidebarSettings();
@@ -2520,6 +2732,7 @@ export function installLocalWorkbench(): void {
       wireSidebarProjects();
       wireCustomizeMemoryEntry();
       wireMemorySaveRows();
+      wireCodeSidebarGroups();
     };
     const observer = new MutationObserver(wireLocalUi);
     observer.observe(document.documentElement, {

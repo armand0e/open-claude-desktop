@@ -1303,6 +1303,15 @@ export class LocalCodeSessionManager {
         return this.revealLocalSkill(args[0]);
       case "syncSkills":
         return this.listLocalSkills();
+      case "exportSessions":
+        return [...this.#sessions.values()].map((session) => ({
+          sessionId: session.sessionId,
+          title: session.title,
+          cwd: session.cwd,
+          createdAt: session.createdAt,
+          lastActivityAt: session.lastActivityAt,
+          transcript: structuredClone(session.transcript),
+        }));
       case "setFocusedSession":
       case "setAvailableCodeModels":
       case "setFastMode":

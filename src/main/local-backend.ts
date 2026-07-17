@@ -1271,6 +1271,11 @@ export class LocalBackend {
     return structuredClone(this.#data.accountSettings);
   }
 
+  // Read-only snapshot for the local data-export pipeline.
+  exportConversations(): LocalConversation[] {
+    return structuredClone(this.#data.conversations);
+  }
+
   artifactSummaries(): JsonObject[] {
     return this.#data.artifacts
       .slice()

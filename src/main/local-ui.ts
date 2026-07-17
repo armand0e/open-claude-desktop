@@ -1,13 +1,22 @@
 import { access, readdir, stat } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { net, protocol, shell } from "electron";
+import { app, dialog, net, protocol, shell } from "electron";
 import { resolveInside } from "../shared/security";
 import { LocalBackend } from "./local-backend";
 import { LocalCodeSessionManager } from "./local-code";
+import {
+  DEFAULT_EXPORT_OPTIONS,
+  ExportCodeSession,
+  ExportConversation,
+  TrainingExportOptions,
+  buildTrainingExport,
+  conversationMarkdown,
+  safeFileName,
+} from "./local-export";
 
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -976,6 +985,147 @@ async function localApiResponse(
       if (error) return jsonResponse({ error: { message: error } }, 500);
     }
     return jsonResponse({ ok: true });
+  }
+  if (normalized === "/api/local/export/conversations") {
+    return jsonResponse({
+      conversations: backend
+        .exportConversations()
+        .filter((conversation) => !conversation.is_temporary)
+        .map((conversation) => ({
+          uuid: conversation.uuid,
+          name: conversation.name || "Untitled chat",
+          updated_at: conversation.updated_at,
+          messages: conversation.chat_messages.length,
+        })),
+    });
+  }
+  if (normalized === "/api/local/export" && request.method === "POST") {
+    try {
+      const input = (await request.json()) as Partial<TrainingExportOptions>;
+      const options: TrainingExportOptions = {
+        ...DEFAULT_EXPORT_OPTIONS,
+        ...input,
+      };
+      const conversations = backend
+        .exportConversations()
+        .filter(
+          (conversation) => !conversation.is_temporary,
+        ) as unknown as ExportConversation[];
+      const stamp = new Date().toISOString().slice(0, 10);
+      // Test harnesses point this at a directory to bypass the native file
+      // dialogs, which would otherwise block an automated renderer.
+      const unattendedDir = process.env.CLAUDE_LOCAL_EXPORT_DIR;
+      if (options.format === "markdown") {
+        const selected = conversations.filter(
+          (conversation) =>
+            !options.conversationUuid ||
+            conversation.uuid === options.conversationUuid,
+        );
+        if (selected.length === 0)
+          return jsonResponse(
+            { error: { message: "No conversations to export" } },
+            400,
+          );
+        if (selected.length === 1) {
+          const { canceled, filePath } = unattendedDir
+            ? {
+                canceled: false,
+                filePath: path.join(
+                  unattendedDir,
+                  `${safeFileName(selected[0].name)}.md`,
+                ),
+              }
+            : await dialog.showSaveDialog({
+                title: "Export chat as Markdown",
+                defaultPath: path.join(
+                  app.getPath("downloads"),
+                  `${safeFileName(selected[0].name)}.md`,
+                ),
+                filters: [{ name: "Markdown", extensions: ["md"] }],
+              });
+          if (canceled || !filePath) return jsonResponse({ canceled: true });
+          await writeFile(
+            filePath,
+            conversationMarkdown(selected[0], options),
+            "utf8",
+          );
+          return jsonResponse({ path: filePath, conversations: 1 });
+        }
+        const { canceled, filePaths } = unattendedDir
+          ? { canceled: false, filePaths: [unattendedDir] }
+          : await dialog.showOpenDialog({
+              title: "Choose a folder for the Markdown export",
+              defaultPath: app.getPath("downloads"),
+              properties: ["openDirectory", "createDirectory"],
+            });
+        if (canceled || filePaths.length === 0)
+          return jsonResponse({ canceled: true });
+        const target = path.join(filePaths[0], `open-claude-export-${stamp}`);
+        await mkdir(target, { recursive: true });
+        let written = 0;
+        const used = new Set<string>();
+        for (const conversation of selected) {
+          if (conversation.chat_messages.length === 0) continue;
+          let base = safeFileName(conversation.name);
+          if (used.has(base)) base = `${base}-${conversation.uuid.slice(0, 8)}`;
+          used.add(base);
+          await writeFile(
+            path.join(target, `${base}.md`),
+            conversationMarkdown(conversation, options),
+            "utf8",
+          );
+          written += 1;
+        }
+        return jsonResponse({ path: target, conversations: written });
+      }
+      const sessions = (
+        options.includeCode
+          ? await codeSessions.invoke("exportSessions", [])
+          : []
+      ) as ExportCodeSession[];
+      const result = buildTrainingExport(conversations, sessions, options);
+      if (result.rows.length === 0)
+        return jsonResponse(
+          {
+            error: {
+              message: `No conversations matched the filters (${result.skipped} skipped)`,
+            },
+          },
+          400,
+        );
+      const { canceled, filePath } = unattendedDir
+        ? {
+            canceled: false,
+            filePath: path.join(
+              unattendedDir,
+              `open-claude-training-${options.format}-${stamp}.jsonl`,
+            ),
+          }
+        : await dialog.showSaveDialog({
+            title: "Export training data",
+            defaultPath: path.join(
+              app.getPath("downloads"),
+              `open-claude-training-${options.format}-${stamp}.jsonl`,
+            ),
+            filters: [{ name: "JSON Lines", extensions: ["jsonl"] }],
+          });
+      if (canceled || !filePath) return jsonResponse({ canceled: true });
+      await writeFile(filePath, result.rows.join("\n") + "\n", "utf8");
+      return jsonResponse({
+        path: filePath,
+        conversations: result.conversations,
+        skipped: result.skipped,
+      });
+    } catch (error) {
+      return jsonResponse(
+        {
+          error: {
+            message: error instanceof Error ? error.message : String(error),
+          },
+        },
+        500,
+      );
+    }
   }
   if (normalized === "/api/local/code/customization") {
     try {

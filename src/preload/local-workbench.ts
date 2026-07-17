@@ -576,6 +576,12 @@ export function installLocalWorkbench(): void {
         input { width: 100%; border: 0; border-radius: 10px; padding: 10px 12px; background: var(--cds-bg-200, rgba(110,104,94,.16)); color: inherit; outline: none; }
         input:focus { border-color: #d97757; box-shadow: 0 0 0 2px color-mix(in srgb, #d97757 25%, transparent); }
         .hint { margin: 0; color: var(--cds-text-secondary, #8a8781); font-size: 13px; font-weight: 400; line-height: 1.4; }
+        select { width: 100%; border: 0; border-radius: 10px; padding: 10px 12px; background: var(--cds-bg-200, rgba(110,104,94,.16)); color: inherit; outline: none; }
+        .checks { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+        .checks label { display: flex; gap: 7px; align-items: center; cursor: pointer; }
+        .checks input[type="checkbox"] { width: auto; accent-color: #d97757; }
+        .checks input[type="date"] { flex: 1; min-width: 130px; }
+        #export-status { min-height: 18px; margin: 0; text-align: right; color: var(--cds-text-secondary, #6b675f); font-size: 12px; white-space: pre-wrap; }
         .actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 9px; padding: 18px 0 8px; }
         .actions button { border: 1px solid var(--cds-border, rgba(110,104,94,.3)); border-radius: 9px; padding: 8px 12px; cursor: pointer; background: var(--cds-bg-200, rgba(110,104,94,.16)); color: inherit; }
         .actions .primary { background: #d97757; border-color: #d97757; color: #fff; }
@@ -597,6 +603,28 @@ export function installLocalWorkbench(): void {
           <div class="actions"><button id="models-button" type="button">Discover models</button><button id="save" class="primary" type="button">Save changes</button></div>
           <div id="models"></div><p id="status" role="status"></p>
         </div>
+      </section>
+      <section id="export-panel" aria-label="Data export" hidden>
+        <h1>Data export</h1>
+        <div class="section">
+          <label class="row"><span class="copy"><span class="label">Format</span><span class="hint">Markdown for reading; JSONL rows for fine-tuning</span></span>
+            <select id="export-format">
+              <option value="markdown">Markdown files</option>
+              <option value="openai" selected>Training JSONL — OpenAI messages</option>
+              <option value="sharegpt">Training JSONL — ShareGPT</option>
+            </select></label>
+          <label class="row"><span class="copy"><span class="label">Conversation</span><span class="hint">Export one chat or everything</span></span>
+            <select id="export-conversation"><option value="">All conversations</option></select></label>
+          <div class="row"><span class="copy"><span class="label">Sources</span><span class="hint">Incognito chats are never included</span></span>
+            <span class="checks"><label><input id="export-chat" type="checkbox" checked> Chats</label><label><input id="export-code" type="checkbox"> Code sessions</label></span></div>
+          <div class="row"><span class="copy"><span class="label">Include</span><span class="hint">Thinking uses &lt;thinking&gt; tags; tool activity uses &lt;tool_call&gt;/&lt;tool_result&gt;</span></span>
+            <span class="checks"><label><input id="export-thinking" type="checkbox"> Thinking</label><label><input id="export-tools" type="checkbox"> Tool calls</label></span></div>
+          <div class="row"><span class="copy"><span class="label">Date range</span><span class="hint">By last activity; leave blank for all time</span></span>
+            <span class="checks"><input id="export-after" type="date" aria-label="From date"><input id="export-before" type="date" aria-label="To date"></span></div>
+          <label class="row"><span class="copy"><span class="label">Minimum assistant turns</span><span class="hint">Skip near-empty chats in training exports</span></span><input id="export-min-turns" type="number" min="1" step="1" value="1" inputmode="numeric"></label>
+          <div class="actions"><button id="export-run" class="primary" type="button">Export…</button></div>
+          <p id="export-status" role="status"></p>
+        </div>
       </section>`;
 
     const element = <T extends HTMLElement>(selector: string) => {
@@ -616,6 +644,93 @@ export function installLocalWorkbench(): void {
       status.textContent =
         error instanceof Error ? error.message : String(error);
     };
+    const modelPanel = element<HTMLElement>("#panel");
+    const exportPanel = element<HTMLElement>("#export-panel");
+    const exportStatus = element<HTMLElement>("#export-status");
+    const exportFormat = element<HTMLSelectElement>("#export-format");
+    const exportConversation = element<HTMLSelectElement>(
+      "#export-conversation",
+    );
+    const exportChat = element<HTMLInputElement>("#export-chat");
+    const exportCode = element<HTMLInputElement>("#export-code");
+    const exportThinking = element<HTMLInputElement>("#export-thinking");
+    const exportTools = element<HTMLInputElement>("#export-tools");
+    const exportAfter = element<HTMLInputElement>("#export-after");
+    const exportBefore = element<HTMLInputElement>("#export-before");
+    const exportMinTurns = element<HTMLInputElement>("#export-min-turns");
+    let activeLocalPanel: "model" | "export" = "model";
+    const showLocalPanel = (panel: "model" | "export") => {
+      activeLocalPanel = panel;
+      modelPanel.hidden = panel !== "model";
+      exportPanel.hidden = panel !== "export";
+    };
+    const loadExportConversations = async () => {
+      try {
+        const payload = (await (
+          await fetch("/api/local/export/conversations")
+        ).json()) as {
+          conversations?: Array<{
+            uuid: string;
+            name: string;
+            messages: number;
+          }>;
+        };
+        const previous = exportConversation.value;
+        exportConversation.replaceChildren();
+        const all = document.createElement("option");
+        all.value = "";
+        all.textContent = "All conversations";
+        exportConversation.append(all);
+        for (const row of payload.conversations ?? []) {
+          if (row.messages === 0) continue;
+          const option = document.createElement("option");
+          option.value = row.uuid;
+          option.textContent = row.name;
+          exportConversation.append(option);
+        }
+        exportConversation.value = previous;
+        if (exportConversation.selectedIndex < 0)
+          exportConversation.selectedIndex = 0;
+      } catch {
+        // The picker degrades to "All conversations".
+      }
+    };
+    element("#export-run").addEventListener("click", async () => {
+      exportStatus.textContent = "Exporting…";
+      try {
+        const response = await fetch("/api/local/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            format: exportFormat.value,
+            includeChat: exportChat.checked,
+            includeCode: exportCode.checked,
+            includeThinking: exportThinking.checked,
+            includeToolCalls: exportTools.checked,
+            minAssistantTurns: Math.max(1, Number(exportMinTurns.value) || 1),
+            ...(exportAfter.value ? { after: exportAfter.value } : {}),
+            ...(exportBefore.value ? { before: exportBefore.value } : {}),
+            ...(exportConversation.value
+              ? { conversationUuid: exportConversation.value }
+              : {}),
+          }),
+        });
+        const payload = (await response.json()) as {
+          path?: string;
+          conversations?: number;
+          skipped?: number;
+          canceled?: boolean;
+          error?: { message?: string };
+        };
+        if (payload.error?.message) throw new Error(payload.error.message);
+        exportStatus.textContent = payload.canceled
+          ? "Export canceled."
+          : `Exported ${payload.conversations ?? 0} conversation${payload.conversations === 1 ? "" : "s"}${payload.skipped ? ` (${payload.skipped} skipped by filters)` : ""} to\n${payload.path ?? ""}`;
+      } catch (error) {
+        exportStatus.textContent =
+          error instanceof Error ? error.message : String(error);
+      }
+    });
 
     let configLoad = 0;
     let configuredModelLabel = "local-model";
@@ -712,6 +827,7 @@ export function installLocalWorkbench(): void {
       scroll: HTMLElement,
       navigationButton: HTMLButtonElement,
       navigationRoot: HTMLElement,
+      panel: "model" | "export" = "model",
     ) => {
       restoreNativeSettings();
       activeScroll = scroll;
@@ -719,6 +835,7 @@ export function installLocalWorkbench(): void {
       hideNativeSettings(scroll);
       if (host.parentElement !== scroll) scroll.append(host);
       host.hidden = false;
+      showLocalPanel(panel);
       for (const button of navigationRoot.querySelectorAll<HTMLButtonElement>(
         "button[aria-current]",
       )) {
@@ -731,8 +848,13 @@ export function installLocalWorkbench(): void {
       navigationButton.setAttribute("aria-current", "page");
       if (activeNavigationClass)
         navigationButton.className = activeNavigationClass;
+      if (panel === "export") {
+        exportStatus.textContent = "";
+        void loadExportConversations();
+        return;
+      }
       void loadConfiguration().finally(() => {
-        if (!host.hidden) {
+        if (!host.hidden && activeLocalPanel === "model") {
           baseUrl.focus();
           baseUrl.select();
         }
@@ -751,7 +873,13 @@ export function installLocalWorkbench(): void {
           'nav[aria-label="Settings"]',
         );
         if (!button || !navigation) return;
-        if (!button.closest("[data-local-model-settings]")) {
+        const isModelTab = Boolean(
+          button.closest("[data-local-model-settings]"),
+        );
+        const isExportTab = Boolean(
+          button.closest("[data-local-export-settings]"),
+        );
+        if (!isModelTab && !isExportTab) {
           if (activeScroll && !host.hidden) restoreNativeSettings();
           return;
         }
@@ -766,7 +894,12 @@ export function installLocalWorkbench(): void {
         // the click fall through to the previously selected tab.
         event.preventDefault();
         event.stopImmediatePropagation();
-        activateLocalSettings(scroll, button, navigation);
+        activateLocalSettings(
+          scroll,
+          button,
+          navigation,
+          isExportTab ? "export" : "model",
+        );
       },
       true,
     );
@@ -1465,8 +1598,26 @@ export function installLocalWorkbench(): void {
         const localLabel = localButton.querySelector<HTMLElement>(".truncate");
         if (localLabel && localLabel.textContent?.trim() !== "Model")
           localLabel.textContent = "Model";
-        localNavigationButton = localButton;
+        if (host.hidden || !localNavigationButton)
+          localNavigationButton = localButton;
         wiredButtons.add(localButton);
+
+        let exportItem = desktopList.querySelector<HTMLElement>(
+          "[data-local-export-settings]",
+        );
+        if (!exportItem) {
+          exportItem = document.createElement("li");
+          exportItem.dataset.localExportSettings = "";
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = inactiveNavigationClass;
+          button.innerHTML = `<span aria-hidden="true" style="width:1em;height:1em;display:flex;align-items:center;justify-content:center;font-size:15px">&#10515;</span><span class="min-w-0 flex-1 truncate">Data export</span>`;
+          exportItem.append(button);
+          item.after(exportItem);
+        }
+        const exportButton =
+          exportItem.querySelector<HTMLButtonElement>("button");
+        if (exportButton) wiredButtons.add(exportButton);
 
         for (const button of existingButtons) {
           if (wiredButtons.has(button)) continue;

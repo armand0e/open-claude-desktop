@@ -113,14 +113,14 @@ interface LocalArtifactToolUseBlock {
 interface LocalWebToolUseBlock {
   type: "tool_use";
   id: string;
-  name: "web_search" | "web_fetch" | "skill" | "mcp_tool";
+  name: "web_search" | "web_fetch" | "skill" | "mcp_tool" | "save_memory";
   input: JsonObject;
 }
 
 interface LocalWebToolResultBlock {
   type: "tool_result";
   tool_use_id: string;
-  name: "web_search" | "web_fetch" | "skill" | "mcp_tool";
+  name: "web_search" | "web_fetch" | "skill" | "mcp_tool" | "save_memory";
   content: JsonObject[];
   is_error?: boolean;
 }
@@ -445,6 +445,31 @@ const SKILL_TOOL = {
   },
 };
 
+const SAVE_MEMORY_TOOL = {
+  type: "function",
+  function: {
+    name: "save_memory",
+    description:
+      "Save one durable fact about the user to long-term memory. Call this when the user shares stable, reusable information (preferences, hardware, projects, recurring context) — not one-off task details. Keep each memory short and self-contained.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["topic", "content"],
+      properties: {
+        topic: {
+          type: "string",
+          description:
+            "Short category for the memory, e.g. Hardware, Preferences, Projects",
+        },
+        content: {
+          type: "string",
+          description: "The fact to remember, one or two sentences",
+        },
+      },
+    },
+  },
+};
+
 export interface LocalSkillSource {
   list(): Promise<Array<{ name: string; description: string }>>;
   read(name: string): Promise<string>;
@@ -463,7 +488,7 @@ export interface LocalMcpSource {
   callTool(qualifiedName: string, args: JsonObject): Promise<string>;
 }
 
-const CHAT_TOOLS = [ARTIFACT_TOOL, SKILL_TOOL, ...WEB_TOOLS];
+const CHAT_TOOLS = [ARTIFACT_TOOL, SKILL_TOOL, SAVE_MEMORY_TOOL, ...WEB_TOOLS];
 
 function thinkingRequest(
   enableThinking: boolean,
@@ -1926,7 +1951,9 @@ export class LocalBackend {
   ): Promise<Response> {
     const provider = this.#data.provider;
     const availableTools = [
-      ...(webSearchEnabled ? CHAT_TOOLS : [ARTIFACT_TOOL, SKILL_TOOL]),
+      ...(webSearchEnabled
+        ? CHAT_TOOLS
+        : [ARTIFACT_TOOL, SKILL_TOOL, SAVE_MEMORY_TOOL]),
       ...(await this.#mcpToolFunctions()),
     ];
     // Both variants are prepared up front: the fallback variant documents the
@@ -2491,6 +2518,9 @@ export class LocalBackend {
             const mcpCalls = [...toolCalls.values()].filter((toolCall) =>
               toolCall.name.startsWith("mcp__"),
             );
+            const memorySaveCalls = [...toolCalls.values()].filter(
+              (toolCall) => toolCall.name === "save_memory",
+            );
             if (
               webCalls.length === 0 &&
               ![...toolCalls.values()].some(
@@ -2539,7 +2569,8 @@ export class LocalBackend {
             if (
               webCalls.length === 0 &&
               skillCalls.length === 0 &&
-              mcpCalls.length === 0
+              mcpCalls.length === 0 &&
+              memorySaveCalls.length === 0
             ) {
               terminalTurn = true;
               break;
@@ -2548,17 +2579,124 @@ export class LocalBackend {
             continuation.push({
               role: "assistant",
               content: assistantText.slice(turnTextStart) || null,
-              tool_calls: [...webCalls, ...skillCalls, ...mcpCalls].map(
-                (toolCall) => ({
-                  id: toolCall.id,
-                  type: "function",
-                  function: {
-                    name: toolCall.name,
-                    arguments: toolCall.arguments || "{}",
+              tool_calls: [
+                ...webCalls,
+                ...skillCalls,
+                ...mcpCalls,
+                ...memorySaveCalls,
+              ].map((toolCall) => ({
+                id: toolCall.id,
+                type: "function",
+                function: {
+                  name: toolCall.name,
+                  arguments: toolCall.arguments || "{}",
+                },
+              })),
+            });
+            for (const toolCall of memorySaveCalls) {
+              let topic = "";
+              let content = "";
+              try {
+                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
+                if (isObject(parsed)) {
+                  topic = stringValue(parsed.topic) ?? "";
+                  content = stringValue(parsed.content) ?? "";
+                }
+              } catch {
+                // The result below reports the invalid arguments.
+              }
+              let output = "Memory saved.";
+              let failed = false;
+              if (!content) {
+                failed = true;
+                output = "save_memory requires content to remember.";
+              } else if (conversation.is_temporary) {
+                // Incognito chats read memory but never write it.
+                output =
+                  "This is an incognito chat, so nothing was saved to memory.";
+              } else {
+                const entry = `- [${topic || "General"}] ${content}`;
+                backend.#data.memory.memory = backend.#data.memory.memory
+                  ? `${backend.#data.memory.memory}\n${entry}`
+                  : entry;
+                backend.#data.memory.updated_at = new Date().toISOString();
+                await backend.#persist();
+              }
+              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+              const callBlock: LocalWebToolUseBlock = {
+                type: "tool_use",
+                id: displayId,
+                name: "save_memory",
+                input: {
+                  topic,
+                  content,
+                  // U+2063 invisibly carries the content into the rendered
+                  // label so the preload can rebuild the native "Saved
+                  // memory" row without extra lookups.
+                  description: `Saved memory${topic ? ` · ${topic}` : ""}⁣${content}`,
+                },
+              };
+              assistantBlocks.push(callBlock);
+              const callBlockIndex = nextBlockIndex++;
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: callBlockIndex,
+                  // The row renderer labels from input.description, so the
+                  // full input must be present from the start event.
+                  content_block: {
+                    type: callBlock.type,
+                    id: callBlock.id,
+                    name: callBlock.name,
+                    input: callBlock.input,
                   },
                 }),
-              ),
-            });
+              );
+              controller.enqueue(
+                sse("content_block_delta", {
+                  type: "content_block_delta",
+                  index: callBlockIndex,
+                  delta: {
+                    type: "input_json_delta",
+                    partial_json: JSON.stringify(callBlock.input),
+                  },
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: callBlockIndex,
+                }),
+              );
+              const resultBlock: LocalWebToolResultBlock = {
+                type: "tool_result",
+                tool_use_id: displayId,
+                name: "save_memory",
+                content: failed ? [{ type: "text", text: output }] : [],
+                ...(failed ? { is_error: true } : {}),
+              };
+              assistantBlocks.push(resultBlock);
+              const resultBlockIndex = nextBlockIndex++;
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: resultBlockIndex,
+                  content_block: resultBlock,
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: resultBlockIndex,
+                }),
+              );
+              continuation.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                name: toolCall.name,
+                content: output,
+              });
+            }
             for (const toolCall of webCalls) {
               const webName =
                 toolCall.name === "web_search" ? "web_search" : "visit_website";

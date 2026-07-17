@@ -868,6 +868,7 @@ describe("LocalBackend", () => {
         expect(tools.map((tool) => tool.function?.name)).toEqual([
           "artifacts",
           "skill",
+          "save_memory",
         ]);
         expect(providerRequest.messages).toEqual(
           expect.arrayContaining([

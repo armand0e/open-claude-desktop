@@ -1580,6 +1580,102 @@ export function installLocalWorkbench(): void {
       template.parentElement.insertBefore(button, template.nextSibling);
     };
 
+    // save_memory tool pills re-render as the native "Saved memory" chain
+    // row: memory glyph, breadcrumb to the topic, content line beneath, and
+    // a link to the memory page.
+    const wireMemorySaveRows = () => {
+      const pills = [
+        ...document.querySelectorAll<HTMLElement>("button"),
+      ].filter(
+        (button) =>
+          !button.dataset.localMemoryRow &&
+          (button.textContent ?? "").includes("Saved memory") &&
+          (button.textContent ?? "").includes("⁣"),
+      );
+      for (const pill of pills) {
+        const match = (pill.textContent ?? "").match(
+          /Saved memory(?: · (.*?))?⁣(.*)$/s,
+        );
+        if (!match) continue;
+        const topic = (match[1] ?? "").trim();
+        const content = (match[2] ?? "").trim();
+        pill.dataset.localMemoryRow = "1";
+        pill.style.display = "block";
+        pill.style.width = "100%";
+        pill.style.textAlign = "left";
+        pill.style.cursor = "default";
+        pill.innerHTML = `
+          <div class="transition-colors rounded-lg duration-150">
+            <div class="flex flex-row items-center py-1">
+              <div class="w-[20px] flex justify-center shrink-0 text-text-500">
+                <span aria-hidden="true" data-local-memory-glyph style="font-family: var(--font-anthropicons, Anthropicons-Variable); font-feature-settings: 'liga' 0; font-optical-sizing: auto; font-style: normal; line-height: 1; width: 1em; height: 1em; display: flex; align-items: center; justify-content: center; flex-shrink: 0; user-select: none; font-size: 16px; font-weight: 533.3;"></span>
+              </div>
+              <div class="flex-1 min-w-0">
+                <a href="/customize/memory" data-local-memory-link class="group/row flex flex-row items-center rounded-lg px-2.5 w-full justify-between text-text-300 cursor-pointer transition-colors duration-200 hover:text-text-200">
+                  <div class="flex flex-row items-center gap-2 min-w-0 flex-1">
+                    <div class="text-body text-text-500 text-left truncate w-0 flex-grow">
+                      <span class="flex min-w-0 items-baseline gap-2 truncate">
+                        <span class="truncate text-text-500">Saved memory</span>
+                        <span class="inline-flex min-w-0 items-baseline gap-1 overflow-hidden whitespace-nowrap text-xs leading-[1.4] text-text-500">
+                          <span class="truncate">Topics</span>
+                          <span aria-hidden="true">›</span>
+                          <span class="truncate" data-local-memory-topic></span>
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                </a>
+              </div>
+            </div>
+            <div class="flex flex-row">
+              <div class="w-[20px] flex justify-center shrink-0">
+                <div class="w-[1px] h-full duration-150 bg-border-300"></div>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="truncate px-2.5 pt-1 !font-base text-text-400" data-local-memory-content></div>
+              </div>
+            </div>
+          </div>`;
+        const glyphHost = pill.querySelector<HTMLElement>(
+          "[data-local-memory-glyph]",
+        );
+        // Anthropicons "Memory" glyph (U+E0A8).
+        if (glyphHost) glyphHost.textContent = String.fromCharCode(0xe0a8);
+        const topicHost = pill.querySelector<HTMLElement>(
+          "[data-local-memory-topic]",
+        );
+        if (topicHost) topicHost.textContent = topic || "General";
+        const contentHost = pill.querySelector<HTMLElement>(
+          "[data-local-memory-content]",
+        );
+        if (contentHost) contentHost.textContent = content;
+        pill
+          .querySelector<HTMLAnchorElement>("[data-local-memory-link]")
+          ?.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            history.pushState(history.state, "", "/customize/memory");
+            window.dispatchEvent(
+              new PopStateEvent("popstate", { state: history.state }),
+            );
+          });
+        pill.addEventListener(
+          "click",
+          (event) => {
+            if (
+              !(event.target as Element | null)?.closest(
+                "[data-local-memory-link]",
+              )
+            ) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+            }
+          },
+          true,
+        );
+      }
+    };
+
     // The Customize landing lists only its native sections; add a Memory row
     // that opens the (fully wired) /customize/memory page.
     const wireCustomizeMemoryEntry = () => {
@@ -2061,6 +2157,7 @@ export function installLocalWorkbench(): void {
       wireDictationButton();
       wireSidebarProjects();
       wireCustomizeMemoryEntry();
+      wireMemorySaveRows();
     };
     const observer = new MutationObserver(wireLocalUi);
     observer.observe(document.documentElement, {

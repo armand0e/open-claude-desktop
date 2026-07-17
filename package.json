@@ -47,6 +47,7 @@
     "probe:project-page": "node tools/probe-project-page.mjs",
     "probe:publish-artifact": "node tools/probe-publish-artifact.mjs",
     "probe:code-sidebar": "node tools/probe-code-sidebar.mjs",
+    "probe:plugins": "node tools/probe-plugins.mjs",
     "probe:real-settings": "node tools/probe-real-settings.mjs",
     "probe:real-chat-navigation": "node tools/probe-real-chat-navigation.mjs",
     "probe:real-navigation": "node tools/probe-real-navigation.mjs",

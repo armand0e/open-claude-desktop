@@ -30,6 +30,7 @@ import { FileAccessPolicy } from "./file-access";
 import type { LocalCodeSessionManager } from "./local-code";
 import type { LocalBackend } from "./local-backend";
 import type { LocalFilePreview } from "./local-file-preview";
+import type { LocalPluginManager } from "./local-plugins";
 import type { LocalLaunchPreview } from "./local-launch-preview";
 
 const execFileAsync = promisify(execFile);
@@ -38,6 +39,7 @@ export interface ServiceContext {
   readonly state: StateStore;
   readonly codeSessions: LocalCodeSessionManager;
   readonly localBackend?: LocalBackend | null;
+  readonly plugins?: LocalPluginManager;
   readonly filePreview: LocalFilePreview;
   readonly launchPreview: LocalLaunchPreview;
   mainWindow(): BrowserWindow | null;
@@ -394,6 +396,11 @@ export class ServiceDispatcher {
         return this.coworkArtifacts(parsed.method, args);
       case "claude.web.Launch":
         return this.launch(parsed.method, args);
+      case "claude.web.LocalPlugins":
+        return (
+          this.context.plugins?.invoke(parsed.method, args) ??
+          genericDefault(parsed)
+        );
       case "claude.web.PluginBridgeMcp":
         return parsed.method === "listServers"
           ? this.listMcpServers()

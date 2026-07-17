@@ -41,6 +41,7 @@ import { LocalCodeSessionManager } from "./local-code";
 import { LocalFilePreview } from "./local-file-preview";
 import { LocalLaunchPreview } from "./local-launch-preview";
 import { LocalMcpManager } from "./local-mcp";
+import { LocalPluginManager } from "./local-plugins";
 import { LocalSandbox } from "./local-sandbox";
 import { LocalArtifactTunnel } from "./local-tunnel";
 import { LocalWebTools } from "./local-web-tools";
@@ -776,10 +777,12 @@ if (!gotLock) {
         // are served no-store now; purge whatever an old build left behind.
         await session.defaultSession.clearCache().catch(() => undefined);
       }
+      const localPlugins = new LocalPluginManager(app.getPath("userData"));
       const context: ServiceContext = {
         state,
         codeSessions,
         localBackend,
+        plugins: localPlugins,
         filePreview: localFilePreview,
         launchPreview: localLaunchPreview,
         mainWindow: () => mainWindow,
@@ -799,15 +802,28 @@ if (!gotLock) {
               "listLocalSkills",
               [],
             )) as Array<Record<string, unknown>>;
-            return skills
-              .filter((skill) => skill.enabled !== false)
-              .map((skill) => ({
-                name: String(skill.name ?? ""),
-                description: String(skill.description ?? ""),
-              }))
-              .filter((skill) => skill.name);
+            // Enabled plugins contribute their skills alongside user skills.
+            const pluginSkills = await localPlugins
+              .enabledSkills()
+              .catch(() => []);
+            return [
+              ...skills
+                .filter((skill) => skill.enabled !== false)
+                .map((skill) => ({
+                  name: String(skill.name ?? ""),
+                  description: String(skill.description ?? ""),
+                })),
+              ...pluginSkills.map((skill) => ({
+                name: skill.name,
+                description: skill.description,
+              })),
+            ].filter((skill) => skill.name);
           },
           read: async (name: string) => {
+            const pluginSkill = (
+              await localPlugins.enabledSkills().catch(() => [])
+            ).find((skill) => skill.name === name);
+            if (pluginSkill) return pluginSkill.content;
             const files = (await sessions.invoke("getLocalSkillFiles", [
               name,
             ])) as Array<Record<string, unknown>>;

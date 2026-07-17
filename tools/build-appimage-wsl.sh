@@ -30,6 +30,12 @@ tar \
 
 cp -a "$SOURCE_DIR/.package-assets/ion-dist/." "$UI_DIR/"
 
+# NTFS strips the exec bit; the bundled whisper binary must stay executable
+# inside the AppImage.
+if [ -f "$BUILD_DIR/assets/whisper/linux/whisper-cli" ]; then
+  chmod +x "$BUILD_DIR/assets/whisper/linux/whisper-cli"
+fi
+
 cd "$BUILD_DIR"
 npm ci
 OPEN_CLAUDE_ION_DIST="$UI_DIR" npm run dist:linux

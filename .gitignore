@@ -17,3 +17,5 @@ reference/**/*.asar
 reference/**/*.node
 reference/**/*.dll
 reference/**/*.exe
+
+assets/whisper/

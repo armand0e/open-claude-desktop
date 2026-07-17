@@ -41,6 +41,7 @@ import { LocalCodeSessionManager } from "./local-code";
 import { LocalFilePreview } from "./local-file-preview";
 import { LocalLaunchPreview } from "./local-launch-preview";
 import { LocalMcpManager } from "./local-mcp";
+import { LocalArtifactTunnel } from "./local-tunnel";
 import { LocalWebTools } from "./local-web-tools";
 import { featureMatrix, ServiceContext, ServiceDispatcher } from "./services";
 import { StateStore } from "./state";
@@ -91,6 +92,7 @@ let localWebTools: LocalWebTools | null = null;
 let localFilePreview: LocalFilePreview | null = null;
 let localLaunchPreview: LocalLaunchPreview | null = null;
 let localMcpManager: LocalMcpManager | null = null;
+let localArtifactTunnel: LocalArtifactTunnel | null = null;
 let targetUrl = "https://claude.ai";
 
 function preloadPath(name: "preload-main-view" | "preload-shell"): string {
@@ -759,7 +761,13 @@ if (!gotLock) {
         },
       );
       if (useLocalUi && ionRoot && localBackend) {
-        await installLocalUiProtocol(ionRoot, localBackend, codeSessions);
+        localArtifactTunnel = new LocalArtifactTunnel(localBackend);
+        await installLocalUiProtocol(
+          ionRoot,
+          localBackend,
+          codeSessions,
+          localArtifactTunnel,
+        );
         // Earlier releases served app:// assets without Cache-Control while
         // keeping stable version-hashed URLs, so an upgraded install could
         // revive stale renderer chunks from the profile HTTP cache. Assets
@@ -861,6 +869,8 @@ if (!gotLock) {
 }
 
 app.on("before-quit", () => {
+  localArtifactTunnel?.dispose();
+  localArtifactTunnel = null;
   localMcpManager?.disposeAll();
   localMcpManager = null;
   localLaunchPreview?.dispose();

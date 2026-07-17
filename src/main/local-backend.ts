@@ -1555,6 +1555,30 @@ export class LocalBackend {
       .find((version) => version.uuid === uuid);
   }
 
+  // Published artifacts for the optional share tunnel (and any other
+  // read-only consumer outside the HTTP surface).
+  publishedArtifacts(): Array<{
+    slug: string;
+    title: string;
+    type: string;
+    content: string;
+  }> {
+    return this.#data.artifacts
+      .flatMap((artifact) => artifact.versions)
+      .filter(
+        (version) =>
+          typeof version.published_artifact_uuid === "string" &&
+          version.published_artifact_uuid.length > 0 &&
+          version.published_artifact_deleted_at === null,
+      )
+      .map((version) => ({
+        slug: version.published_artifact_uuid as string,
+        title: version.title,
+        type: version.artifact_type,
+        content: version.content,
+      }));
+  }
+
   #publishedArtifact(slug: string): LocalArtifactVersion | undefined {
     return this.#data.artifacts
       .flatMap((artifact) => artifact.versions)

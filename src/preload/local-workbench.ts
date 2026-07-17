@@ -1518,6 +1518,107 @@ export function installLocalWorkbench(): void {
       customize.parentElement.insertBefore(button, customize.nextSibling);
     };
 
+    // The local sidebar is bespoke, so native nav registrations (Projects)
+    // never mount; inject the row beside Artifacts and route through the
+    // SPA history like the gallery row does.
+    const wireSidebarProjects = () => {
+      const stripped = (element: Element) =>
+        (element.textContent ?? "").replace(/[-]/gu, "").trim();
+      const rows = [
+        ...document.querySelectorAll<HTMLElement>("a,button"),
+      ].filter((row) => row.getClientRects().length > 0);
+      const isChatSidebar = rows.some((row) =>
+        /New ?chat/u.test(stripped(row)),
+      );
+      const injected = document.querySelector<HTMLElement>(
+        '[data-testid="local-projects-button"]',
+      );
+      if (!isChatSidebar) {
+        document.documentElement.dataset.projectsWire = "no-sidebar";
+        injected?.remove();
+        return;
+      }
+      if (injected) {
+        document.documentElement.dataset.projectsWire = "present";
+        return;
+      }
+      const template =
+        document.querySelector<HTMLElement>(
+          '[data-testid="local-chat-artifacts-button"]',
+        ) ?? rows.find((row) => stripped(row) === "Customize");
+      if (!template?.parentElement) {
+        document.documentElement.dataset.projectsWire = "no-template";
+        return;
+      }
+      document.documentElement.dataset.projectsWire = "injecting";
+      const button = template.cloneNode(true) as HTMLElement;
+      button.dataset.testid = "local-projects-button";
+      button.setAttribute("aria-label", "Projects");
+      button.removeAttribute("id");
+      for (const element of [button, ...button.querySelectorAll("*")])
+        if (
+          element.childElementCount === 0 &&
+          ["Artifacts", "Customize"].includes(stripped(element))
+        )
+          element.textContent = "Projects";
+      const iconHost = [...button.querySelectorAll<HTMLElement>("*")].find(
+        (element) =>
+          element.childElementCount === 0 &&
+          /^[-]$/u.test(element.textContent ?? ""),
+      );
+      // Anthropicons "Projects" glyph; the cloned span keeps the native
+      // variable-weight hover animation.
+      if (iconHost) iconHost.textContent = "\uE0C9";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        history.pushState(history.state, "", "/projects");
+        window.dispatchEvent(
+          new PopStateEvent("popstate", { state: history.state }),
+        );
+      });
+      template.parentElement.insertBefore(button, template.nextSibling);
+    };
+
+    // The Customize landing lists only its native sections; add a Memory row
+    // that opens the (fully wired) /customize/memory page.
+    const wireCustomizeMemoryEntry = () => {
+      if (!location.pathname.startsWith("/customize")) {
+        document
+          .querySelector('[data-testid="local-customize-memory-row"]')
+          ?.remove();
+        return;
+      }
+      if (document.querySelector('[data-testid="local-customize-memory-row"]'))
+        return;
+      const skillsRow = [
+        ...document.querySelectorAll<HTMLElement>("a,button,[role=button]"),
+      ].find(
+        (row) =>
+          row.getClientRects().length > 0 &&
+          (row.textContent ?? "").trim() === "Skills",
+      );
+      if (!skillsRow?.parentElement) return;
+      const row = skillsRow.cloneNode(true) as HTMLElement;
+      row.dataset.testid = "local-customize-memory-row";
+      row.removeAttribute("id");
+      for (const element of [row, ...row.querySelectorAll("*")])
+        if (
+          element.childElementCount === 0 &&
+          (element.textContent ?? "").trim() === "Skills"
+        )
+          element.textContent = "Memory";
+      row.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        history.pushState(history.state, "", "/customize/memory");
+        window.dispatchEvent(
+          new PopStateEvent("popstate", { state: history.state }),
+        );
+      });
+      skillsRow.parentElement.insertBefore(row, skillsRow.nextSibling);
+    };
+
     const wireSettingsDialog = () => {
       const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]');
       for (const dialog of dialogs) {
@@ -1786,6 +1887,56 @@ export function installLocalWorkbench(): void {
       editor.focus();
       document.execCommand("insertText", false, text);
     };
+    // whisper.cpp consumes 16 kHz mono PCM16 WAV; decode and resample the
+    // recording with the Web Audio API so the backend needs no ffmpeg.
+    const dictationWav = async (blob: Blob): Promise<Blob> => {
+      const decodeContext = new AudioContext();
+      let decoded: AudioBuffer;
+      try {
+        decoded = await decodeContext.decodeAudioData(await blob.arrayBuffer());
+      } finally {
+        void decodeContext.close();
+      }
+      const offline = new OfflineAudioContext(
+        1,
+        Math.max(1, Math.ceil(decoded.duration * 16_000)),
+        16_000,
+      );
+      const source = offline.createBufferSource();
+      source.buffer = decoded;
+      source.connect(offline.destination);
+      source.start();
+      const rendered = await offline.startRendering();
+      const samples = rendered.getChannelData(0);
+      const wav = new ArrayBuffer(44 + samples.length * 2);
+      const view = new DataView(wav);
+      const writeAscii = (offset: number, text: string) => {
+        for (let index = 0; index < text.length; index += 1)
+          view.setUint8(offset + index, text.charCodeAt(index));
+      };
+      writeAscii(0, "RIFF");
+      view.setUint32(4, 36 + samples.length * 2, true);
+      writeAscii(8, "WAVE");
+      writeAscii(12, "fmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, 16_000, true);
+      view.setUint32(28, 32_000, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeAscii(36, "data");
+      view.setUint32(40, samples.length * 2, true);
+      for (let index = 0; index < samples.length; index += 1) {
+        const sample = Math.max(-1, Math.min(1, samples[index]));
+        view.setInt16(
+          44 + index * 2,
+          sample < 0 ? sample * 0x8000 : sample * 0x7fff,
+          true,
+        );
+      }
+      return new Blob([wav], { type: "audio/wav" });
+    };
     const stopDictation = async (button: HTMLButtonElement) => {
       const recorder = dictationRecorder;
       dictationRecorder = null;
@@ -1799,11 +1950,12 @@ export function installLocalWorkbench(): void {
       recorder.stream.getTracks().forEach((track) => track.stop());
       await finished;
       try {
-        const blob = new Blob(dictationChunks, {
+        const recorded = new Blob(dictationChunks, {
           type: recorder.mimeType || "audio/webm",
         });
         dictationChunks = [];
-        if (blob.size === 0) return;
+        if (recorded.size === 0) return;
+        const blob = await dictationWav(recorded);
         const response = await fetch("/api/local/dictation/transcribe", {
           method: "POST",
           headers: { "Content-Type": blob.type },
@@ -1857,7 +2009,7 @@ export function installLocalWorkbench(): void {
       button.type = "button";
       button.dataset.testid = "local-dictate-button";
       button.setAttribute("aria-label", "Dictate");
-      button.title = "Dictate (records locally, transcribed by your provider)";
+      button.title = "Dictate (on-device transcription)";
       button.className = anchor.className;
       button.innerHTML =
         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
@@ -1907,6 +2059,8 @@ export function installLocalWorkbench(): void {
       wireCodeArtifactRoute();
       wireCustomizeSkillSelection();
       wireDictationButton();
+      wireSidebarProjects();
+      wireCustomizeMemoryEntry();
     };
     const observer = new MutationObserver(wireLocalUi);
     observer.observe(document.documentElement, {

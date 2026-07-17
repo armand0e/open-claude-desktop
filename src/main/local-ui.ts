@@ -17,6 +17,11 @@ import {
   conversationMarkdown,
   safeFileName,
 } from "./local-export";
+import {
+  bundledWhisperPaths,
+  transcribeWithBundledWhisper,
+} from "./local-whisper";
+import { LocalArtifactTunnel } from "./local-tunnel";
 
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -1137,10 +1142,9 @@ async function localApiResponse(
     normalized === "/api/local/dictation/transcribe" &&
     request.method === "POST"
   ) {
-    // Batch speech-to-text against the provider's OpenAI-compatible
-    // /audio/transcriptions endpoint (faster-whisper-server, LocalAI, ...).
-    // Cloud dictation streams over a WebSocket; local mode records and
-    // transcribes when the recording stops.
+    // Batch speech-to-text: the bundled whisper.cpp model transcribes fully
+    // offline; a provider /audio/transcriptions endpoint is the fallback
+    // when the bundled model is absent or fails.
     try {
       const provider = backend.provider();
       const audio = Buffer.from(await request.arrayBuffer());
@@ -1149,6 +1153,19 @@ async function localApiResponse(
       if (audio.length > 25_000_000)
         return jsonResponse({ error: { message: "Recording too long" } }, 400);
       const mime = request.headers.get("content-type") || "audio/webm";
+      if (
+        mime.includes("wav") &&
+        bundledWhisperPaths() &&
+        process.env.CLAUDE_LOCAL_TRANSCRIBE_PREFER !== "provider"
+      ) {
+        try {
+          return jsonResponse({
+            text: await transcribeWithBundledWhisper(audio),
+          });
+        } catch {
+          // The provider path below is the fallback.
+        }
+      }
       const form = new FormData();
       form.append(
         "file",
@@ -1534,6 +1551,7 @@ export async function installLocalUiProtocol(
   root: string,
   backend: LocalBackend,
   codeSessions: LocalCodeSessionManager,
+  tunnel?: LocalArtifactTunnel,
 ): Promise<void> {
   const indexPath = path.join(root, "index.html");
   await access(indexPath);
@@ -1558,6 +1576,27 @@ export async function installLocalUiProtocol(
   //    container resize stays at width zero. The bridge reconciles the
   //    drawer wrapper's inline flex with the open state the app exposes via
   //    aria-hidden — the same style channel the app's own resizer writes.
+  // Published-artifact links copy as app://localhost URLs, which only work
+  // inside this app. When the share tunnel is up, rewrite the copied link to
+  // the public https URL (waiting briefly for the tunnel to establish after
+  // a publish).
+  const tunnelClipboard = `<script>(() => {
+  "use strict";
+  const original = navigator.clipboard.writeText.bind(navigator.clipboard);
+  navigator.clipboard.writeText = async (text) => {
+    try {
+      if (typeof text === "string" && text.startsWith("app://localhost/public/artifacts/")) {
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          const status = await (await fetch("/api/local/tunnel/status")).json();
+          if (status.url)
+            return original(text.replace("app://localhost", status.url));
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+      }
+    } catch {}
+    return original(text);
+  };
+})();</script>`;
   const artifactBridge = `<script>(() => {
   window.__localArtifactBridge = { ready: true, opens: 0, closes: 0 };
   const fiberOf = (element) => {
@@ -1700,7 +1739,7 @@ export async function installLocalUiProtocol(
 })();</script>`;
   const indexHtml = (await readFile(indexPath, "utf8")).replace(
     "<head>",
-    `<head>${visibilityGuard}${artifactBridge}`,
+    `<head>${visibilityGuard}${artifactBridge}${tunnelClipboard}`,
   );
   const csp = contentSecurityPolicy(inlineScriptHashes(indexHtml));
   const patchedAssets = await patchedClientAssets(
@@ -1737,13 +1776,34 @@ export async function installLocalUiProtocol(
     if (origin && origin !== "app://localhost")
       return new Response(null, { status: 403 });
 
+    if (url.pathname === "/api/local/tunnel/status")
+      return new Response(
+        JSON.stringify(tunnel?.status() ?? { url: null, active: false }),
+        { headers: { "Content-Type": "application/json" } },
+      );
     const apiResponse = await localApiResponse(
       request,
       url,
       backend,
       codeSessions,
     );
-    if (apiResponse) return apiResponse;
+    if (apiResponse) {
+      // Publishing spins up the public share tunnel; the last unpublish
+      // tears it down.
+      if (tunnel && apiResponse.status < 400) {
+        if (
+          request.method === "POST" &&
+          /\/publish_artifact$/.test(url.pathname)
+        )
+          void tunnel.ensureStarted();
+        else if (
+          request.method === "DELETE" &&
+          /\/published_artifacts\//.test(url.pathname)
+        )
+          tunnel.stopIfIdle();
+      }
+      return apiResponse;
+    }
 
     const requested = resolveInside(absoluteRoot, url.pathname);
     if (!requested) return new Response(null, { status: 403 });

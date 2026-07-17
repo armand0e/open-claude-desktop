@@ -14,7 +14,9 @@ const explicitKeys = [
       (match) => match[1],
     ),
   ),
-].sort();
+]
+  .filter((key) => Object.hasOwn(contract.services, key))
+  .sort();
 const explicitSet = new Set(explicitKeys);
 
 function serviceEntry(key) {

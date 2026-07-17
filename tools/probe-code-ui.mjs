@@ -131,7 +131,7 @@ const clickArtifacts = process.argv.includes("--click-artifacts");
 const stderr = [];
 const child = spawn(electron, [".", `--remote-debugging-port=${port}`], {
   cwd: process.cwd(),
-  windowsHide: true,
+  windowsHide: false,
   stdio: ["ignore", "pipe", "pipe"],
   env: {
     ...process.env,

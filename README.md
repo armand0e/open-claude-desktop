@@ -1,4 +1,4 @@
-# Claude Desktop open reconstruction
+# Open-Claude
 
 An independent, evidence-backed reconstruction of the Claude Desktop shell for Windows. It targets the locally observed Claude Desktop `1.21459.0` runtime and supplies readable TypeScript for the Electron main process, isolated preloads, generated IPC contracts, persistence, protocol handling, and a small local window shell.
 
@@ -29,15 +29,15 @@ npm run build
 npm start
 ```
 
-The normal launch is account-free local mode. On first launch, the app takes a private read-only snapshot of the compatible installed SPA and runs that snapshot against this repository's local backend. Point it at another extracted SPA with `CLAUDE_ION_DIST`. The compatibility bootstrap is entirely local and never extracts or reuses Claude credentials.
+The normal development launch is account-free local mode. Release installers bundle the compatible retained UI snapshot, so an installed Open-Claude build does not depend on the official desktop app. Development runs can point at another extracted SPA with `CLAUDE_ION_DIST`. The compatibility bootstrap is entirely local and never extracts or reuses Claude credentials.
 
 ### Standalone identity and storage
 
-The runtime product is **Claude Local**, not Claude. Its Electron/Chromium profile, cookies, local storage, conversations, Code sessions, caches, logs, crash reports, single-instance lock, Windows taskbar identity, startup entry, notifications, and `claude-local://` deep links are isolated from Anthropic Claude Desktop. Mutable data defaults to `%AppData%\Claude Local`; the official `%AppData%\Claude` profile is never opened for writes. Use `CLAUDE_LOCAL_USER_DATA_DIR` only when an explicitly different local profile is needed.
+The runtime product is **Open-Claude**, not Claude. Its Electron/Chromium profile, cookies, local storage, conversations, Code sessions, caches, logs, crash reports, single-instance lock, Windows taskbar identity, startup entry, notifications, and `open-claude://` deep links are isolated from Anthropic Claude Desktop. Mutable data defaults to `%AppData%\Open-Claude`; the official `%AppData%\Claude` profile is never opened for writes. Use `OPEN_CLAUDE_USER_DATA_DIR` only when an explicitly different local profile is needed.
 
 Hosted compatibility mode is still available explicitly with `$env:CLAUDE_DESKTOP_LOCAL_UI = "0"`; it opens `https://claude.ai` in an isolated `WebContentsView` and may require a hosted account.
 
-The default provider is an OpenAI-compatible endpoint at `http://127.0.0.1:11434/v1`. Configure it under **Settings → Local model**, or set it before launch:
+The default provider is an OpenAI-compatible endpoint at `http://127.0.0.1:11434/v1`. Configure it under **Settings → Model**, or set it before launch:
 
 ```powershell
 $env:CLAUDE_LOCAL_BASE_URL = "http://127.0.0.1:1234/v1"
@@ -74,9 +74,12 @@ Important outputs:
 ```powershell
 npm test
 npm run build
+npm run dist:linux
 npm audit
 npm run smoke:local
 npm run smoke:local-chat
+npm run probe:streaming-flow
+npm run probe:code-streaming
 npm run smoke:local-artifact
 npm run smoke:local-attachment
 npm run smoke:local-code
@@ -101,7 +104,4 @@ Strict derived result checks can be enabled while developing a service implement
 - [`docs/coverage.md`](docs/coverage.md) distinguishes exact contracts, functional reconstructions, and safe fallbacks.
 - [`docs/local-mode.md`](docs/local-mode.md) explains the packaged UX patch layer, local API, provider configuration, and persistence.
 - [`docs/local-code.md`](docs/local-code.md) explains the local Code harness, native UI integration, tools, terminal, permissions, and current boundaries.
-
-## Project boundary
-
-The code in this repository is independently authored. Claude, Claude Desktop, and Anthropic are trademarks of Anthropic. The MIT license covers this reconstruction's authored source only; it does not grant rights to Anthropic binaries, web assets, services, or trademarks.
+- [`docs/streaming-and-context.md`](docs/streaming-and-context.md) documents the OpenAI-compatible stream translation, mock endpoint, native UI timing, and Chat/Code context construction.

@@ -223,7 +223,7 @@ Start-Sleep -Milliseconds 80
   const result = spawnSync(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-Command", script],
-    { encoding: "utf8", windowsHide: true },
+    { encoding: "utf8", windowsHide: false },
   );
   if (result.status !== 0)
     throw new Error(
@@ -251,10 +251,16 @@ const profile = await mkdtemp(
   path.join(os.tmpdir(), "claude-real-navigation-"),
 );
 const debuggerPort = await unusedPort();
+const packagedExecutable = process.env.OPEN_CLAUDE_TEST_EXECUTABLE
+  ? path.resolve(process.env.OPEN_CLAUDE_TEST_EXECUTABLE)
+  : null;
 const output = [];
 const child = spawn(
-  electron,
-  [".", `--remote-debugging-port=${debuggerPort}`],
+  packagedExecutable ?? electron,
+  [
+    ...(packagedExecutable ? [] : ["."]),
+    `--remote-debugging-port=${debuggerPort}`,
+  ],
   {
     cwd: process.cwd(),
     // Native Win32 pointer verification needs a visible top-level window.
@@ -262,6 +268,7 @@ const child = spawn(
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
+      OPEN_CLAUDE_USER_DATA_DIR: profile,
       CLAUDE_LOCAL_USER_DATA_DIR: profile,
       CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
       CLAUDE_DESKTOP_LOCAL_UI: "1",
@@ -305,7 +312,7 @@ try {
         while (Date.now() < deadline && !greeting) {
           greeting = (document.body?.innerText || "").split(/\\r?\\n/)
             .map(text => text.trim())
-            .find(text => /^(Moonlit chat\\?|Good morning, .+\\.|What are we working on today, .+\\?|What.s next, .+\\?|Good evening, .+\\. What can I help with\\?)$/.test(text || "")) || null;
+            .find(text => /^(Back at it, .+|Hey there, .+|How.s it going\\?|.+ returns!|Coffee and Claude time\\?|Ready for another session\\?|Happy (Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day!?|That Friday feeling|Good evening, night owl|Hello, night owl|Moonlit chat\\?|What.s on your mind tonight\\?|Good morning(, .+)?|Good afternoon|What are we working on today, .+\\?|Good evening(, .+)?)$/.test(text || "")) || null;
           if (!greeting) await new Promise(resolve => setTimeout(resolve, 100));
         }
         const rect = element => element.getBoundingClientRect().toJSON();

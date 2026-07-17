@@ -12,7 +12,7 @@ The same counts and per-service lists are available in [`analysis/implementation
 | Callable TypeScript declarations     |      11 namespaces | All recovered services and nested store APIs           |
 | Preload operations                   |          831 / 831 | 726 invoke, 91 event, 14 sync                          |
 | Generated validation evidence        | 737 / 831 channels | 1,146 arguments, 526 results                           |
-| Explicit dispatcher service branches |   25 / 71 services | 202 contract methods enter a service-specific adapter  |
+| Explicit dispatcher service branches |   29 / 71 services | 527 contract methods enter a service-specific adapter  |
 | Build and unit tests                 |            Passing | Typecheck, unit tests, production bundle               |
 | Hosted and local-SPA smoke           |            Passing | Isolated Electron profiles                             |
 | Local packaged-UX chat smoke         |            Passing | Provider stream, disk persistence, and reload render   |
@@ -29,7 +29,7 @@ The following service families have concrete behavior rather than only a generic
 
 - settings: `AppConfig`, `AppFeatures`, `AppPreferences`, `Startup`, `GlobalShortcut`, `FilePickers`, `DesktopInfo`, `MCP`, and `Extensions`;
 - hybrid/internal UI: locale, About, and main title-bar controls;
-- web shell: window controls/state, browser navigation, trusted navigation, external authentication, updater hooks, notifications, filesystem, local environment, Claude Code availability, Launch availability, and plugin MCP listing;
+- web shell: window controls/state, browser navigation, trusted navigation, external authentication, updater hooks, notifications, filesystem, local environment, Claude Code availability, Launch and artifact panes, and plugin MCP listing;
 - local Code: durable `LocalSessions`, native launcher, transcript events, OpenAI-compatible agent loop, permission decisions, workspace file/search/shell tools, artifact tools, terminal PTYs, git status/diff/history, file previews, and editor launch;
 - window manager: state query, focus, and close actions.
 
@@ -39,9 +39,9 @@ Some branches are intentionally partial. For example, Extensions exposes setting
 
 The remaining services still exist at every recovered preload path, but return stable empty, false, null, or unavailable states where a real implementation would require missing private components. The largest groups are:
 
-- `LocalAgentModeSessions` and remote/pool/SSH Code sessions;
+- remote/pool/SSH Code sessions;
 - Claude VM, framebuffer, computer-use, simulator, and device registry;
-- Cowork sessions, schedules, spaces, feedback, and artifacts;
+- Cowork sessions, schedules, spaces, and feedback;
 - Office add-ins and connected-document funnels;
 - GitHub operations that depend on a live agent session;
 - wake scheduling, feedback upload, support bundles, and native buddy transport.

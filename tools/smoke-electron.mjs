@@ -1,12 +1,15 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import electron from "electron";
 
 const mode = process.argv[2] === "local" ? "local" : "hosted";
+const packageVersion = JSON.parse(
+  await readFile("package.json", "utf8"),
+).version;
 
 async function unusedPort() {
   const server = createServer();
@@ -131,7 +134,7 @@ if (mode === "local") delete childEnvironment.CLAUDE_DESKTOP_LOCAL_UI;
 else childEnvironment.CLAUDE_DESKTOP_LOCAL_UI = "0";
 const child = spawn(electron, [".", `--remote-debugging-port=${port}`], {
   cwd: process.cwd(),
-  windowsHide: true,
+  windowsHide: false,
   stdio: ["ignore", "pipe", "pipe"],
   env: childEnvironment,
 });
@@ -212,7 +215,7 @@ try {
     fileSystemMethods: Object.keys(window["claude.web"]?.FileSystem || {}).length,
     featureCount: Object.keys(await window["claude.settings"].AppFeatures.getSupportedFeatures()).length
     ,localClaude: Boolean(window.localClaude)
-    ,localWorkbench: Boolean(document.querySelector("#local-claude-workbench")?.shadowRoot?.querySelector('[aria-label="Local model settings"]'))
+    ,localWorkbench: Boolean(document.querySelector("#local-claude-workbench")?.shadowRoot?.querySelector('[aria-label="Model settings"]'))
     ,diagnosticReportVisible: document.body?.innerText?.includes("Diagnostic Report") || false
     ,visibleLocalAccountElement: (() => {
       const element = [...document.querySelectorAll("button")].find(button =>
@@ -231,7 +234,7 @@ try {
     "Shell did not load the exact local renderer",
   );
   assert(
-    shellResult.appVersion === "1.21459.1",
+    shellResult.appVersion === packageVersion,
     `Unexpected desktop version ${shellResult.appVersion}`,
   );
   assert(

@@ -1,10 +1,10 @@
 import path from "node:path";
 
-export const LOCAL_APP_NAME = "Claude Local";
-export const LOCAL_APP_STORAGE_DIRECTORY = "Claude Local";
-export const LOCAL_APP_USER_MODEL_ID = "io.github.claude-local.desktop";
-export const LOCAL_DEEP_LINK_PREFIX = "claude-local://";
-export const LOCAL_PROFILE_ENV = "CLAUDE_LOCAL_USER_DATA_DIR";
+export const LOCAL_APP_NAME = "Open-Claude";
+export const LOCAL_APP_STORAGE_DIRECTORY = "Open-Claude";
+export const LOCAL_APP_USER_MODEL_ID = "io.openclaude.desktop";
+export const LOCAL_DEEP_LINK_PREFIX = "open-claude://";
+export const LOCAL_PROFILE_ENV = "OPEN_CLAUDE_USER_DATA_DIR";
 
 export interface LocalProfilePaths {
   userData: string;

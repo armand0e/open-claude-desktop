@@ -4,8 +4,7 @@ import process from "node:process";
 
 export async function referencePaths() {
   const metadataPath = path.resolve(
-    process.env.CLAUDE_REFERENCE_METADATA ??
-      "analysis/reference-metadata.json",
+    process.env.CLAUDE_REFERENCE_METADATA ?? "analysis/reference-metadata.json",
   );
   const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
   const version = process.env.CLAUDE_DESKTOP_VERSION ?? metadata.version;

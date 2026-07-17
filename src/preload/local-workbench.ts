@@ -1,7 +1,13 @@
 import { ipcRenderer } from "electron";
 
 interface PublicProviderConfig {
-  provider: { baseUrl: string; model: string; contextWindow: number };
+  provider: {
+    baseUrl: string;
+    model: string;
+    contextWindow: number;
+    thinkingStartTag: string;
+    thinkingEndTag: string;
+  };
   hasApiKey: boolean;
 }
 
@@ -55,6 +61,8 @@ async function setConfig(input: {
   model: string;
   contextWindow: number;
   apiKey?: string | null;
+  thinkingStartTag: string;
+  thinkingEndTag: string;
 }): Promise<void> {
   await responseJson(
     await fetch("/api/local/config", {
@@ -178,8 +186,208 @@ export const localClaudeApi = {
   version: 1,
 };
 
+const CODE_ACTIVITY_WORDS = [
+  "Accomplishing",
+  "Actioning",
+  "Actualizing",
+  "Architecting",
+  "Baking",
+  "Beaming",
+  "Beboppin'",
+  "Befuddling",
+  "Billowing",
+  "Blanching",
+  "Bloviating",
+  "Boogieing",
+  "Boondoggling",
+  "Booping",
+  "Bootstrapping",
+  "Brewing",
+  "Burrowing",
+  "Calculating",
+  "Canoodling",
+  "Caramelizing",
+  "Cascading",
+  "Catapulting",
+  "Cerebrating",
+  "Channeling",
+  "Channelling",
+  "Choreographing",
+  "Churning",
+  "Clauding",
+  "Coalescing",
+  "Cogitating",
+  "Combobulating",
+  "Composing",
+  "Computing",
+  "Concocting",
+  "Considering",
+  "Contemplating",
+  "Cooking",
+  "Crafting",
+  "Creating",
+  "Crunching",
+  "Crystallizing",
+  "Cultivating",
+  "Deciphering",
+  "Deliberating",
+  "Determining",
+  "Dilly-dallying",
+  "Discombobulating",
+  "Doing",
+  "Doodling",
+  "Drizzling",
+  "Ebbing",
+  "Effecting",
+  "Elucidating",
+  "Embellishing",
+  "Enchanting",
+  "Envisioning",
+  "Evaporating",
+  "Fermenting",
+  "Fiddle-faddling",
+  "Finagling",
+  "Flambeing",
+  "Flibbertigibbeting",
+  "Flowing",
+  "Flummoxing",
+  "Fluttering",
+  "Forging",
+  "Forming",
+  "Frolicking",
+  "Frosting",
+  "Gallivanting",
+  "Galloping",
+  "Garnishing",
+  "Generating",
+  "Germinating",
+  "Gitifying",
+  "Grooving",
+  "Gusting",
+  "Harmonizing",
+  "Hashing",
+  "Hatching",
+  "Herding",
+  "Honking",
+  "Hullaballooing",
+  "Hyperspacing",
+  "Ideating",
+  "Imagining",
+  "Improvising",
+  "Incubating",
+  "Inferring",
+  "Infusing",
+  "Ionizing",
+  "Jitterbugging",
+  "Julienning",
+  "Kneading",
+  "Leavening",
+  "Levitating",
+  "Lollygagging",
+  "Manifesting",
+  "Marinating",
+  "Meandering",
+  "Metamorphosing",
+  "Misting",
+  "Moonwalking",
+  "Moseying",
+  "Mulling",
+  "Mustering",
+  "Musing",
+  "Nebulizing",
+  "Nesting",
+  "Newspapering",
+  "Noodling",
+  "Nucleating",
+  "Orbiting",
+  "Orchestrating",
+  "Osmosing",
+  "Perambulating",
+  "Percolating",
+  "Perusing",
+  "Philosophising",
+  "Photosynthesizing",
+  "Pollinating",
+  "Pondering",
+  "Pontificating",
+  "Pouncing",
+  "Precipitating",
+  "Prestidigitating",
+  "Processing",
+  "Proofing",
+  "Propagating",
+  "Puttering",
+  "Puzzling",
+  "Quantumizing",
+  "Razzle-dazzling",
+  "Razzmatazzing",
+  "Recombobulating",
+  "Reticulating",
+  "Roosting",
+  "Ruminating",
+  "Sauteing",
+  "Scampering",
+  "Schlepping",
+  "Scurrying",
+  "Seasoning",
+  "Shenaniganing",
+  "Shimmying",
+  "Simmering",
+  "Skedaddling",
+  "Sketching",
+  "Slithering",
+  "Smooshing",
+  "Sock-hopping",
+  "Spelunking",
+  "Spinning",
+  "Sprouting",
+  "Stewing",
+  "Sublimating",
+  "Swirling",
+  "Swooping",
+  "Symbioting",
+  "Synthesizing",
+  "Tempering",
+  "Thinking",
+  "Thundering",
+  "Tinkering",
+  "Tomfoolering",
+  "Topsy-turvying",
+  "Transfiguring",
+  "Transmuting",
+  "Twisting",
+  "Undulating",
+  "Unfurling",
+  "Unravelling",
+  "Vibing",
+  "Waddling",
+  "Wandering",
+  "Warping",
+  "Whatchamacalliting",
+  "Whirlpooling",
+  "Whirring",
+  "Whisking",
+  "Wibbling",
+  "Working",
+  "Wrangling",
+  "Zesting",
+  "Zigzagging",
+] as const;
+
+function chooseCodeActivityWord(): string {
+  const current = document.documentElement.dataset.openClaudeActivityWord;
+  const index = Math.floor(Math.random() * CODE_ACTIVITY_WORDS.length);
+  const selected =
+    CODE_ACTIVITY_WORDS[index] === current
+      ? CODE_ACTIVITY_WORDS[(index + 1) % CODE_ACTIVITY_WORDS.length]
+      : CODE_ACTIVITY_WORDS[index];
+  document.documentElement.dataset.openClaudeActivityWord = selected;
+  return selected;
+}
+
 let mermaidModule: Promise<(typeof import("mermaid"))["default"]> | null = null;
 let mermaidDiagramId = 0;
+const mermaidRenderTimers = new WeakMap<HTMLElement, number>();
 
 function loadMermaid(): Promise<(typeof import("mermaid"))["default"]> {
   mermaidModule ??= import("mermaid").then((module) => module.default);
@@ -199,11 +407,17 @@ function nativeUiIsDark(): boolean {
 async function renderMermaidCodeBlock(code: HTMLElement): Promise<void> {
   const pre = code.parentElement;
   if (!(pre instanceof HTMLPreElement)) return;
-  if (pre.dataset.localMermaidState) return;
+  if (pre.dataset.localMermaidState === "rendering") return;
 
   const source = code.textContent?.trim();
   if (!source) return;
+  if (
+    pre.dataset.localMermaidState === "error" &&
+    pre.dataset.localMermaidSource === source
+  )
+    return;
   pre.dataset.localMermaidState = "rendering";
+  pre.dataset.localMermaidSource = source;
 
   try {
     const mermaid = await loadMermaid();
@@ -217,6 +431,11 @@ async function renderMermaidCodeBlock(code: HTMLElement): Promise<void> {
     });
     const id = `claude-local-mermaid-${++mermaidDiagramId}`;
     const { svg, bindFunctions } = await mermaid.render(id, source);
+    if (!code.isConnected || code.textContent?.trim() !== source) {
+      delete pre.dataset.localMermaidState;
+      wireInlineMermaidDiagrams();
+      return;
+    }
     const diagram = document.createElement("div");
     diagram.className = "local-inline-mermaid";
     diagram.dataset.localMermaidSource = source;
@@ -247,6 +466,10 @@ async function renderMermaidCodeBlock(code: HTMLElement): Promise<void> {
       error instanceof Error
         ? `Could not render diagram: ${error.message}`
         : "Could not render diagram";
+    if (code.textContent?.trim() !== source) {
+      delete pre.dataset.localMermaidState;
+      wireInlineMermaidDiagrams();
+    }
   }
 }
 
@@ -254,7 +477,27 @@ function wireInlineMermaidDiagrams(): void {
   for (const code of document.querySelectorAll<HTMLElement>(
     "pre > code.language-mermaid",
   )) {
-    void renderMermaidCodeBlock(code);
+    const pre = code.parentElement;
+    if (!(pre instanceof HTMLPreElement)) continue;
+    const source = code.textContent?.trim();
+    if (!source || pre.dataset.localMermaidState === "rendering") continue;
+    if (
+      (pre.dataset.localMermaidState === "pending" ||
+        pre.dataset.localMermaidState === "error") &&
+      pre.dataset.localMermaidSource === source
+    )
+      continue;
+    const pending = mermaidRenderTimers.get(code);
+    if (pending !== undefined) window.clearTimeout(pending);
+    pre.dataset.localMermaidState = "pending";
+    pre.dataset.localMermaidSource = source;
+    mermaidRenderTimers.set(
+      code,
+      window.setTimeout(() => {
+        mermaidRenderTimers.delete(code);
+        void renderMermaidCodeBlock(code);
+      }, 180),
+    );
   }
 }
 
@@ -285,6 +528,35 @@ export function installLocalWorkbench(): void {
     }
     if (document.getElementById("local-claude-workbench")) return;
 
+    chooseCodeActivityWord();
+    document.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target;
+        if (
+          target instanceof Element &&
+          target.closest<HTMLButtonElement>('button[aria-label="Send"]')
+        )
+          chooseCodeActivityWord();
+      },
+      true,
+    );
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (
+          event.key !== "Enter" ||
+          event.shiftKey ||
+          event.isComposing ||
+          !(event.target instanceof Element) ||
+          !event.target.closest('[contenteditable="true"][aria-label="Prompt"]')
+        )
+          return;
+        chooseCodeActivityWord();
+      },
+      true,
+    );
+
     const host = document.createElement("div");
     host.id = "local-claude-workbench";
     host.hidden = true;
@@ -296,14 +568,14 @@ export function installLocalWorkbench(): void {
         * { box-sizing: border-box; }
         button, input { font: inherit; }
         #panel { width: 100%; padding: 0 24px 32px; }
-        h1 { margin: 0; padding: 4px 0 22px; font: 650 20px/1.25 ui-sans-serif, system-ui, sans-serif; }
-        .section { border-top: 1px solid var(--cds-border, rgba(110,104,94,.18)); }
+        h1 { margin: 0; padding: 6px 0 26px; font: 650 16px/1.3 ui-sans-serif, system-ui, sans-serif; }
         .row { display: grid; grid-template-columns: minmax(170px, 1fr) minmax(260px, 1.45fr); gap: 28px; align-items: center; min-height: 72px; padding: 14px 0; border-bottom: 1px solid var(--cds-border, rgba(110,104,94,.18)); }
-        .copy { display: grid; gap: 3px; min-width: 0; }
-        .label { font-weight: 650; }
+        .row:last-of-type { border-bottom: 0; }
+        .copy { display: grid; gap: 4px; min-width: 0; }
+        .label { font-weight: 600; font-size: 15px; }
         input { width: 100%; border: 0; border-radius: 10px; padding: 10px 12px; background: var(--cds-bg-200, rgba(110,104,94,.16)); color: inherit; outline: none; }
         input:focus { border-color: #d97757; box-shadow: 0 0 0 2px color-mix(in srgb, #d97757 25%, transparent); }
-        .hint { margin: 0; color: var(--cds-text-secondary, #8a8781); font-size: 12px; font-weight: 400; }
+        .hint { margin: 0; color: var(--cds-text-secondary, #8a8781); font-size: 13px; font-weight: 400; line-height: 1.4; }
         .actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 9px; padding: 18px 0 8px; }
         .actions button { border: 1px solid var(--cds-border, rgba(110,104,94,.3)); border-radius: 9px; padding: 8px 12px; cursor: pointer; background: var(--cds-bg-200, rgba(110,104,94,.16)); color: inherit; }
         .actions .primary { background: #d97757; border-color: #d97757; color: #fff; }
@@ -319,6 +591,8 @@ export function installLocalWorkbench(): void {
           <label class="row"><span class="copy"><span class="label">OpenAI-compatible URL</span><span class="hint">LM Studio usually uses http://127.0.0.1:1234/v1</span></span><input id="base-url" type="url" spellcheck="false"></label>
           <label class="row"><span class="copy"><span class="label">Model</span><span class="hint">The model ID exposed by your local server</span></span><input id="model" type="text" spellcheck="false"></label>
           <label class="row"><span class="copy"><span class="label">Context window</span><span class="hint">Used by Code for its live context meter</span></span><input id="context-window" type="number" min="1024" step="1024" inputmode="numeric"></label>
+          <label class="row"><span class="copy"><span class="label">Thinking start tag</span><span class="hint">Defaults to &lt;think&gt;. Set both tags blank to disable parsing.</span></span><input id="thinking-start-tag" type="text" spellcheck="false" autocomplete="off"></label>
+          <label class="row"><span class="copy"><span class="label">Thinking end tag</span><span class="hint">Change these for model-specific formats such as Gemma channel markers.</span></span><input id="thinking-end-tag" type="text" spellcheck="false" autocomplete="off"></label>
           <label class="row"><span class="copy"><span class="label">API key</span><span class="hint">Optional for local OpenAI-compatible servers</span></span><input id="api-key" type="password" autocomplete="off" placeholder="Leave blank to keep current key"></label>
           <div class="actions"><button id="models-button" type="button">Discover models</button><button id="save" class="primary" type="button">Save changes</button></div>
           <div id="models"></div><p id="status" role="status"></p>
@@ -334,6 +608,8 @@ export function installLocalWorkbench(): void {
     const baseUrl = element<HTMLInputElement>("#base-url");
     const model = element<HTMLInputElement>("#model");
     const contextWindow = element<HTMLInputElement>("#context-window");
+    const thinkingStartTag = element<HTMLInputElement>("#thinking-start-tag");
+    const thinkingEndTag = element<HTMLInputElement>("#thinking-end-tag");
     const apiKey = element<HTMLInputElement>("#api-key");
     const models = element<HTMLElement>("#models");
     const showError = (error: unknown) => {
@@ -342,6 +618,8 @@ export function installLocalWorkbench(): void {
     };
 
     let configLoad = 0;
+    let configuredModelLabel = "local-model";
+    const modelLabelAliases = new Set(["Local model", "local-model"]);
     let activeScroll: HTMLElement | null = null;
     let localNavigationButton: HTMLButtonElement | null = null;
     let inactiveNavigationClass = "";
@@ -350,6 +628,22 @@ export function installLocalWorkbench(): void {
       HTMLElement,
       { value: string; priority: string }
     >();
+
+    const wireConfiguredModelLabels = () => {
+      if (!configuredModelLabel) return;
+      const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+      );
+      let node = walker.nextNode();
+      while (node) {
+        const value = node.nodeValue ?? "";
+        const label = value.trim();
+        if (label !== configuredModelLabel && modelLabelAliases.has(label))
+          node.nodeValue = value.replace(label, configuredModelLabel);
+        node = walker.nextNode();
+      }
+    };
 
     const restoreNativeSettings = () => {
       if (activeScroll)
@@ -398,12 +692,17 @@ export function installLocalWorkbench(): void {
         if (load !== configLoad) return;
         baseUrl.value = config.provider.baseUrl;
         model.value = config.provider.model;
+        modelLabelAliases.add(configuredModelLabel);
+        configuredModelLabel = config.provider.model;
         contextWindow.value = String(config.provider.contextWindow);
+        thinkingStartTag.value = config.provider.thinkingStartTag;
+        thinkingEndTag.value = config.provider.thinkingEndTag;
         apiKey.value = "";
         apiKey.placeholder = config.hasApiKey
           ? "Key stored — leave blank to keep it"
           : "Optional";
         status.textContent = "";
+        wireConfiguredModelLabels();
       } catch (error) {
         showError(error);
       }
@@ -439,6 +738,38 @@ export function installLocalWorkbench(): void {
         }
       });
     };
+
+    document.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const button = target.closest<HTMLButtonElement>(
+          'nav[aria-label="Settings"] button',
+        );
+        const navigation = button?.closest<HTMLElement>(
+          'nav[aria-label="Settings"]',
+        );
+        if (!button || !navigation) return;
+        if (!button.closest("[data-local-model-settings]")) {
+          if (activeScroll && !host.hidden) restoreNativeSettings();
+          return;
+        }
+        const contentPane = navigation.nextElementSibling;
+        const scroll =
+          contentPane?.querySelector<HTMLElement>(".overflow-y-auto") ??
+          (contentPane instanceof HTMLElement ? contentPane : null);
+        if (!scroll) return;
+        // The retained settings router replaces sidebar nodes between tabs.
+        // Delegate from the stable document root and own the local route in
+        // capture phase so neither a stale node nor the cloud router can make
+        // the click fall through to the previously selected tab.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        activateLocalSettings(scroll, button, navigation);
+      },
+      true,
+    );
 
     const wiredButtons = new WeakSet<HTMLButtonElement>();
     const localArtifactsRoute = "/epitaxy/local-artifacts";
@@ -894,6 +1225,9 @@ export function installLocalWorkbench(): void {
       // Older local builds injected a second Artifacts row. The retained client
       // now has its own native entry, so remove any stale injected copy.
       document.querySelector("[data-local-artifacts-button]")?.remove();
+      document
+        .querySelector('[data-testid="local-artifacts-sidebar-button"]')
+        ?.remove();
 
       if (
         /^\/customize\/(connectors|plugins)(?:\/|$)/.test(location.pathname)
@@ -973,6 +1307,70 @@ export function installLocalWorkbench(): void {
       container.prepend(button);
     };
 
+    // The dframe chat sidebar has no native Artifacts entry (the retained
+    // desktop build only ships one in the Code sidebar), so mirror it: same
+    // glyph, routed to the chat-surface /artifacts gallery. The row is
+    // removed again whenever a native Artifacts row is visible so a Code
+    // mode transition can never show two.
+    const wireSidebarArtifacts = () => {
+      const stripped = (element: Element) =>
+        (element.textContent ?? "").replace(/[\uE000-\uF8FF]/gu, "").trim();
+      const rows = [
+        ...document.querySelectorAll<HTMLElement>("a,button"),
+      ].filter((row) => row.getClientRects().length > 0);
+      const injected = document.querySelector<HTMLElement>(
+        '[data-testid="local-chat-artifacts-button"]',
+      );
+      const nativeVisible = rows.some(
+        (row) => stripped(row) === "Artifacts" && !row.dataset.testid,
+      );
+      const isChatSidebar = rows.some((row) =>
+        /New ?chat/u.test(stripped(row)),
+      );
+      if (nativeVisible || !isChatSidebar) {
+        injected?.remove();
+        return;
+      }
+      if (injected) return;
+      const customize = rows.find((row) => stripped(row) === "Customize");
+      if (!customize?.parentElement) return;
+      const button = customize.cloneNode(true) as HTMLElement;
+      button.dataset.testid = "local-chat-artifacts-button";
+      button.setAttribute("aria-label", "Artifacts");
+      button.removeAttribute("id");
+      for (const element of [button, ...button.querySelectorAll("*")])
+        if (
+          element.childElementCount === 0 &&
+          stripped(element) === "Customize"
+        )
+          element.textContent = "Artifacts";
+      // Copy the native Artifacts glyph from the (possibly hidden) Code
+      // sidebar row; sidebar icons are icon-font glyphs, not SVGs.
+      const nativeRow = [
+        ...document.querySelectorAll<HTMLElement>("a,button"),
+      ].find((row) => stripped(row) === "Artifacts" && !row.dataset.testid);
+      const glyphOf = (element: Element | undefined | null) =>
+        element?.textContent?.match(/[\uE000-\uF8FF]/u)?.[0];
+      const nativeGlyph = glyphOf(nativeRow);
+      if (nativeGlyph) {
+        const iconHost = [...button.querySelectorAll<HTMLElement>("*")].find(
+          (element) =>
+            element.childElementCount === 0 &&
+            /^[\uE000-\uF8FF]$/u.test(element.textContent ?? ""),
+        );
+        if (iconHost) iconHost.textContent = nativeGlyph;
+      }
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        history.pushState(history.state, "", "/artifacts");
+        window.dispatchEvent(
+          new PopStateEvent("popstate", { state: history.state }),
+        );
+      });
+      customize.parentElement.insertBefore(button, customize.nextSibling);
+    };
+
     const wireSettingsDialog = () => {
       const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"]');
       for (const dialog of dialogs) {
@@ -986,11 +1384,26 @@ export function installLocalWorkbench(): void {
         const desktopLabel = sectionLabels.find(
           (candidate) => candidate.textContent?.trim() === "Desktop app",
         );
-        const desktopList = desktopLabel?.nextElementSibling;
-        if (!(desktopList instanceof HTMLUListElement)) continue;
+        const groupedDesktopList = desktopLabel?.nextElementSibling;
+        const navigationLists = [
+          ...navigation.querySelectorAll<HTMLUListElement>("ul"),
+        ];
+        const desktopList =
+          (groupedDesktopList instanceof HTMLUListElement
+            ? groupedDesktopList
+            : null) ??
+          navigationLists.find((list) => {
+            const labels = [
+              ...list.querySelectorAll<HTMLElement>("button .truncate"),
+            ].map((label) => label.textContent?.trim());
+            return labels.includes("General") && labels.includes("Claude Code");
+          }) ??
+          navigationLists[0];
+        if (!desktopList) continue;
         const contentPane = navigation.nextElementSibling;
         const scroll =
-          contentPane?.querySelector<HTMLElement>(".overflow-y-auto");
+          contentPane?.querySelector<HTMLElement>(".overflow-y-auto") ??
+          (contentPane instanceof HTMLElement ? contentPane : null);
         if (!scroll) continue;
 
         const existingButtons = [
@@ -1022,7 +1435,7 @@ export function installLocalWorkbench(): void {
           )[0];
         if (instructionCopy)
           instructionCopy.textContent =
-            "Claude Local will keep these in mind across chats on this device.";
+            "Open-Claude will keep these in mind across chats on this device.";
         const activeTemplate = existingButtons.find((button) =>
           button.hasAttribute("aria-current"),
         );
@@ -1053,12 +1466,7 @@ export function installLocalWorkbench(): void {
         if (localLabel && localLabel.textContent?.trim() !== "Model")
           localLabel.textContent = "Model";
         localNavigationButton = localButton;
-        if (!wiredButtons.has(localButton)) {
-          wiredButtons.add(localButton);
-          localButton.addEventListener("click", () =>
-            activateLocalSettings(scroll, localButton, navigation),
-          );
-        }
+        wiredButtons.add(localButton);
 
         for (const button of existingButtons) {
           if (wiredButtons.has(button)) continue;
@@ -1106,8 +1514,13 @@ export function installLocalWorkbench(): void {
           baseUrl: baseUrl.value.trim(),
           model: model.value.trim(),
           contextWindow: Number(contextWindow.value),
+          thinkingStartTag: thinkingStartTag.value,
+          thinkingEndTag: thinkingEndTag.value,
           ...(apiKey.value ? { apiKey: apiKey.value } : {}),
         });
+        modelLabelAliases.add(configuredModelLabel);
+        configuredModelLabel = model.value.trim();
+        wireConfiguredModelLabels();
         apiKey.value = "";
         apiKey.placeholder = "Key stored — leave blank to keep it";
         status.textContent = "Saved.";
@@ -1116,30 +1529,10 @@ export function installLocalWorkbench(): void {
       }
     });
 
-    let artifactOwnerPath: string | null = null;
-    let artifactClosePending = false;
+    // The artifact pane open/close bridge lives in the page-world runtime
+    // script injected by local-ui.ts: React fiber internals are invisible
+    // from this isolated preload world. Only DOM-level shims remain here.
     let openedCodeArtifactId: string | null = null;
-    const wireArtifactLifecycle = () => {
-      const close = document.querySelector<HTMLButtonElement>(
-        'button[aria-label="Close artifact"]',
-      );
-      if (!close) {
-        artifactOwnerPath = null;
-        return;
-      }
-      if (artifactOwnerPath === null) {
-        artifactOwnerPath = location.pathname;
-        return;
-      }
-      if (artifactOwnerPath !== location.pathname && !artifactClosePending) {
-        artifactClosePending = true;
-        close.click();
-        artifactOwnerPath = null;
-        queueMicrotask(() => {
-          artifactClosePending = false;
-        });
-      }
-    };
     const wireCodeArtifactRoute = () => {
       const id = new URL(location.href).searchParams.get("open_local_artifact");
       if (!id) {
@@ -1148,88 +1541,61 @@ export function installLocalWorkbench(): void {
       }
       if (openedCodeArtifactId === id) return;
       openedCodeArtifactId = id;
-      setTimeout(() => {
-        const previewWidth = Math.max(420, Math.round(innerWidth * 0.48));
-        void ipcRenderer.invoke(
-          "local-show-code-artifact",
-          id,
-          {
-            x: Math.max(0, innerWidth - previewWidth),
-            y: 48,
-            width: previewWidth,
-            height: Math.max(200, innerHeight - 48),
-          },
-          `gallery:${id}`,
-        );
-      }, 650);
-    };
-    const artifactPane = (): HTMLElement | null => {
-      let element = document.querySelector<HTMLElement>(
-        'iframe[src^="app://artifacts.local"]',
-      );
-      while (element) {
-        if (
-          typeof element.className === "string" &&
-          element.className.includes("md:flex-grow-0") &&
-          element.className.includes("overflow-hidden")
-        )
-          return element;
-        element = element.parentElement;
-      }
-      return null;
-    };
-    const setArtifactPaneOpen = (open: boolean) => {
-      const pane = artifactPane();
-      if (!pane) return;
-      if (open) {
-        pane.dataset.localArtifactPaneOpen = "true";
-        pane.style.setProperty(
-          "flex-basis",
-          `${Math.max(420, Math.round(innerWidth * 0.46))}px`,
-          "important",
-        );
-        pane.style.setProperty("flex-grow", "0", "important");
-        pane.style.setProperty("flex-shrink", "0", "important");
-        let content = document.querySelector<HTMLElement>(
-          'iframe[src^="app://artifacts.local"]',
-        );
-        while (content && content !== pane) {
-          content.dataset.localArtifactContentOpen = "true";
-          if (getComputedStyle(content).display !== "contents") {
-            content.style.setProperty("width", "100%", "important");
-            content.style.setProperty("min-width", "100%", "important");
-            content.style.setProperty("height", "100%", "important");
-            content.style.setProperty("min-height", "100%", "important");
-          }
-          content = content.parentElement;
+      const open = async () => {
+        const deadline = Date.now() + 5_000;
+        const requestedUrl = `/code/artifact/${encodeURIComponent(id)}`;
+        document.documentElement.dataset.openClaudeCodeArtifact = requestedUrl;
+        while (Date.now() < deadline) {
+          window.dispatchEvent(new Event("open-claude-code-artifact"));
+          if (
+            document.documentElement.dataset.openClaudeCodeArtifact !==
+            requestedUrl
+          )
+            return;
+          await new Promise((resolve) => setTimeout(resolve, 50));
         }
-      } else {
-        delete pane.dataset.localArtifactPaneOpen;
-        pane.style.removeProperty("flex-basis");
-        pane.style.removeProperty("flex-grow");
-        pane.style.removeProperty("flex-shrink");
-        for (const content of document.querySelectorAll<HTMLElement>(
-          "[data-local-artifact-content-open]",
-        )) {
-          delete content.dataset.localArtifactContentOpen;
-          content.style.removeProperty("width");
-          content.style.removeProperty("min-width");
-          content.style.removeProperty("height");
-          content.style.removeProperty("min-height");
-        }
-      }
+        delete document.documentElement.dataset.openClaudeCodeArtifact;
+        openedCodeArtifactId = null;
+      };
+      setTimeout(() => void open(), 250);
     };
     document.addEventListener(
       "click",
       (event) => {
         const target = event.target;
         if (!(target instanceof Element)) return;
-        const button = target.closest<HTMLButtonElement>("button[aria-label]");
-        const label = button?.getAttribute("aria-label") ?? "";
-        if (label === "Close artifact") setArtifactPaneOpen(false);
-        else if (label.startsWith("View ")) {
-          setTimeout(() => setArtifactPaneOpen(true), 0);
-          setTimeout(() => setArtifactPaneOpen(true), 150);
+        const anchor = target.closest<HTMLAnchorElement>("a[href]");
+        if (
+          anchor &&
+          event.button === 0 &&
+          !event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey &&
+          (!anchor.target || anchor.target === "_self")
+        ) {
+          const destination = new URL(anchor.href, location.href);
+          if (
+            destination.protocol === "app:" &&
+            destination.hostname === "localhost" &&
+            destination.pathname.startsWith("/chat/") &&
+            destination.searchParams.has("artifactId")
+          ) {
+            // Native gallery cards are rendered as plain anchors. Letting the
+            // browser follow one replaces the whole renderer and destroys any
+            // in-flight retry/stream state. Route through the retained SPA's
+            // popstate listener so the old chat and artifact hydrate in place.
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            history.pushState(
+              history.state,
+              "",
+              `${destination.pathname}${destination.search}${destination.hash}`,
+            );
+            window.dispatchEvent(
+              new PopStateEvent("popstate", { state: history.state }),
+            );
+          }
         }
       },
       true,
@@ -1239,9 +1605,10 @@ export function installLocalWorkbench(): void {
     const wireLocalUi = () => {
       wireLocalNavigation();
       wireSidebarSettings();
+      wireSidebarArtifacts();
       wireSettingsDialog();
+      wireConfiguredModelLabels();
       wireInlineMermaidDiagrams();
-      wireArtifactLifecycle();
       wireCodeArtifactRoute();
     };
     const observer = new MutationObserver(wireLocalUi);
@@ -1251,6 +1618,13 @@ export function installLocalWorkbench(): void {
     });
     wireLocalUi();
     window.addEventListener("popstate", wireLocalUi);
+    window.addEventListener("hashchange", () => {
+      // Native Settings tabs are same-document hash routes. React may replace
+      // the navigation subtree before its click reaches a node-level handler,
+      // so restore the native pane from the stable location event as well.
+      if (activeScroll && !host.hidden) restoreNativeSettings();
+      wireLocalUi();
+    });
     window.addEventListener("resize", updateLocalOverlayBounds);
     window.dispatchEvent(new CustomEvent("local-claude-ready"));
   };

@@ -10,6 +10,7 @@ import {
   ipcMain,
   Menu,
   protocol,
+  safeStorage,
   session,
   shell,
   WebContents,
@@ -29,7 +30,11 @@ import {
   originOf,
   TRUSTED_REMOTE_ORIGINS,
 } from "../shared/security";
-import { assertTrustedIpcSender, registerGeneratedIpc } from "./ipc";
+import {
+  assertLocalIpcSender,
+  assertTrustedIpcSender,
+  registerGeneratedIpc,
+} from "./ipc";
 import { installLocalUiProtocol, registerAppScheme } from "./local-ui";
 import { LocalBackend } from "./local-backend";
 import { LocalCodeSessionManager } from "./local-code";
@@ -48,7 +53,9 @@ app.name = LOCAL_APP_NAME;
 app.setAppUserModelId(LOCAL_APP_USER_MODEL_ID);
 const profilePaths = localProfilePaths(
   app.getPath("appData"),
-  process.env[LOCAL_PROFILE_ENV],
+  process.env[LOCAL_PROFILE_ENV] ??
+    // Retain the development/test override used before the v0.0.1 rename.
+    process.env.CLAUDE_LOCAL_USER_DATA_DIR,
 );
 for (const directory of Object.values(profilePaths))
   mkdirSync(directory, { recursive: true });
@@ -117,6 +124,18 @@ async function installedClaudeVersions(installRoot: string): Promise<string[]> {
 async function localUiRoot(): Promise<string | null> {
   const explicit = process.env.CLAUDE_ION_DIST;
   if (isUiRoot(explicit)) return explicit;
+  const packagedSnapshot = path.join(process.resourcesPath, "ion-dist");
+  if (isUiRoot(packagedSnapshot)) return packagedSnapshot;
+  // Packaging stages the retained renderer in the repository before invoking
+  // electron-builder. Reuse that exact snapshot for development and probes so
+  // an unrelated Claude Desktop auto-update cannot silently change the UI
+  // contract under a running Open-Claude worktree.
+  const stagedSnapshot = path.join(
+    app.getAppPath(),
+    ".package-assets",
+    "ion-dist",
+  );
+  if (!app.isPackaged && isUiRoot(stagedSnapshot)) return stagedSnapshot;
   const preferredVersion =
     process.env.CLAUDE_DESKTOP_VERSION ?? app.getVersion();
   const repositorySnapshot = path.join(
@@ -134,6 +153,10 @@ async function localUiRoot(): Promise<string | null> {
     "ion-dist",
   );
   if (isUiRoot(privateSnapshot)) return privateSnapshot;
+
+  // Release builds are self-contained. Never make an installed Open-Claude
+  // instance depend on or read UI files from Anthropic's installed app.
+  if (app.isPackaged) return null;
 
   const installRoot = path.join(
     process.env.ProgramData ?? "C:\\ProgramData",
@@ -306,7 +329,12 @@ function createMainWindow(): BrowserWindow {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
-      backgroundThrottling: true,
+      // Keep the retained UI's frame clock running while the window is
+      // hidden or fully occluded. base-ui dialogs (Settings, publish,
+      // connectors) finish closing only after their exit transition ends;
+      // with throttling on, a covered window freezes requestAnimationFrame
+      // and those dialogs deadlock open.
+      backgroundThrottling: false,
       additionalArguments: [
         `--desktop-app-version=${app.getVersion()}`,
         `--desktop-features=${JSON.stringify(featureMatrix())}`,
@@ -442,22 +470,59 @@ function createMainWindow(): BrowserWindow {
 }
 
 function installPermissionPolicy(): void {
-  const trusted = (webContents: WebContents | null, requestingUrl: string) => {
+  const trustedLocal = (
+    webContents: WebContents | null,
+    requestingUrl: string,
+  ) => {
     if (!webContents) return false;
     const topUrl = webContents.getURL();
     return (
-      isTrustedRendererUrl(requestingUrl, false) &&
-      isTrustedRendererUrl(topUrl, false)
+      originOf(requestingUrl) === "app://localhost" &&
+      originOf(topUrl) === "app://localhost"
+    );
+  };
+  const allowed = (
+    webContents: WebContents | null,
+    permission: string,
+    requestingUrl: string,
+    details: Record<string, unknown>,
+  ) => {
+    if (!trustedLocal(webContents, requestingUrl)) return false;
+    if (
+      permission === "fullscreen" ||
+      permission === "clipboard-read" ||
+      permission === "clipboard-sanitized-write" ||
+      permission === "notifications"
+    )
+      return true;
+    if (permission !== "media") return false;
+    const mediaTypes = Array.isArray(details.mediaTypes)
+      ? details.mediaTypes
+      : [];
+    return (
+      mediaTypes.length > 0 && mediaTypes.every((type) => type === "audio")
     );
   };
   session.defaultSession.setPermissionRequestHandler(
-    (contents, _permission, callback, details) => {
-      callback(trusted(contents, details.requestingUrl));
+    (contents, permission, callback, details) => {
+      callback(
+        allowed(
+          contents,
+          permission,
+          details.requestingUrl,
+          details as unknown as Record<string, unknown>,
+        ),
+      );
     },
   );
   session.defaultSession.setPermissionCheckHandler(
-    (contents, _permission, requestingOrigin, details) =>
-      trusted(contents, requestingOrigin || details.requestingUrl || ""),
+    (contents, permission, requestingOrigin, details) =>
+      allowed(
+        contents,
+        permission,
+        requestingOrigin || details.requestingUrl || "",
+        details as unknown as Record<string, unknown>,
+      ),
   );
   session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
     if (
@@ -476,8 +541,8 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
   ipcMain.removeHandler("request-open-mcp-settings");
   ipcMain.removeHandler("local-pick-directory");
   ipcMain.removeHandler("local-open-settings");
+  ipcMain.removeHandler("local-chrome-action");
   ipcMain.removeHandler("local-code-artifact-details");
-  ipcMain.removeHandler("local-show-code-artifact");
   ipcMain.handle("list-mcp-servers", (event) => {
     assertTrustedIpcSender(event);
     return dispatcher.listMcpServers();
@@ -494,7 +559,7 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
     return undefined;
   });
   ipcMain.handle("local-pick-directory", async (event) => {
-    assertTrustedIpcSender(event);
+    assertLocalIpcSender(event);
     const options: Electron.OpenDialogOptions = {
       title: "Select a workspace folder",
       properties: ["openDirectory", "createDirectory"],
@@ -505,14 +570,18 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   ipcMain.handle("local-open-settings", (event) => {
-    assertTrustedIpcSender(event);
+    assertLocalIpcSender(event);
     const channel = eventChannel("claude.web.Navigation", "navigate");
     if (!channel) return false;
     broadcast(channel, "/settings/desktop");
     return true;
   });
+  ipcMain.handle("local-chrome-action", (event, action) => {
+    assertLocalIpcSender(event);
+    return dispatcher.handleChromeAction(action, event);
+  });
   ipcMain.handle("local-code-artifact-details", async (event, id) => {
-    assertTrustedIpcSender(event);
+    assertLocalIpcSender(event);
     if (!codeSessions || typeof id !== "string") return null;
     const artifact = await codeSessions.invoke("readArtifactById", [id]);
     if (!artifact || typeof artifact !== "object") return null;
@@ -526,24 +595,6 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
         }
       : null;
   });
-  ipcMain.handle(
-    "local-show-code-artifact",
-    async (event, id, bounds, consumerId) => {
-      assertTrustedIpcSender(event);
-      if (!codeSessions || !localFilePreview || typeof id !== "string")
-        return { ok: false, declineReason: "unavailable" };
-      const artifact = await codeSessions.invoke("readArtifactById", [id]);
-      if (!artifact || typeof artifact !== "object")
-        return { ok: false, declineReason: "missing_artifact" };
-      const value = artifact as Record<string, unknown>;
-      return localFilePreview.show(
-        value.sessionId,
-        value.path,
-        bounds,
-        consumerId,
-      );
-    },
-  );
 }
 
 function dispatchDeepLink(url: string): void {
@@ -590,6 +641,14 @@ if (!gotLock) {
         localBackend = await LocalBackend.create(
           app.getPath("userData"),
           localWebTools,
+          safeStorage.isEncryptionAvailable()
+            ? {
+                seal: (value) =>
+                  safeStorage.encryptString(value).toString("base64"),
+                open: (value) =>
+                  safeStorage.decryptString(Buffer.from(value, "base64")),
+              }
+            : undefined,
         );
         targetUrl = "app://localhost/new?mode=chat&surface=chat";
       } else if (process.env.CLAUDE_DESKTOP_URL) {
@@ -645,6 +704,7 @@ if (!gotLock) {
       const context: ServiceContext = {
         state,
         codeSessions,
+        localBackend,
         filePreview: localFilePreview,
         launchPreview: localLaunchPreview,
         mainWindow: () => mainWindow,
@@ -653,6 +713,64 @@ if (!gotLock) {
         targetUrl: () => targetUrl,
         showMainWindow,
       };
+      codeSessions.setWorkflowsEnabled(
+        () => state.get("appConfig").preferences.enableWorkflows === true,
+      );
+      if (localBackend) {
+        const sessions = codeSessions;
+        localBackend.setSkillSource({
+          list: async () => {
+            const skills = (await sessions.invoke(
+              "listLocalSkills",
+              [],
+            )) as Array<Record<string, unknown>>;
+            return skills
+              .filter((skill) => skill.enabled !== false)
+              .map((skill) => ({
+                name: String(skill.name ?? ""),
+                description: String(skill.description ?? ""),
+              }))
+              .filter((skill) => skill.name);
+          },
+          read: async (name: string) => {
+            const files = (await sessions.invoke("getLocalSkillFiles", [
+              name,
+            ])) as Array<Record<string, unknown>>;
+            const manifest = files.find((file) => file.path === "SKILL.md");
+            if (!manifest)
+              throw new Error(`No skill named “${name}” is available`);
+            const supportFiles = files.filter(
+              (file) => file.path !== "SKILL.md",
+            );
+            // Chat has no file tools, so bundle support files inline — but
+            // bounded, because some official skills ship megabytes of assets.
+            let budget = 48_000;
+            const sections: string[] = [
+              String(manifest.content ?? "").slice(0, 64_000),
+            ];
+            const omitted: string[] = [];
+            for (const file of supportFiles) {
+              const content = String(file.content ?? "");
+              const section = `<skill_file path=${JSON.stringify(String(file.path))}>\n${content}\n</skill_file>`;
+              if (section.length > budget) {
+                omitted.push(String(file.path));
+                continue;
+              }
+              sections.push(section);
+              budget -= section.length;
+            }
+            if (sections.length > 1)
+              sections.splice(
+                1,
+                0,
+                "\n\nThis skill also bundles support files (their contents follow):",
+              );
+            if (omitted.length > 0)
+              sections.push(`\n(Omitted for length: ${omitted.join(", ")})`);
+            return sections.join("\n");
+          },
+        });
+      }
       const dispatcher = new ServiceDispatcher(context);
       disposeIpc = registerGeneratedIpc(dispatcher);
       installSpecialIpc(dispatcher);

@@ -41,7 +41,7 @@ export class FileAccessPolicy {
     if (!info.isFile()) throw new Error("Only regular files can be granted");
     const canonicalPath = await realpath(candidate);
     this.addGrant({ kind: "file", canonicalPath });
-    return candidate;
+    return canonicalPath;
   }
 
   async grantRoot(input: string): Promise<string> {
@@ -51,7 +51,7 @@ export class FileAccessPolicy {
       throw new Error("Only directories can be granted as roots");
     const canonicalPath = await realpath(candidate);
     this.addGrant({ kind: "root", canonicalPath });
-    return candidate;
+    return canonicalPath;
   }
 
   async requireFile(
@@ -70,7 +70,7 @@ export class FileAccessPolicy {
       canonicalPath = path.join(canonicalParent, path.basename(candidate));
     }
     this.assertGranted(candidate, canonicalPath, false);
-    return candidate;
+    return canonicalPath;
   }
 
   async requireRoot(input: string): Promise<string> {
@@ -79,7 +79,7 @@ export class FileAccessPolicy {
     const info = await stat(canonicalPath);
     if (!info.isDirectory()) throw new Error("Path is not a directory");
     this.assertGranted(candidate, canonicalPath, true);
-    return candidate;
+    return canonicalPath;
   }
 
   private addGrant(grant: Grant): void {

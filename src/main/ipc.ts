@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { PRELOAD_CHANNELS } from "../generated/ipc-contract";
 import { IPC_VALIDATION } from "../generated/ipc-validation";
 import { parseChannel } from "../shared/channels";
-import { isTrustedRendererUrl } from "../shared/security";
+import { isTrustedRendererUrl, originOf } from "../shared/security";
 import {
   assertContractArguments,
   contractValueMatches,
@@ -19,6 +19,13 @@ const CODE_TRACE_SERVICES = new Set([
   "ClaudeCode",
   "LocalSessions",
   "LocalAgentModeSessions",
+]);
+
+const REMOTE_RENDERER_SERVICES = new Set([
+  "claude.internal.ui.MainWindowTitleBar",
+  "claude.web.BrowserNavigation",
+  "claude.web.WindowControl",
+  "claude.web.WindowState",
 ]);
 
 function tracedArgumentShape(value: unknown): unknown {
@@ -89,6 +96,31 @@ export function assertTrustedIpcSender(
   }
 }
 
+export function assertLocalIpcSender(
+  event: IpcMainEvent | IpcMainInvokeEvent,
+): void {
+  assertTrustedIpcSender(event);
+  const url = senderUrl(event);
+  if (originOf(url) !== "app://localhost")
+    throw new Error(
+      `Blocked local desktop IPC from non-local renderer: ${url}`,
+    );
+}
+
+function assertServiceAvailableToSender(
+  event: IpcMainEvent | IpcMainInvokeEvent,
+  parsed: NonNullable<ReturnType<typeof parseChannel>>,
+): void {
+  const origin = originOf(senderUrl(event));
+  if (
+    origin?.startsWith("https://") &&
+    !REMOTE_RENDERER_SERVICES.has(`${parsed.namespace}.${parsed.service}`)
+  )
+    throw new Error(
+      `Blocked privileged ${parsed.namespace}.${parsed.service} IPC from hosted renderer`,
+    );
+}
+
 export function registerGeneratedIpc(
   dispatcher: ServiceDispatcher,
 ): () => void {
@@ -102,6 +134,7 @@ export function registerGeneratedIpc(
       ipcMain.removeHandler(contract.channel);
       ipcMain.handle(contract.channel, async (event, ...args) => {
         assertTrustedIpcSender(event);
+        assertServiceAvailableToSender(event, parsed);
         const validation =
           IPC_VALIDATION[contract.channel as keyof typeof IPC_VALIDATION];
         if (validation)
@@ -127,6 +160,7 @@ export function registerGeneratedIpc(
       const listener = (event: IpcMainEvent, ...args: unknown[]) => {
         try {
           assertTrustedIpcSender(event);
+          assertServiceAvailableToSender(event, parsed);
           const validation =
             IPC_VALIDATION[contract.channel as keyof typeof IPC_VALIDATION];
           if (validation)

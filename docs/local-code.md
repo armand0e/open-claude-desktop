@@ -14,7 +14,7 @@ No account bootstrap, OAuth token, or Anthropic credential is used.
 
 ## Agent and tools
 
-Code sends non-streaming OpenAI-compatible chat completions with function definitions. If an endpoint rejects function tools, the session retries with a documented `<tool_call>{...}</tool_call>` text contract. The loop is bounded to 24 model turns and can be interrupted.
+Code sends non-streaming OpenAI-compatible chat completions with function definitions. If an endpoint rejects function tools, the session retries with a documented `<tool_call>{...}</tool_call>` text contract. The loop can be interrupted at any time and is bounded only by a runaway-safety ceiling of 1,000 model turns (override with `CLAUDE_LOCAL_MAX_AGENT_TURNS`).
 
 | Tool                             | Local behavior                                                                                                                  |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |

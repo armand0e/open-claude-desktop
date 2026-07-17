@@ -5,7 +5,11 @@ import path from "node:path";
 type JsonObject = Record<string, unknown>;
 
 export interface WebToolRunner {
-  execute(name: string, input: JsonObject, signal: AbortSignal): Promise<string>;
+  execute(
+    name: string,
+    input: JsonObject,
+    signal: AbortSignal,
+  ): Promise<string>;
 }
 
 export const WEB_TOOLS = [
@@ -37,7 +41,8 @@ export const WEB_TOOLS = [
           url: { type: "string" },
           query: {
             type: "string",
-            description: "Optional topic used to select the most relevant page window.",
+            description:
+              "Optional topic used to select the most relevant page window.",
           },
         },
       },
@@ -77,7 +82,12 @@ export class LocalWebTools implements WebToolRunner {
 
   constructor(userDataPath: string, appPath: string) {
     this.#userDataPath = userDataPath;
-    this.#proxyScript = path.join(appPath, "src", "main", "local-search-proxy.cjs");
+    this.#proxyScript = path.join(
+      appPath,
+      "src",
+      "main",
+      "local-search-proxy.cjs",
+    );
   }
 
   async #start(): Promise<string> {
@@ -166,7 +176,9 @@ export class LocalWebTools implements WebToolRunner {
       throw new Error(`Local search proxy returned HTTP ${response.status}`);
     const result = body as JsonObject;
     if (result.success !== true)
-      throw new Error(text(result.error) || "Local search proxy request failed");
+      throw new Error(
+        text(result.error) || "Local search proxy request failed",
+      );
     return compactJson({
       ...result,
       searched_on: new Date().toISOString().slice(0, 10),

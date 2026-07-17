@@ -11,9 +11,7 @@ for (const [index, [name, input]] of entries.entries()) {
   await build({
     configFile: false,
     logLevel: "info",
-    ...(name === "preload-main-view"
-      ? { ssr: { noExternal: true } }
-      : {}),
+    ...(name === "preload-main-view" ? { ssr: { noExternal: true } } : {}),
     build: {
       ssr: true,
       outDir: "dist-electron",

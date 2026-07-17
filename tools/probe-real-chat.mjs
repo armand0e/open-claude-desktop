@@ -10,16 +10,21 @@ const model = process.env.CLAUDE_REAL_MODEL || "llm";
 const mode = process.argv[2] || "chat";
 const attachmentMode = mode === "attachment";
 const artifactMode = mode === "artifact";
-const expected = artifactMode
-  ? "LIVE_ARTIFACT_OK"
-  : attachmentMode
-    ? "LIVE_ATTACHMENT_OK"
-    : "LIVE_CHAT_OK";
-const prompt = artifactMode
-  ? "Call the artifacts function now to create a text/html artifact with id live-artifact-ok, title LIVE_ARTIFACT_OK, and content <html><body><h1>LIVE_ARTIFACT_OK</h1></body></html>. Do not merely describe it."
-  : attachmentMode
-    ? "Read the attached file. Reply with exactly LIVE_ATTACHMENT_OK if its secret phrase is present."
-    : "Reply with exactly LIVE_CHAT_OK and no other text.";
+const webMode = mode === "web";
+const expected = webMode
+  ? "LIVE_WEB_OK"
+  : artifactMode
+    ? "LIVE_ARTIFACT_OK"
+    : attachmentMode
+      ? "LIVE_ATTACHMENT_OK"
+      : "LIVE_CHAT_OK";
+const prompt = webMode
+  ? "Call web_search now with the query IANA example domains. Wait for the real tool result, then reply with LIVE_WEB_OK and one returned source URL. Do not pretend to search and do not answer from memory."
+  : artifactMode
+    ? "Call the artifacts function now to create a text/html artifact with id live-artifact-ok, title LIVE_ARTIFACT_OK, and content <html><body><h1>LIVE_ARTIFACT_OK</h1></body></html>. Do not merely describe it."
+    : attachmentMode
+      ? "Read the attached file. Reply with exactly LIVE_ATTACHMENT_OK if its secret phrase is present."
+      : "Reply with exactly LIVE_CHAT_OK and no other text.";
 const attachmentText = "secret phrase: local real attachment proof 7f2b";
 
 function assert(condition, message) {
@@ -130,7 +135,11 @@ async function eventually(port, operation, timeout = 30_000) {
   throw lastError || new Error("Timed out waiting for renderer");
 }
 
-await fetch(`${baseUrl}/models`).then((response) => {
+await fetch(`${baseUrl}/models`, {
+  headers: process.env.CLAUDE_LOCAL_API_KEY
+    ? { Authorization: `Bearer ${process.env.CLAUDE_LOCAL_API_KEY}` }
+    : undefined,
+}).then((response) => {
   assert(response.ok, `Real provider is unavailable: HTTP ${response.status}`);
 });
 
@@ -138,16 +147,23 @@ const profile = await mkdtemp(path.join(os.tmpdir(), "claude-real-chat-"));
 const attachmentPath = path.join(profile, "live-attachment.txt");
 if (attachmentMode) await writeFile(attachmentPath, attachmentText, "utf8");
 const debuggerPort = await unusedPort();
+const packagedExecutable = process.env.OPEN_CLAUDE_TEST_EXECUTABLE
+  ? path.resolve(process.env.OPEN_CLAUDE_TEST_EXECUTABLE)
+  : null;
 const output = [];
 const child = spawn(
-  electron,
-  [".", `--remote-debugging-port=${debuggerPort}`],
+  packagedExecutable ?? electron,
+  [
+    ...(packagedExecutable ? [] : ["."]),
+    `--remote-debugging-port=${debuggerPort}`,
+  ],
   {
     cwd: process.cwd(),
-    windowsHide: true,
+    windowsHide: false,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
+      OPEN_CLAUDE_USER_DATA_DIR: profile,
       CLAUDE_LOCAL_USER_DATA_DIR: profile,
       CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
       CLAUDE_DESKTOP_LOCAL_UI: "1",
@@ -250,8 +266,10 @@ try {
               if (response.ok) {
                 conversation = await response.json();
                 const assistant = conversation.chat_messages?.find(message => message.sender === "assistant");
-                const complete = ${artifactMode}
-                  ? assistant?.content?.some(block => block.type === "tool_use" && block.name === "artifacts" && block.input?.title === "LIVE_ARTIFACT_OK")
+                const complete = ${webMode}
+                  ? assistant?.text?.includes(${JSON.stringify(expected)}) && assistant?.content?.some(block => block.type === "tool_use" && block.name === "web_search") && assistant?.content?.some(block => block.type === "tool_result" && block.name === "web_search")
+                  : ${artifactMode}
+                  ? assistant?.content?.some(block => block.type === "tool_use" && block.name === "artifacts" && block.input?.title === "LIVE_ARTIFACT_OK") || window.__realArtifactRendered?.artifactType === "text/html"
                   : assistant?.text?.includes(${JSON.stringify(expected)});
                 if (complete) break;
               }
@@ -266,13 +284,19 @@ try {
           }
           const assistant = conversation?.chat_messages?.find(message => message.sender === "assistant");
           return {
-            ok: ${artifactMode}
-              ? assistant?.content?.some(block => block.type === "tool_use" && block.name === "artifacts" && block.input?.title === "LIVE_ARTIFACT_OK") || false
+            ok: ${webMode}
+              ? assistant?.text?.includes(${JSON.stringify(expected)}) && assistant?.content?.some(block => block.type === "tool_use" && block.name === "web_search") && assistant?.content?.some(block => block.type === "tool_result" && block.name === "web_search")
+              : ${artifactMode}
+              ? assistant?.content?.some(block => block.type === "tool_use" && block.name === "artifacts" && block.input?.title === "LIVE_ARTIFACT_OK") || window.__realArtifactRendered?.artifactType === "text/html" || false
               : assistant?.text?.includes(${JSON.stringify(expected)}) || false,
             assistantText: assistant?.text || null,
             uiSettled: document.body?.innerText?.includes("Claude finished the response") || false,
             path: location.pathname,
             bodyText: document.body?.innerText?.slice(0, 8000) || "",
+            webActivityLabels: [...document.querySelectorAll("body *")]
+              .filter(element => element.getClientRects().length && !element.classList.contains("sr-only") && !element.closest('[hidden], [aria-hidden="true"]') && /^(Searching the web…?|Searched the web)$/i.test(element.textContent?.trim() || ""))
+              .map(element => ({ tag: element.tagName, text: element.textContent?.trim(), className: String(element.className).slice(0, 300) }))
+              .slice(0, 20),
             iframes: [...document.querySelectorAll("iframe")].map(frame => ({ src: frame.getAttribute("src"), sandbox: frame.getAttribute("sandbox"), title: frame.title })),
             artifactRendered: window.__realArtifactRendered || null,
             dialogs: [...document.querySelectorAll('[role="dialog"]')]
@@ -298,6 +322,20 @@ try {
     !rendered.alerts.some((text) => /error|failed|unable/i.test(text || "")),
     `Visible error alert after send: ${JSON.stringify(rendered.alerts)}`,
   );
+  if (webMode) {
+    assert(
+      rendered.webActivityLabels?.some((entry) =>
+        /^(Searching the web…?|Searched the web)$/i.test(entry.text || ""),
+      ),
+      `Native web-tool activity was not visible in Chat: ${JSON.stringify(rendered)}`,
+    );
+    assert(
+      !rendered.bodyText?.includes(
+        "Turn on web search in Search and tools menu",
+      ),
+      `Chat incorrectly reported that web search was disabled: ${JSON.stringify(rendered)}`,
+    );
+  }
 
   const persisted = JSON.parse(
     await readFile(path.join(profile, "local-backend.json"), "utf8"),
@@ -353,6 +391,20 @@ try {
       "Assistant reply was not persisted",
     );
   }
+  if (webMode) {
+    assert(
+      assistant.content?.some(
+        (block) => block.type === "tool_use" && block.name === "web_search",
+      ),
+      "Web search tool call was not persisted",
+    );
+    assert(
+      assistant.content?.some(
+        (block) => block.type === "tool_result" && block.name === "web_search",
+      ),
+      "Web search result was not persisted",
+    );
+  }
   if (attachmentMode) {
     const human = messages.find((message) => message.sender === "human");
     assert(
@@ -365,6 +417,46 @@ try {
       "Attachment content was not persisted",
     );
   }
+
+  const artifactLifecycle = artifactMode
+    ? await eventually(debuggerPort, (target) =>
+        evaluate(
+          target,
+          `(async () => {
+            const visibleArtifact = () => {
+              const frame = document.querySelector('iframe[src^="app://artifacts.local"]');
+              if (!frame) return false;
+              const rect = frame.getBoundingClientRect();
+              const style = getComputedStyle(frame);
+              return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const close = document.querySelector('button[aria-label="Close artifact"]');
+            if (!close) return { closed: false, reopened: false, reason: "close_missing" };
+            close.click();
+            const closeDeadline = Date.now() + 8000;
+            while (visibleArtifact() && Date.now() < closeDeadline)
+              await new Promise(resolve => setTimeout(resolve, 50));
+            const closed = !visibleArtifact();
+            const view = document.querySelector('button[aria-label="View LIVE_ARTIFACT_OK"]');
+            view?.click();
+            const reopenDeadline = Date.now() + 10000;
+            while (!visibleArtifact() && Date.now() < reopenDeadline)
+              await new Promise(resolve => setTimeout(resolve, 50));
+            return {
+              closed,
+              reopened: visibleArtifact(),
+              closePresent: Boolean(close),
+              viewPresent: Boolean(view)
+            };
+          })()`,
+        ),
+      )
+    : null;
+  if (artifactMode)
+    assert(
+      artifactLifecycle?.closed && artifactLifecycle?.reopened,
+      `Real Chat artifact did not close and reopen: ${JSON.stringify(artifactLifecycle)}`,
+    );
 
   await eventually(debuggerPort, (target) =>
     evaluate(target, `(() => { location.reload(); return true; })()`),
@@ -392,6 +484,41 @@ try {
     reloaded.hydrated,
     `Persisted conversation did not hydrate after reload: ${JSON.stringify(reloaded)}`,
   );
+
+  const reloadedArtifactLifecycle = artifactMode
+    ? await eventually(debuggerPort, (target) =>
+        evaluate(
+          target,
+          `(async () => {
+            const visibleArtifact = () => {
+              const frame = document.querySelector('iframe[src^="app://artifacts.local"]');
+              if (!frame) return false;
+              const rect = frame.getBoundingClientRect();
+              const style = getComputedStyle(frame);
+              return rect.width > 0 && rect.height > 0 && style.display !== 'none' && style.visibility !== 'hidden';
+            };
+            const view = document.querySelector('button[aria-label="View LIVE_ARTIFACT_OK"]');
+            if (!view) return { opened: false, closed: false, reason: "view_missing" };
+            view.click();
+            const openDeadline = Date.now() + 10000;
+            while (!visibleArtifact() && Date.now() < openDeadline)
+              await new Promise(resolve => setTimeout(resolve, 50));
+            const opened = visibleArtifact();
+            const close = document.querySelector('button[aria-label="Close artifact"]');
+            close?.click();
+            const closeDeadline = Date.now() + 8000;
+            while (visibleArtifact() && Date.now() < closeDeadline)
+              await new Promise(resolve => setTimeout(resolve, 50));
+            return { opened, closed: !visibleArtifact(), viewPresent: true, closePresent: Boolean(close) };
+          })()`,
+        ),
+      )
+    : null;
+  if (artifactMode)
+    assert(
+      reloadedArtifactLifecycle?.opened && reloadedArtifactLifecycle?.closed,
+      `Persisted Chat artifact did not reopen and close: ${JSON.stringify(reloadedArtifactLifecycle)}`,
+    );
 
   const lifecycle = await eventually(debuggerPort, (target) =>
     evaluate(
@@ -442,7 +569,7 @@ try {
   );
 
   process.stdout.write(
-    `${JSON.stringify({ mode, submitted, rendered, reloaded, lifecycle, newChat, persistedMessages: messages.map(({ sender, text, content }) => ({ sender, text, contentTypes: content?.map((block) => block.type) })), persistedArtifacts: persisted.artifacts?.length || 0 }, null, 2)}\n`,
+    `${JSON.stringify({ mode, submitted, rendered, artifactLifecycle, reloaded, reloadedArtifactLifecycle, lifecycle, newChat, persistedMessages: messages.map(({ sender, text, content }) => ({ sender, text, contentTypes: content?.map((block) => block.type) })), persistedArtifacts: persisted.artifacts?.length || 0 }, null, 2)}\n`,
   );
 } catch (error) {
   process.stderr.write(

@@ -383,7 +383,7 @@ export class LocalLaunchPreview {
   readonly #onChange: (servers: readonly LaunchServer[]) => void;
   readonly #onElementSelected: (serverId: string, context: JsonObject) => void;
   readonly #session = electronSession.fromPartition(
-    "persist:claude-local-launch",
+    `claude-local-launch-${randomUUID()}`,
   );
   readonly #entries = new Map<string, PreviewEntry>();
   readonly #tokens = new Map<string, PreviewEntry>();
@@ -399,6 +399,36 @@ export class LocalLaunchPreview {
     this.#codeSessions = codeSessions;
     this.#onChange = onChange;
     this.#onElementSelected = onElementSelected;
+    this.#session.webRequest.onBeforeRequest((details, callback) => {
+      try {
+        const url = new URL(details.url);
+        const allowedLoopbackOrigins = new Set(
+          [...this.#entries.values()]
+            .map((entry) => {
+              try {
+                const candidate = new URL(entry.initialUrl);
+                return isLoopbackUrl(candidate.toString())
+                  ? candidate.origin
+                  : null;
+              } catch {
+                return null;
+              }
+            })
+            .filter(Boolean),
+        );
+        const allowed =
+          (url.protocol === "claude-local-launch:" &&
+            this.#tokens.has(url.hostname)) ||
+          (isLoopbackUrl(url.toString()) &&
+            allowedLoopbackOrigins.has(url.origin)) ||
+          ["data:", "blob:", "about:", "chrome-extension:"].includes(
+            url.protocol,
+          );
+        callback({ cancel: !allowed });
+      } catch {
+        callback({ cancel: true });
+      }
+    });
     this.#session.protocol.handle("claude-local-launch", (request) =>
       this.#handle(request),
     );
@@ -429,7 +459,8 @@ export class LocalLaunchPreview {
               : "text/html; charset=utf-8",
             "Cache-Control": "no-store",
             "Content-Security-Policy":
-              "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*; object-src 'none'; base-uri 'self'",
+              "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'none'; frame-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'",
+            "X-Content-Type-Options": "nosniff",
           },
         });
       }
@@ -449,6 +480,9 @@ export class LocalLaunchPreview {
             "application/octet-stream",
           "Cache-Control": "no-store",
           "Cross-Origin-Resource-Policy": "same-origin",
+          "Content-Security-Policy":
+            "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'none'; frame-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'",
+          "X-Content-Type-Options": "nosniff",
         },
       });
     } catch {
@@ -547,6 +581,11 @@ export class LocalLaunchPreview {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 32 * (attempt + 1)));
       try {
+        const direct = await view.webContents.capturePage(bounds);
+        if (!direct.isEmpty()) {
+          const screenshot = direct.toPNG().toString("base64");
+          if (screenshot.length <= 2_000_000) return screenshot;
+        }
         const page = await view.webContents.capturePage();
         const size = page.getSize();
         if (size.width < 1 || size.height < 1) continue;
@@ -1157,7 +1196,11 @@ export class LocalLaunchPreview {
       }
     }
     if (entry.server.status === "starting") {
-      entry.server.status = "running";
+      entry.server.status = "error";
+      entry.logs.push({
+        line: "Preview server did not become reachable within 20 seconds",
+        timestamp: new Date().toISOString(),
+      });
       this.#emitChange();
     }
   }

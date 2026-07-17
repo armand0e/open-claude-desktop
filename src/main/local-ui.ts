@@ -1,4 +1,4 @@
-import { access, stat } from "node:fs/promises";
+import { access, readdir, stat } from "node:fs/promises";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -50,10 +50,27 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       '"9t2atF49M0": "Claude Local will keep these in mind across chats on this device."',
   },
   {
+    id: "simplify-local-artifact-publish-copy",
+    assetUrlPath: "/i18n/en-US.json",
+    find: '"zG4O5rdNXZ": "Publishing this Artifact will make it accessible to anyone on the internet and potentially visible in search engine results. Your chat will remain private."',
+    replace:
+      '"zG4O5rdNXZ": "Create a link that opens this artifact. Your chat will remain private."',
+  },
+  {
+    id: "rename-local-artifact-publish-action",
+    assetUrlPath: "/i18n/en-US.json",
+    find: '"q8Svey6avC": "Publish & copy link"',
+    replace: '"q8Svey6avC": "Create & copy link"',
+  },
+  {
     id: "define-local-chat-route-component",
     find: "lts={withSidebar:[],root:[]},cts=(()=>",
+    // Keying the chat route on the artifact URL parameters lets the local
+    // shell remount a chat in place with a single same-path navigation when
+    // the retained pane store has gone stale (see local-workbench.ts), with
+    // no visible detour through another route.
     replace:
-      "lts={withSidebar:[],root:[]},Lcs=()=>{const{uuid:e}=hR();return t.jsx(m2t,{uuid:e})},cts=(()=>",
+      'lts={withSidebar:[],root:[]},Lcs=()=>{const{uuid:e}=hR(),a=new URLSearchParams(location.search);return t.jsx(m2t,{uuid:e},e+"|"+(a.get("artifactId")||"")+"|"+(a.get("localReopen")||""))},cts=(()=>',
   },
   {
     id: "restore-web-chat-routes",
@@ -81,8 +98,12 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
   {
     id: "fallback-native-greeting-to-local-schedule",
     find: '}(n.personalized_greeting,"chat",s)||t.formatMessage({defaultMessage:"How can I help you today?",id:"XLcM6WHfQR"}):""}',
+    // Conditional greeting pools: casual/re-engagement lines are always
+    // eligible, {Name} variants join only when the profile has a name, the
+    // current weekday line joins, and exactly one time-block pool joins based
+    // on the local clock. A random qualifying entry is shown.
     replace:
-      '}(n.personalized_greeting,"chat",s)||t.formatMessage({defaultMessage:"How can I help you today?",id:"XLcM6WHfQR"}):(()=>{const e=a?.display_name||a?.full_name||"",t=s.getHours();return t<5?"Moonlit chat?":t<11?"Good morning, "+e+".":t<14?"What are we working on today, "+e+"?":t<18?"What’s next, "+e+"?":t<22?"Good evening, "+e+". What can I help with?":"Moonlit chat?"})()}',
+      '}(n.personalized_greeting,"chat",s)||t.formatMessage({defaultMessage:"How can I help you today?",id:"XLcM6WHfQR"}):(()=>{const e=a?.display_name||a?.full_name||"",t=s.getHours(),n=s.getDay(),r=["How’s it going?","Coffee and Claude time?","Ready for another session?"];e&&r.push("Back at it, "+e,"Hey there, "+e,e+" returns!");r.push("Happy "+["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][n]+(6===n?"!":""));5===n&&r.push("That Friday feeling");if(t>=22||t<5)r.push("Good evening, night owl","Hello, night owl","Moonlit chat?","What’s on your mind tonight?");else if(t<12)r.push(e?"Good morning, "+e:"Good morning");else if(t<17)r.push(e?"What are we working on today, "+e+"?":"Good afternoon");else r.push(e?"Good evening, "+e:"Good evening");return r[Math.floor(Math.random()*r.length)]})()}',
   },
   {
     id: "dispatch-local-chat-after-navigation",
@@ -104,6 +125,57 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
     id: "use-local-artifact-renderer",
     find: 'userContentRendererUrl:"https://www.claudeusercontent.com"',
     replace: 'userContentRendererUrl:"app://artifacts.local"',
+  },
+  {
+    id: "use-local-published-artifact-links",
+    find: 'publishedArtifactsBaseUrl:"https://claude.ai",publishedArtifactsEmbedBaseUrl:"https://claude.site"',
+    replace:
+      'publishedArtifactsBaseUrl:"app://localhost",publishedArtifactsEmbedBaseUrl:"app://localhost"',
+  },
+  {
+    id: "remove-local-publish-policy-card",
+    assetUrlPath: "/assets/v1/cf774f0c4-BGDGm7sd.js",
+    find: ',b=e.jsxs("div",{className:"bg-bg-300 text-text-300 mt-3 flex gap-3 rounded-xl px-4 py-3 text-sm leading-normal"',
+    replace:
+      ',b=null&&e.jsxs("div",{className:"bg-bg-300 text-text-300 mt-3 flex gap-3 rounded-xl px-4 py-3 text-sm leading-normal"',
+  },
+  {
+    id: "remove-local-publish-screenshot-capture",
+    assetUrlPath: "/assets/v1/cf774f0c4-BGDGm7sd.js",
+    find: "return e.jsx(q,{canScreenshot:!0,title:t.title",
+    replace: "return e.jsx(q,{canScreenshot:!1,title:t.title",
+  },
+  {
+    id: "remove-local-publish-embed-settings",
+    assetUrlPath: "/assets/v1/cf774f0c4-BGDGm7sd.js",
+    find: ",e.jsx(X,{isPublished:b,isEmbedSettingsOpen:g,onOpen:()=>{j(!0)}})",
+    replace: ",null",
+  },
+  {
+    id: "use-skill-icon-for-local-skill-tool",
+    // The local chat skill tool renders with the generic wrench because the
+    // retained icon predicates don't know its name; route it to the native
+    // skill scroll icon.
+    find: 'if(rg(e)||Rf(e))return t.jsx($6,{size:n,className:"text-text-500"})',
+    replace:
+      'if(rg(e)||Rf(e)||"skill"===e)return t.jsx($6,{size:n,className:"text-text-500"})',
+  },
+  {
+    id: "enable-chat-artifacts-gallery-route",
+    assetUrlPath: "/assets/v1/c1b9abf13-bG6VlbXV.js",
+    // The /artifacts chat-surface gallery route is feature-gated off in the
+    // retained desktop build; the local gallery data sources are implemented,
+    // so open the gate.
+    find: "function os({children:s}){const t=v(),",
+    replace: "function os({children:s}){const t=!0,",
+  },
+  {
+    id: "enable-native-chat-artifacts-tab",
+    // The desktop build hardcodes the chat sidebar's Artifacts tab off. The
+    // local gallery data sources are implemented, so surface the native tab
+    // (correct icon, chat-surface /artifacts route) instead of injecting one.
+    find: "hasArtifactsGallery:false",
+    replace: "hasArtifactsGallery:true",
   },
   {
     id: "derive-local-chat-attachments",
@@ -133,13 +205,50 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
     assetUrlPath: "/assets/v1/c47ad434c-D_dYPjVp.js",
     find: "function ie(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=F(),n=s?.uuid,i=c(),d=ne(),p=f(",
     replace:
-      'function ie(e=!1,t){const r=c(),[a,s]=g.useState({artifacts:[],isPending:!0,isError:!1});return g.useEffect(()=>{let e=!1;const t=window["claude.web"]?.CoworkArtifacts?.getAllArtifacts?.();return Promise.resolve(t).then(t=>{e||s({artifacts:Array.isArray(t)?t:[],isPending:!1,isError:!1})}).catch(()=>{e||s({artifacts:[],isPending:!1,isError:!0})}),()=>{e=!0}},[]),{enabled:!0,includeShared:!1,items:a.artifacts.map(e=>({key:`frame:${e.id}`,source:"frame",rel:"mine",title:e.title??"Artifact",description:e.sessionTitle,extraSearchText:[e.sessionTitle,e.path].filter(e=>"string"==typeof e),href:`/epitaxy/${e.sessionId}?open_local_artifact=${e.id}`,newTab:!1,updatedAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,createdAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,audience:"owner",softDeleted:!1,starred:!1})),isPending:a.isPending,isError:a.isError,capped:!1,isPartial:!1,isPartialError:!1,starsEnabled:!1}}function ieCloudUnused(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=F(),n=s?.uuid,i=c(),d=ne(),p=f(',
+      'function ie(e=!1,t){const r=c(),[a,s]=g.useState({artifacts:[],isPending:!0,isError:!1});return g.useEffect(()=>{let e=!1;const t=window["claude.web"]?.CoworkArtifacts?.getAllArtifacts?.();return Promise.resolve(t).then(t=>{e||s({artifacts:Array.isArray(t)?t:[],isPending:!1,isError:!1})}).catch(()=>{e||s({artifacts:[],isPending:!1,isError:!0})}),()=>{e=!0}},[]),{enabled:!0,includeShared:!1,items:a.artifacts.map(e=>({key:`frame:${e.sessionId}:${e.id}`,source:"frame",rel:"mine",title:e.title??"Artifact",description:e.sessionTitle,extraSearchText:[e.sessionTitle,e.path].filter(e=>"string"==typeof e),href:"chat"===e.sourceSurface?`/chat/${encodeURIComponent(e.sessionId)}?artifactId=${encodeURIComponent(e.id)}`:`/epitaxy/${encodeURIComponent(e.sessionId)}?open_local_artifact=${encodeURIComponent(e.id)}`,newTab:!1,updatedAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,createdAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,audience:"owner",softDeleted:!1,starred:!1})),isPending:a.isPending,isError:a.isError,capped:!1,isPartial:!1,isPartialError:!1,starsEnabled:!1}}function ieCloudUnused(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=F(),n=s?.uuid,i=c(),d=ne(),p=f(',
   },
   {
     id: "use-local-code-artifact-gallery-source",
     assetUrlPath: "/assets/v1/ce569194f-YKjvV2xt.js",
+    // Also force the gallery-enabled gate (e) on: the desktop build ships
+    // the /artifacts chat-surface page feature-gated off.
     find: 'function Je(){const e=z(),s=i(),r=Ke("chat",{relTabs:!0});',
-    replace: 'function Je(){const e=z(),s=i(),r=Ke("frame",{relTabs:!0});',
+    replace: 'function Je(){const e=!0||z(),s=i(),r=Ke("frame",{relTabs:!0});',
+  },
+  {
+    id: "expose-local-code-artifact-pane-opener",
+    assetUrlPath: "/assets/v1/c06173196-DmnMdctC.js",
+    find: "d=e.useState(()=>o??So())[0],u=e.useState(()=>!o)[0];return e.useEffect(()=>No(l,c),[l,c]),",
+    replace:
+      'd=e.useState(()=>o??So())[0],u=e.useState(()=>!o)[0];return e.useEffect(()=>No(l,c),[l,c]),e.useEffect(()=>{const e=e=>{const t=l.getState();t.setPendingArtifactOpenUrl(e),t.setSidePane("artifact")},t=()=>{const t=document.documentElement.dataset.openClaudeCodeArtifact;t&&(delete document.documentElement.dataset.openClaudeCodeArtifact,e(t))};return window.__openLocalCodeArtifact=e,window.addEventListener("open-claude-code-artifact",t),t(),()=>{window.removeEventListener("open-claude-code-artifact",t),window.__openLocalCodeArtifact===e&&delete window.__openLocalCodeArtifact}},[l]),',
+  },
+  {
+    id: "allow-local-code-artifact-pane-urls",
+    assetUrlPath: "/assets/v1/c06173196-DmnMdctC.js",
+    find: "e.useEffect(()=>{const e=Z;if(e)if(Ap(e)&&vb(e))if(c){",
+    replace:
+      "e.useEffect(()=>{const e=Z;if(e)if(Ap(e)&&vb(e)||/^\\/code\\/artifact\\/[0-9a-f-]{36}$/i.test(e))if(c){",
+  },
+  {
+    id: "use-random-local-code-activity-label",
+    assetUrlPath: "/assets/v1/c5610fbe3-QnNBykKf.js",
+    find: 'w.formatMessage({defaultMessage:"Reconnecting\\u2026",id:"Yyp8xwgnUo"})',
+    replace:
+      '(document.documentElement.dataset.openClaudeActivityWord??"Working")+"\\u2026"',
+  },
+  {
+    id: "remove-cloud-model-switch-setting",
+    assetUrlPath: "/assets/v1/c71860c77-QKSs-TTD.js",
+    find: 'const qe=["enabled_model_auto_fallback","enabled_web_search","tool_search_mode"],ze=e.memo(()=>{',
+    replace:
+      'const qe=["enabled_model_auto_fallback","enabled_web_search","tool_search_mode"],ze=e.memo(()=>null),zeCloudUnused=e.memo(()=>{',
+  },
+  {
+    id: "remove-local-model-switch-setting",
+    assetUrlPath: "/assets/v1/c71860c77-QKSs-TTD.js",
+    find: "const We=e.memo(()=>{const a=n(),{resolved:t,patch:l,isPatchAvailable:o}=Te(),",
+    replace:
+      "const We=e.memo(()=>null),WeCloudUnused=e.memo(()=>{const a=n(),{resolved:t,patch:l,isPatchAvailable:o}=Te(),",
   },
   {
     id: "defer-local-terminal-pty-delivery",
@@ -321,11 +430,36 @@ async function patchedClientAssets(
     patches.map((patch) => patch.assetUrlPath).filter(Boolean) as string[],
   )) {
     const assetPath = resolveInside(root, assetUrlPath);
-    if (!assetPath || !(await regularFile(assetPath)))
+    if (assetPath && (await regularFile(assetPath))) {
+      sources.set(path.resolve(assetPath), await readFile(assetPath, "utf8"));
+      continue;
+    }
+
+    // Vite keeps the stable chunk id before the final content hash. A Claude
+    // point release can therefore rename `chunk-HASH.js` without changing the
+    // code pattern we patch. Resolve that compatible rename instead of making
+    // the whole local app fail before its first window appears.
+    const directoryUrl = path.posix.dirname(assetUrlPath);
+    const requestedName = path.posix.basename(assetUrlPath);
+    const stablePrefix = requestedName.match(/^([^-]+)-/u)?.[1];
+    const directory = resolveInside(root, directoryUrl);
+    const compatible =
+      stablePrefix && directory
+        ? (await readdir(directory, { withFileTypes: true }).catch(() => []))
+            .filter(
+              (entry) =>
+                entry.isFile() &&
+                entry.name.startsWith(`${stablePrefix}-`) &&
+                path.extname(entry.name) === path.extname(requestedName),
+            )
+            .map((entry) => path.join(directory, entry.name))
+        : [];
+    if (compatible.length === 0)
       throw new Error(
         `Packaged UI patch asset is unavailable: ${assetUrlPath}`,
       );
-    sources.set(path.resolve(assetPath), await readFile(assetPath, "utf8"));
+    for (const candidate of compatible)
+      sources.set(path.resolve(candidate), await readFile(candidate, "utf8"));
   }
 
   const idsByPath = new Map<string, string[]>();
@@ -525,7 +659,7 @@ function localOrganization(configuredModel?: string): Record<string, unknown> {
     data_retention: null,
     raven_type: null,
     claude_ai_bootstrap_models_config: [
-      { model, name: model, label_override: "Local model" },
+      { model, name: model, label_override: model },
     ],
   };
 }
@@ -573,6 +707,12 @@ function localAccount(
     invites: [],
     settings: {
       enabled_geolocation: false,
+      enabled_web_search: true,
+      // The retained chat renderer gates the artifact pane on this account
+      // flag when a stored conversation is rehydrated; without it, artifact
+      // cards render but clicking them cannot open the panel after a restart
+      // or when returning to an old chat.
+      preview_feature_uses_artifacts: true,
       ...accountSettings,
       ...profileSettings,
     },
@@ -586,8 +726,23 @@ function modelSelectorConfig(
   const models = [
     {
       id: model,
-      name: "Local model",
+      name: model,
       description: "Configured OpenAI-compatible model",
+      thinking: {
+        description: "Control whether the local model uses thinking",
+        mode_options: [
+          {
+            id: "off",
+            name: "Instant",
+            description: "Respond without extended thinking",
+          },
+          {
+            id: "extended",
+            name: "Thinking",
+            description: "Enable thinking for complex work",
+          },
+        ],
+      },
     },
   ];
   return ["cowork", "code", "chat"].map((id) => ({ id, models }));
@@ -595,12 +750,19 @@ function modelSelectorConfig(
 
 function modelSelectorState(
   configuredModel?: string,
+  enableThinking = false,
 ): Array<Record<string, unknown>> {
   const model = localModelId(configuredModel);
+  const thinking = {
+    type: "mode",
+    mode: enableThinking ? "extended" : "off",
+  };
   return ["cowork", "code", "chat"].map((id) => ({
     id,
     model,
     source: "global_default",
+    thinking,
+    thinking_by_model: [{ id: model, thinking }],
   }));
 }
 
@@ -646,6 +808,7 @@ function bootstrapPayload(
   configuredModel?: string,
   profile: Record<string, unknown> = {},
   accountSettings: Record<string, unknown> = {},
+  enableThinking = false,
 ): Record<string, unknown> {
   const account = localAccount(configuredModel, profile, accountSettings);
   return {
@@ -659,7 +822,7 @@ function bootstrapPayload(
     },
     growthbook: { features: growthbookFeatures(configuredModel) },
     model_selector_config: modelSelectorConfig(configuredModel),
-    model_selector_state: modelSelectorState(configuredModel),
+    model_selector_state: modelSelectorState(configuredModel, enableThinking),
     personalized_greeting: personalizedGreeting(
       typeof account.display_name === "string"
         ? account.display_name
@@ -711,16 +874,6 @@ async function localApiResponse(
   }
   if (normalized === "/api/frame/track" && request.method === "POST")
     return new Response(null, { status: 204 });
-  if (
-    request.method === "GET" &&
-    /^\/api\/organizations\/[^/]+\/user_artifacts$/.test(normalized)
-  )
-    return jsonResponse({ artifacts: [] });
-  if (
-    request.method === "GET" &&
-    /^\/api\/organizations\/[^/]+\/user_artifacts\/count$/.test(normalized)
-  )
-    return jsonResponse({ count: 0 });
   if (
     request.method === "GET" &&
     normalized === "/api/published_artifacts/view_counts"
@@ -833,6 +986,7 @@ async function localApiResponse(
         backend.provider().model,
         backend.accountProfile(),
         backend.accountSettings(),
+        backend.provider().enableThinking ?? false,
       ),
     );
   if (
@@ -898,13 +1052,29 @@ async function localApiResponse(
     )
   ) {
     const surface = normalized.split("/").at(-1) ?? "chat";
+    const input = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    const thinking =
+      input.thinking && typeof input.thinking === "object"
+        ? (input.thinking as Record<string, unknown>)
+        : null;
+    const mode =
+      typeof thinking?.mode === "string" ? thinking.mode.toLowerCase() : "off";
+    const enableThinking = mode === "extended" || mode === "enabled";
+    await backend.setThinkingEnabled(enableThinking);
     const model = backend.provider().model;
+    const storedThinking = {
+      type: "mode",
+      mode: enableThinking ? "extended" : "off",
+    };
     return jsonResponse({
       id: surface,
       model,
       source: "user_setting",
-      thinking: null,
-      thinking_by_model: null,
+      thinking: storedThinking,
+      thinking_by_model: [{ id: model, thinking: storedThinking }],
     });
   }
   if (normalized.endsWith("/plugins/list-plugins"))
@@ -951,20 +1121,19 @@ function inlineScriptHashes(html: string): string[] {
 function contentSecurityPolicy(scriptHashes: readonly string[]): string {
   return [
     "default-src 'self'",
-    `script-src 'self' 'wasm-unsafe-eval' https://a-cdn.anthropic.com ${scriptHashes.join(" ")}`.trim(),
+    `script-src 'self' 'wasm-unsafe-eval' ${scriptHashes.join(" ")}`.trim(),
     "style-src 'self' 'unsafe-inline'",
-    "connect-src 'self' https: wss:",
+    "connect-src 'self'",
     "img-src 'self' data: blob: https:",
     "font-src 'self' data:",
-    "media-src 'self' blob: https:",
+    "media-src 'self' blob:",
     "worker-src 'self' blob:",
-    "frame-src 'self' app://artifacts.local https:",
+    "frame-src 'self' app://artifacts.local",
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",
     "frame-ancestors 'self'",
     "block-all-mixed-content",
-    "upgrade-insecure-requests",
   ].join("; ");
 }
 
@@ -976,7 +1145,170 @@ export async function installLocalUiProtocol(
   const indexPath = path.join(root, "index.html");
   await access(indexPath);
   const absoluteRoot = path.resolve(root);
-  const indexHtml = await readFile(indexPath, "utf8");
+  // base-ui only unmounts a closing dialog after its exit transition ends,
+  // and Chromium stops the frame clock entirely while a document is hidden
+  // or fully occluded, so a Settings/publish dialog closed while the window
+  // is covered would deadlock open. base-ui checks this global before
+  // waiting on animations; keep it in sync with document visibility so
+  // hidden closes complete instantly while visible closes stay animated.
+  const visibilityGuard =
+    '<script>(()=>{const sync=()=>{globalThis.BASE_UI_ANIMATIONS_DISABLED=document.visibilityState==="hidden"};document.addEventListener("visibilitychange",sync);sync()})();</script>';
+  // The artifact pane bridge must run in the page's JavaScript world (React
+  // fiber expandos are invisible from the isolated preload world). It fixes
+  // two retained-client defects at their contract level:
+  // 1. An inline artifact card rendered by a cold-mounted chat can capture a
+  //    replaced dispatcher, so its click never reaches the live chat-resource
+  //    reducer. The bridge locates the live context through React fibers and
+  //    dispatches the app's own SELECT_ARTIFACT / CLEAR_SELECTED instead.
+  // 2. The pane layout's width comes from a resize effect whose dependency
+  //    list omits the open flag, so a pane opened without a simultaneous
+  //    container resize stays at width zero. The bridge reconciles the
+  //    drawer wrapper's inline flex with the open state the app exposes via
+  //    aria-hidden — the same style channel the app's own resizer writes.
+  const artifactBridge = `<script>(() => {
+  window.__localArtifactBridge = { ready: true, opens: 0, closes: 0 };
+  const fiberOf = (element) => {
+    const key = Object.keys(element).find((k) => k.startsWith("__reactFiber$"));
+    return key ? element[key] : undefined;
+  };
+  const paneRegion = () =>
+    document.querySelector('[role="region"][aria-label^="Artifact panel"]');
+  const paneVisible = () => {
+    const region = paneRegion();
+    if (!region) return false;
+    const rect = region.getBoundingClientRect();
+    return rect.width > 40 && rect.height > 0;
+  };
+  const cardArtifactId = (button) => {
+    let fiber = fiberOf(button);
+    for (let depth = 0; fiber && depth < 80; depth += 1, fiber = fiber.return) {
+      const properties = fiber.memoizedProps && fiber.memoizedProps.properties;
+      if (properties && typeof properties.id === "string" && properties.id)
+        return properties.id;
+    }
+    return null;
+  };
+  // The live chat tree provides two context values that together control the
+  // artifact drawer: the chat-resource reducer (selection) and the drawer
+  // context (expanded flag). Both are located from a live element because a
+  // cached card element can hold handlers bound to an unmounted instance.
+  const liveDrawerControls = (preferred) => {
+    const controls = { dispatch: null, setExpanded: null };
+    const roots = [
+      preferred,
+      document.querySelector(
+        '[contenteditable="true"][aria-label="Write your prompt to Claude"]',
+      ),
+      paneRegion(),
+      document.querySelector('button[aria-label="Close artifact"]'),
+    ];
+    for (const root of roots) {
+      if (!root) continue;
+      let fiber = fiberOf(root);
+      for (let depth = 0; fiber && depth < 500; depth += 1, fiber = fiber.return) {
+        const value = fiber.memoizedProps && fiber.memoizedProps.value;
+        if (!value || typeof value !== "object") continue;
+        if (!controls.dispatch && typeof value.dispatchChatResource === "function")
+          controls.dispatch = value.dispatchChatResource;
+        if (!controls.setExpanded && typeof value.setIsDrawerExpanded === "function")
+          controls.setExpanded = value.setIsDrawerExpanded;
+      }
+      if (controls.dispatch && controls.setExpanded) break;
+    }
+    return controls;
+  };
+  // A card click on a cold-mounted chat can run a cached closure bound to a
+  // replaced instance, so neither the selection nor the expanded flag gets
+  // set. When the pane has not appeared shortly after a click, set both
+  // through the live contexts — the same two writes the app's handler makes.
+  const ensureOpen = (button) => {
+    setTimeout(() => {
+      if (paneVisible()) return;
+      const artifactId = cardArtifactId(button);
+      if (!artifactId) return;
+      const { dispatch, setExpanded } = liveDrawerControls(button);
+      if (!dispatch || !setExpanded) return;
+      window.__localArtifactBridge.opens += 1;
+      setExpanded(true);
+      dispatch({ type: "SELECT_ARTIFACT", id: artifactId });
+    }, 300);
+  };
+  const ensureClosed = () => {
+    setTimeout(() => {
+      if (!paneRegion() && !paneVisible()) return;
+      const { dispatch, setExpanded } = liveDrawerControls(null);
+      if (!dispatch) return;
+      window.__localArtifactBridge.closes += 1;
+      dispatch({ type: "CLEAR_SELECTED" });
+      if (setExpanded) setExpanded(false);
+    }, 300);
+  };
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest("button[aria-label]");
+      const label = (button && button.getAttribute("aria-label")) || "";
+      if (label === "Close artifact") ensureClosed();
+      else if (label.startsWith("View ") && label !== "View all" && button)
+        ensureOpen(button);
+    },
+    true,
+  );
+  // When the route changes away from a chat, close any drawer the previous
+  // route left open — unless the new route itself requests an artifact.
+  let lastPath = location.pathname;
+  const lifecycle = () => {
+    window.__localArtifactBridge.ticks = (window.__localArtifactBridge.ticks || 0) + 1;
+    const path = location.pathname;
+    if (path === lastPath) return;
+    const previous = lastPath;
+    lastPath = path;
+    window.__localArtifactBridge.pathChanges = (window.__localArtifactBridge.pathChanges || 0) + 1;
+    // Only leaving an established chat closes its drawer; the /new to
+    // /chat/<uuid> hop right after a conversation is created must not.
+    if (!/^\\/chat\\/[0-9a-f-]{36}/i.test(previous)) return;
+    if (new URLSearchParams(location.search).has("artifactId")) return;
+    const close = document.querySelector(
+      'button[aria-label="Close artifact"]',
+    );
+    if (!close) return;
+    // The in-session close handler is reliable for a route the user just
+    // left; the live-context dispatch reinforces it when the handler was a
+    // cached closure.
+    close.click();
+    const { dispatch, setExpanded } = liveDrawerControls(close);
+    if (dispatch) {
+      dispatch({ type: "CLEAR_SELECTED" });
+      if (setExpanded) setExpanded(false);
+    }
+  };
+  let scheduled = false;
+  const tick = () => {
+    if (scheduled) return;
+    scheduled = true;
+    setTimeout(() => {
+      scheduled = false;
+      lifecycle();
+    }, 40);
+  };
+  const start = () => {
+    new MutationObserver(tick).observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+    window.addEventListener("popstate", tick);
+    tick();
+  };
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", start, { once: true });
+  else start();
+})();</script>`;
+  const indexHtml = (await readFile(indexPath, "utf8")).replace(
+    "<head>",
+    `<head>${visibilityGuard}${artifactBridge}`,
+  );
   const csp = contentSecurityPolicy(inlineScriptHashes(indexHtml));
   const patchedAssets = await patchedClientAssets(
     absoluteRoot,
@@ -1034,6 +1366,16 @@ export async function installLocalUiProtocol(
           "Content-Security-Policy": csp,
           "X-Content-Type-Options": "nosniff",
           "X-Local-Claude-Patches": patchedAsset.ids.join(","),
+        },
+      });
+    }
+    if (path.resolve(candidate) === path.resolve(indexPath)) {
+      return new Response(indexHtml, {
+        status: 200,
+        headers: {
+          "Content-Type": MIME_TYPES[".html"],
+          "Content-Security-Policy": csp,
+          "X-Content-Type-Options": "nosniff",
         },
       });
     }

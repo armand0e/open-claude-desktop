@@ -11,7 +11,8 @@ const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 chromium.use(StealthPlugin());
 
 const PORT = Number.parseInt(process.env.PORT || "3456", 10);
-const PROFILE_DIR = process.env.PROFILE_DIR || path.join(__dirname, "search-profile");
+const PROFILE_DIR =
+  process.env.PROFILE_DIR || path.join(__dirname, "search-profile");
 const CHANNEL = process.env.CHANNEL || "chrome";
 const HEADFUL = process.env.HEADFUL === "1";
 const MAX_CONTENT = 24_000;
@@ -36,7 +37,9 @@ let contextPromise;
 let blockedRequests = 0;
 
 function isBlockedHost(hostname) {
-  const parts = String(hostname || "").toLowerCase().split(".");
+  const parts = String(hostname || "")
+    .toLowerCase()
+    .split(".");
   for (let index = 0; index < parts.length; index += 1) {
     if (BLOCKED_HOSTS.has(parts.slice(index).join("."))) return true;
   }
@@ -45,18 +48,36 @@ function isBlockedHost(hostname) {
 
 function isPrivateAddress(address) {
   if (net.isIPv4(address)) {
-    const [a, b] = address.split(".").map(Number);
+    const [a, b, c] = address.split(".").map(Number);
     return (
       a === 0 ||
       a === 10 ||
       a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
       (a === 169 && b === 254) ||
       (a === 172 && b >= 16 && b <= 31) ||
       (a === 192 && b === 168) ||
+      (a === 192 && b === 0 && (c === 0 || c === 2)) ||
+      (a === 198 && (b === 18 || b === 19)) ||
+      (a === 198 && b === 51 && c === 100) ||
+      (a === 203 && b === 0 && c === 113) ||
       a >= 224
     );
   }
   const normalized = address.toLowerCase();
+  if (normalized.startsWith("::ffff:")) {
+    const mapped = normalized.slice(7);
+    if (net.isIPv4(mapped)) return isPrivateAddress(mapped);
+    const words = mapped.split(":");
+    if (words.length === 2) {
+      const high = Number.parseInt(words[0], 16);
+      const low = Number.parseInt(words[1], 16);
+      if (Number.isFinite(high) && Number.isFinite(low))
+        return isPrivateAddress(
+          `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`,
+        );
+    }
+  }
   return (
     normalized === "::" ||
     normalized === "::1" ||
@@ -66,9 +87,8 @@ function isPrivateAddress(address) {
     normalized.startsWith("fe9") ||
     normalized.startsWith("fea") ||
     normalized.startsWith("feb") ||
-    normalized.startsWith("::ffff:127.") ||
-    normalized.startsWith("::ffff:10.") ||
-    normalized.startsWith("::ffff:192.168.")
+    normalized.startsWith("ff") ||
+    normalized.startsWith("2001:db8:")
   );
 }
 
@@ -76,12 +96,18 @@ async function publicHttpUrl(raw) {
   const url = new URL(raw);
   if (url.protocol !== "http:" && url.protocol !== "https:")
     throw new Error("Only HTTP and HTTPS URLs can be visited");
-  if (url.username || url.password) throw new Error("URL credentials are not allowed");
+  if (url.username || url.password)
+    throw new Error("URL credentials are not allowed");
   if (url.hostname === "localhost" || url.hostname.endsWith(".localhost"))
     throw new Error("Local network URLs are not available to model tools");
   const addresses = await dns.lookup(url.hostname, { all: true });
-  if (!addresses.length || addresses.some((entry) => isPrivateAddress(entry.address)))
-    throw new Error("Private and local network URLs are not available to model tools");
+  if (
+    !addresses.length ||
+    addresses.some((entry) => isPrivateAddress(entry.address))
+  )
+    throw new Error(
+      "Private and local network URLs are not available to model tools",
+    );
   return url;
 }
 
@@ -97,17 +123,21 @@ async function context() {
     });
     const browserContext = await contextPromise;
     await browserContext.route("**/*", async (route) => {
-      let hostname = "";
       try {
-        hostname = new URL(route.request().url()).hostname;
+        const requestUrl = new URL(route.request().url());
+        if (isBlockedHost(requestUrl.hostname)) {
+          blockedRequests += 1;
+          await route.abort("blockedbyclient");
+          return;
+        }
+        if (requestUrl.protocol === "http:" || requestUrl.protocol === "https:")
+          await publicHttpUrl(requestUrl.toString());
+        else if (!["data:", "blob:", "about:"].includes(requestUrl.protocol))
+          throw new Error("Unsupported browser request protocol");
+        await route.continue();
       } catch {
-        // Chromium will reject malformed URLs itself.
-      }
-      if (isBlockedHost(hostname)) {
         blockedRequests += 1;
         await route.abort("blockedbyclient");
-      } else {
-        await route.continue();
       }
     });
   }
@@ -139,7 +169,11 @@ function classifySource(raw) {
     return { source_type: "forum", reliability: "medium" };
   if (host === "wikipedia.org" || host.endsWith(".wikipedia.org"))
     return { source_type: "reference", reliability: "medium" };
-  if (/reuters\.com|apnews\.com|bbc\.(com|co\.uk)|bloomberg\.com|ft\.com/.test(host))
+  if (
+    /reuters\.com|apnews\.com|bbc\.(com|co\.uk)|bloomberg\.com|ft\.com/.test(
+      host,
+    )
+  )
     return { source_type: "news", reliability: "high" };
   return {};
 }
@@ -147,55 +181,86 @@ function classifySource(raw) {
 const ENGINES = [
   {
     name: "duckduckgo",
-    url: (query) => `https://html.duckduckgo.com/html/?kl=us-en&q=${encodeURIComponent(query)}`,
+    url: (query) =>
+      `https://html.duckduckgo.com/html/?kl=us-en&q=${encodeURIComponent(query)}`,
     parse: () =>
-      [...document.querySelectorAll(".result")].flatMap((element) => {
-        if (element.classList.contains("result--ad")) return [];
-        const anchor = element.querySelector(".result__a");
-        if (!anchor) return [];
-        let url = anchor.getAttribute("href") || "";
-        const redirect = url.match(/[?&]uddg=([^&]+)/);
-        if (redirect) {
-          try {
-            url = decodeURIComponent(redirect[1]);
-          } catch {}
-        }
-        if (url.startsWith("//")) url = `https:${url}`;
-        if (!/^https?:/.test(url)) return [];
-        return [{
-          title: anchor.textContent.trim(),
-          url,
-          snippet: element.querySelector(".result__snippet")?.textContent?.trim() || "",
-        }];
-      }).slice(0, 8),
+      [...document.querySelectorAll(".result")]
+        .flatMap((element) => {
+          if (element.classList.contains("result--ad")) return [];
+          const anchor = element.querySelector(".result__a");
+          if (!anchor) return [];
+          let url = anchor.getAttribute("href") || "";
+          const redirect = url.match(/[?&]uddg=([^&]+)/);
+          if (redirect) {
+            try {
+              url = decodeURIComponent(redirect[1]);
+            } catch {}
+          }
+          if (url.startsWith("//")) url = `https:${url}`;
+          if (!/^https?:/.test(url)) return [];
+          return [
+            {
+              title: anchor.textContent.trim(),
+              url,
+              snippet:
+                element
+                  .querySelector(".result__snippet")
+                  ?.textContent?.trim() || "",
+            },
+          ];
+        })
+        .slice(0, 8),
   },
   {
     name: "bing",
-    url: (query) => `https://www.bing.com/search?setmkt=en-US&q=${encodeURIComponent(query)}`,
+    url: (query) =>
+      `https://www.bing.com/search?setmkt=en-US&q=${encodeURIComponent(query)}`,
     parse: () =>
-      [...document.querySelectorAll("li.b_algo")].flatMap((element) => {
-        const anchor = element.querySelector("h2 a");
-        if (!anchor || !/^https?:/.test(anchor.href)) return [];
-        return [{
-          title: anchor.textContent.trim(),
-          url: anchor.href,
-          snippet: element.querySelector(".b_caption p, .b_algoSlug, p")?.textContent?.trim() || "",
-        }];
-      }).slice(0, 8),
+      [...document.querySelectorAll("li.b_algo")]
+        .flatMap((element) => {
+          const anchor = element.querySelector("h2 a");
+          if (!anchor || !/^https?:/.test(anchor.href)) return [];
+          return [
+            {
+              title: anchor.textContent.trim(),
+              url: anchor.href,
+              snippet:
+                element
+                  .querySelector(".b_caption p, .b_algoSlug, p")
+                  ?.textContent?.trim() || "",
+            },
+          ];
+        })
+        .slice(0, 8),
   },
   {
     name: "brave",
-    url: (query) => `https://search.brave.com/search?source=web&q=${encodeURIComponent(query)}`,
+    url: (query) =>
+      `https://search.brave.com/search?source=web&q=${encodeURIComponent(query)}`,
     parse: () =>
-      [...document.querySelectorAll('#results [data-type="web"], #results .snippet')].flatMap((element) => {
-        const anchor = element.querySelector('a[href^="http"]');
-        if (!anchor) return [];
-        return [{
-          title: (element.querySelector(".title, .snippet-title") || anchor).textContent.trim(),
-          url: anchor.href,
-          snippet: element.querySelector(".snippet-description, .snippet-content")?.textContent?.trim() || "",
-        }];
-      }).filter((entry) => entry.title).slice(0, 8),
+      [
+        ...document.querySelectorAll(
+          '#results [data-type="web"], #results .snippet',
+        ),
+      ]
+        .flatMap((element) => {
+          const anchor = element.querySelector('a[href^="http"]');
+          if (!anchor) return [];
+          return [
+            {
+              title: (
+                element.querySelector(".title, .snippet-title") || anchor
+              ).textContent.trim(),
+              url: anchor.href,
+              snippet:
+                element
+                  .querySelector(".snippet-description, .snippet-content")
+                  ?.textContent?.trim() || "",
+            },
+          ];
+        })
+        .filter((entry) => entry.title)
+        .slice(0, 8),
   },
 ];
 
@@ -205,13 +270,21 @@ async function search(query) {
     for (const engine of ENGINES) {
       try {
         await page.goto(engine.url(query), { waitUntil: "domcontentloaded" });
+        await publicHttpUrl(page.url());
         await page.waitForTimeout(600);
         const html = await page.content();
-        if (/unusual traffic|are you a robot|captcha-delivery|\/sorry\/index/i.test(html))
+        if (
+          /unusual traffic|are you a robot|captcha-delivery|\/sorry\/index/i.test(
+            html,
+          )
+        )
           throw new Error(`${engine.name} returned a challenge page`);
         const results = await page.evaluate(engine.parse);
         if (results.length)
-          return results.map((entry) => ({ ...entry, ...classifySource(entry.url) }));
+          return results.map((entry) => ({
+            ...entry,
+            ...classifySource(entry.url),
+          }));
         throw new Error(`${engine.name} returned no results`);
       } catch (error) {
         lastError = error;
@@ -223,9 +296,15 @@ async function search(query) {
 
 function relevanceWindow(content, query) {
   if (content.length <= MAX_CONTENT) return content;
-  const words = String(query || "").toLowerCase().split(/\W+/).filter((word) => word.length > 3);
+  const words = String(query || "")
+    .toLowerCase()
+    .split(/\W+/)
+    .filter((word) => word.length > 3);
   const lower = content.toLowerCase();
-  const index = words.map((word) => lower.indexOf(word)).find((position) => position >= 0) ?? 0;
+  const index =
+    words
+      .map((word) => lower.indexOf(word))
+      .find((position) => position >= 0) ?? 0;
   const start = Math.max(0, index - 2_000);
   return content.slice(start, start + MAX_CONTENT);
 }
@@ -234,33 +313,55 @@ async function visit(raw, query) {
   const target = await publicHttpUrl(raw);
   return withPage(async (page) => {
     await page.goto(target.toString(), { waitUntil: "domcontentloaded" });
+    const finalUrl = await publicHttpUrl(page.url());
     await page.waitForTimeout(700);
     const extracted = await page.evaluate(() => {
       const clone = document.cloneNode(true);
-      clone.querySelectorAll("script,style,noscript,svg,iframe,nav,footer,form,aside,[aria-hidden='true']")
+      clone
+        .querySelectorAll(
+          "script,style,noscript,svg,iframe,nav,footer,form,aside,[aria-hidden='true']",
+        )
         .forEach((element) => element.remove());
-      const root = clone.querySelector("main,article,[role='main']") || clone.body;
+      const root =
+        clone.querySelector("main,article,[role='main']") || clone.body;
       const content = (root?.innerText || root?.textContent || "")
         .replace(/[ \t]+/g, " ")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
-      const date = document.querySelector("meta[property='article:published_time'],meta[name='date'],time[datetime]")
-        ?.getAttribute("content") || document.querySelector("time[datetime]")?.getAttribute("datetime") || "";
-      const outline = [...document.querySelectorAll("h1,h2,h3")].slice(0, 80).map((heading) => ({
-        level: Number(heading.tagName.slice(1)),
-        heading: heading.textContent.trim(),
-      })).filter((entry) => entry.heading);
+      const date =
+        document
+          .querySelector(
+            "meta[property='article:published_time'],meta[name='date'],time[datetime]",
+          )
+          ?.getAttribute("content") ||
+        document.querySelector("time[datetime]")?.getAttribute("datetime") ||
+        "";
+      const outline = [...document.querySelectorAll("h1,h2,h3")]
+        .slice(0, 80)
+        .map((heading) => ({
+          level: Number(heading.tagName.slice(1)),
+          heading: heading.textContent.trim(),
+        }))
+        .filter((entry) => entry.heading);
       return { title: document.title, date, content, outline };
     });
-    const dates = [...new Set(extracted.content.match(/\b(?:19|20)\d{2}-\d{2}-\d{2}\b/g) || [])].slice(0, 20);
+    const dates = [
+      ...new Set(
+        extracted.content.match(/\b(?:19|20)\d{2}-\d{2}-\d{2}\b/g) || [],
+      ),
+    ].slice(0, 20);
     return {
-      url: target.toString(),
+      url: finalUrl.toString(),
       title: extracted.title,
       date: extracted.date || undefined,
       content: relevanceWindow(extracted.content, query),
-      _section_outline: extracted.outline.length ? extracted.outline : undefined,
-      ...(dates.length > 2 ? { _temporal_warning: { dates_found: dates } } : {}),
-      ...classifySource(target.toString()),
+      _section_outline: extracted.outline.length
+        ? extracted.outline
+        : undefined,
+      ...(dates.length > 2
+        ? { _temporal_warning: { dates_found: dates } }
+        : {}),
+      ...classifySource(finalUrl.toString()),
     };
   });
 }
@@ -278,7 +379,10 @@ const server = http.createServer(async (request, response) => {
   try {
     url = new URL(request.url, `http://127.0.0.1:${PORT}`);
   } catch {
-    return send(response, 400, { success: false, error: "Invalid request URL" });
+    return send(response, 400, {
+      success: false,
+      error: "Invalid request URL",
+    });
   }
   try {
     if (url.pathname === "/health")
@@ -290,12 +394,17 @@ const server = http.createServer(async (request, response) => {
       });
     if (url.pathname === "/search") {
       const query = url.searchParams.get("q")?.trim();
-      if (!query) return send(response, 400, { success: false, error: "Missing query" });
-      return send(response, 200, { success: true, results: await search(query) });
+      if (!query)
+        return send(response, 400, { success: false, error: "Missing query" });
+      return send(response, 200, {
+        success: true,
+        results: await search(query),
+      });
     }
     if (url.pathname === "/fetch") {
       const target = url.searchParams.get("url");
-      if (!target) return send(response, 400, { success: false, error: "Missing URL" });
+      if (!target)
+        return send(response, 400, { success: false, error: "Missing URL" });
       return send(response, 200, {
         success: true,
         ...(await visit(target, url.searchParams.get("q") || "")),

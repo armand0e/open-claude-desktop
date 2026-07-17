@@ -8,7 +8,9 @@ flowchart LR
   P --> API["Local app:// API"]
   API --> DB["Atomic conversation store"]
   API --> OA["OpenAI-compatible provider"]
+  API --> WEB["Local Chromium web tools"]
   OA --> API
+  WEB --> API
   API -->|"Claude SSE events"| UI
 ```
 
@@ -46,13 +48,14 @@ The packaged client is bootstrapped with a stable synthetic account and organiza
 - initial and follow-up completion routes;
 - translation from OpenAI streaming deltas into the Claude client's `message_start`, `conversation_ready`, content-block, message-delta, and `message_stop` events;
 - translation of the recovered Claude artifact tool into an OpenAI function tool, including persistent `create`, `rewrite`, and `update` versions;
+- execution of model-requested `web_search` and `visit_website` calls through the local Chromium runner, with visible, persistent web activity and source metadata in Chat;
 - local artifact listing/version APIs plus an `app://artifacts.local` sandbox for HTML, SVG, Markdown, text, and code previews;
 - multipart document conversion/upload, local file persistence, file preview/download, and attachment metadata in conversation trees;
 - persistence before and after provider execution so a reload reconstructs the conversation.
 
 The provider request contains the configured model and text history as OpenAI `user` and `assistant` messages. UTF-8/UTF-16 text, source code, CSV, JSON, HTML, SVG, and Markdown attachments are extracted locally and included in the user message. Other binary formats can be stored, but are represented to a text-only provider as binary metadata until a format-specific parser or vision adapter is added.
 
-HTML and SVG artifacts render entirely inside the local sandbox. Markdown, plain text, and code have native local renderers. React and Mermaid artifacts currently show their source with an explicit fallback notice rather than loading a remote runtime. Claude-hosted billing, remote connectors, web search, projects, and Cowork/VM services remain unavailable. Unknown server APIs fail closed with a JSON `503` response.
+HTML and SVG artifacts render entirely inside the local sandbox. Markdown, plain text, and code have native local renderers. React and Mermaid artifacts currently show their source with an explicit fallback notice rather than loading a remote runtime. Web search and page visits run locally and do not use Anthropic's hosted search service. Claude-hosted billing, remote connectors, projects, and Cowork/VM services remain unavailable. Unknown server APIs fail closed with a JSON `503` response.
 
 ## Frontend compatibility layer
 

@@ -7,8 +7,8 @@
     "validatedResultCount": 526
   },
   "serviceSpecificDispatch": {
-    "serviceCount": 26,
-    "methodCount": 398,
+    "serviceCount": 29,
+    "methodCount": 527,
     "services": [
       {
         "service": "claude.hybrid.DesktopIntl",
@@ -75,6 +75,14 @@
         "methodCount": 7
       },
       {
+        "service": "claude.web.CoworkArtifacts",
+        "methodCount": 22
+      },
+      {
+        "service": "claude.web.CoworkFilePreview",
+        "methodCount": 7
+      },
+      {
         "service": "claude.web.DesktopNotifications",
         "methodCount": 5
       },
@@ -85,6 +93,10 @@
       {
         "service": "claude.web.Launch",
         "methodCount": 54
+      },
+      {
+        "service": "claude.web.LocalAgentModeSessions",
+        "methodCount": 100
       },
       {
         "service": "claude.web.LocalSessionEnvironment",
@@ -117,8 +129,8 @@
     ]
   },
   "safeFallbackDispatch": {
-    "serviceCount": 45,
-    "methodCount": 433,
+    "serviceCount": 42,
+    "methodCount": 304,
     "services": [
       {
         "service": "claude.buddy.Buddy",
@@ -205,16 +217,8 @@
         "methodCount": 7
       },
       {
-        "service": "claude.web.CoworkArtifacts",
-        "methodCount": 22
-      },
-      {
         "service": "claude.web.CoworkFeedback",
         "methodCount": 5
-      },
-      {
-        "service": "claude.web.CoworkFilePreview",
-        "methodCount": 7
       },
       {
         "service": "claude.web.CoworkMemory",
@@ -263,10 +267,6 @@
       {
         "service": "claude.web.GrandPrix",
         "methodCount": 8
-      },
-      {
-        "service": "claude.web.LocalAgentModeSessions",
-        "methodCount": 100
       },
       {
         "service": "claude.web.LocalPlugins",

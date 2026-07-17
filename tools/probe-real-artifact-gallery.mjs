@@ -86,10 +86,121 @@ const workspace = await mkdtemp(
 );
 const sessionId = "artifact-gallery-session";
 const title = "Native local artifact gallery proof";
+const chatSessionId = "old-chat-artifact-session";
+const chatArtifactId = "old-chat-artifact-proof";
+const chatArtifactUuid = "00000000-0000-4000-8000-000000000501";
+const chatVersionUuid = "00000000-0000-4000-8000-000000000502";
+const chatHumanUuid = "00000000-0000-4000-8000-000000000503";
+const chatAssistantUuid = "00000000-0000-4000-8000-000000000504";
+const chatTitle = "Old Chat Artifact Reopen Proof";
 const artifactPath = path.join(workspace, "gallery-proof.html");
 const content =
   "<!doctype html><style>body{background:rgb(31,53,75);color:white}</style><h1>Native artifact opened locally</h1>";
+const chatContent =
+  "<!doctype html><style>body{background:#261b36;color:white}</style><h1>Old chat artifact reopened without a page reload</h1>";
+const now = new Date().toISOString();
 await writeFile(artifactPath, content, "utf8");
+await writeFile(
+  path.join(profile, "local-backend.json"),
+  JSON.stringify({
+    version: 3,
+    provider: {
+      baseUrl: "http://127.0.0.1:11434/v1",
+      model: "gallery-probe-model",
+    },
+    accountProfile: {},
+    accountSettings: {},
+    files: [],
+    conversations: [
+      {
+        uuid: chatSessionId,
+        name: "Historical artifact chat",
+        summary: "",
+        model: "gallery-probe-model",
+        created_at: now,
+        updated_at: now,
+        current_leaf_message_uuid: chatAssistantUuid,
+        is_starred: false,
+        is_temporary: false,
+        settings: { enabled_web_search: false },
+        chat_messages: [
+          {
+            uuid: chatHumanUuid,
+            sender: "human",
+            text: "Create the historical artifact",
+            content: [
+              {
+                type: "text",
+                text: "Create the historical artifact",
+                citations: [],
+              },
+            ],
+            created_at: now,
+            updated_at: now,
+            index: 0,
+            attachments: [],
+            files: [],
+          },
+          {
+            uuid: chatAssistantUuid,
+            sender: "assistant",
+            text: "",
+            content: [
+              {
+                type: "tool_use",
+                id: "call_old_chat_artifact",
+                name: "artifacts",
+                input: {
+                  command: "create",
+                  id: chatArtifactId,
+                  title: chatTitle,
+                  type: "text/html",
+                  content: chatContent,
+                },
+              },
+            ],
+            created_at: now,
+            updated_at: now,
+            index: 1,
+            parent_message_uuid: chatHumanUuid,
+            attachments: [],
+            files: [],
+          },
+        ],
+      },
+    ],
+    artifacts: [
+      {
+        uuid: chatArtifactUuid,
+        artifact_identifier: chatArtifactId,
+        conversation_uuid: chatSessionId,
+        created_at: now,
+        updated_at: now,
+        title: chatTitle,
+        artifact_type: "text/html",
+        versions: [
+          {
+            uuid: chatVersionUuid,
+            artifact_uuid: chatArtifactUuid,
+            artifact_identifier: chatArtifactId,
+            conversation_uuid: chatSessionId,
+            message_uuid: chatAssistantUuid,
+            created_at: now,
+            updated_at: now,
+            title: chatTitle,
+            artifact_type: "text/html",
+            content: chatContent,
+            command: "create",
+            visibility: "private",
+            published_artifact_uuid: null,
+            published_artifact_deleted_at: null,
+          },
+        ],
+      },
+    ],
+  }),
+  "utf8",
+);
 await writeFile(
   path.join(profile, "local-code-sessions.json"),
   JSON.stringify({
@@ -133,7 +244,7 @@ const child = spawn(
   [".", `--remote-debugging-port=${debuggerPort}`],
   {
     cwd: process.cwd(),
-    windowsHide: true,
+    windowsHide: false,
     stdio: ["ignore", "ignore", "pipe"],
     env: {
       ...process.env,
@@ -202,6 +313,7 @@ try {
       return {
         nativePage: location.pathname === "/epitaxy/apps",
         titleVisible: document.body?.innerText?.includes(${JSON.stringify(title)}),
+        chatTitleVisible: document.body?.innerText?.includes(${JSON.stringify(chatTitle)}),
         bodyText: document.body?.innerText?.slice(0, 2500),
         frame,
         customOverlayPresent: Boolean(document.querySelector("#local-code-artifacts"))
@@ -214,11 +326,62 @@ try {
   if (
     !gallery.nativePage ||
     !gallery.titleVisible ||
+    !gallery.chatTitleVisible ||
     gallery.customOverlayPresent
   )
     throw new Error(
       `Native gallery failed: ${JSON.stringify(gallery)}\n${stderr.join("").slice(-6000)}`,
     );
+  const chatCardClick = await evaluate(
+    appTarget,
+    `(() => {
+      const stateSentinel = crypto.randomUUID();
+      window.__oldChatArtifactSentinel = stateSentinel;
+      const labels = [...document.querySelectorAll("*")].filter(element =>
+        element.innerText?.trim() === ${JSON.stringify(chatTitle)}
+      );
+      const label = labels[0];
+      const control = document.querySelector('a[aria-label=${JSON.stringify(chatTitle)}]') || label?.closest("button,a,[role=button]") || label;
+      control?.click();
+      return { clicked: Boolean(control), stateSentinel, matches: labels.length };
+    })()`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+  const chatOpened = await evaluate(
+    appTarget,
+    `(() => {
+      const frame = document.querySelector('iframe[src^="app://artifacts.local"]');
+      const rect = frame?.getBoundingClientRect();
+      return {
+        path: location.pathname,
+        href: location.href,
+        artifactId: new URL(location.href).searchParams.get("artifactId"),
+        frameVisible: Boolean(frame && rect.width > 0 && rect.height > 0 && getComputedStyle(frame).visibility !== "hidden"),
+        keptDocumentState: window.__oldChatArtifactSentinel === ${JSON.stringify(chatCardClick.stateSentinel)},
+        bodyText: document.body?.innerText?.slice(0, 2500)
+      };
+    })()`,
+  );
+  if (
+    !chatCardClick.clicked ||
+    chatOpened.path !== `/chat/${chatSessionId}` ||
+    chatOpened.artifactId !== chatArtifactId ||
+    !chatOpened.frameVisible ||
+    !chatOpened.keptDocumentState
+  )
+    throw new Error(
+      `Old Chat artifact did not hydrate in the existing document: ${JSON.stringify({ chatCardClick, chatOpened })}`,
+    );
+  await evaluate(appTarget, "history.back(); true");
+  const galleryDeadline = Date.now() + 8_000;
+  while (Date.now() < galleryDeadline) {
+    const pathNow = await evaluate(appTarget, "location.pathname");
+    if (pathNow === "/epitaxy/apps") break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  process.stderr.write(
+    "artifact-gallery-probe: old Chat artifact reopened without reload\n",
+  );
   const cardClick = await evaluate(
     appTarget,
     `(() => {
@@ -243,7 +406,9 @@ try {
     })`,
   );
   const previewTarget = openTargets.find((candidate) =>
-    candidate.url?.startsWith("claude-local-preview://"),
+    /^(?:claude-local-preview|claude-local-launch):\/\//.test(
+      candidate.url ?? "",
+    ),
   );
   const previewText = previewTarget
     ? await evaluate(previewTarget, "document.body?.innerText")
@@ -259,7 +424,7 @@ try {
     );
   process.stderr.write("artifact-gallery-probe: assertions passed\n");
   process.stdout.write(
-    `${JSON.stringify({ gallery, cardClick, opened, previewUrl: previewTarget.url, previewText }, null, 2)}\n`,
+    `${JSON.stringify({ gallery, chatCardClick, chatOpened, cardClick, opened, previewUrl: previewTarget.url, previewText }, null, 2)}\n`,
   );
 } finally {
   clearInterval(keepAlive);

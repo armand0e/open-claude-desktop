@@ -32,7 +32,8 @@ async function evaluate(target, expression) {
       socket.addEventListener("message", (event) => {
         const message = JSON.parse(event.data);
         if (message.id !== id) return;
-        if (message.result?.exceptionDetails)
+        if (message.error) reject(new Error(message.error.message));
+        else if (message.result?.exceptionDetails)
           reject(
             new Error(
               message.result.exceptionDetails.exception?.description ??
@@ -71,7 +72,9 @@ async function waitForTarget(port, predicate, child, timeout = 30_000) {
 }
 
 const port = await unusedPort();
-const profile = await mkdtemp(path.join(os.tmpdir(), "claude-preview-profile-"));
+const profile = await mkdtemp(
+  path.join(os.tmpdir(), "claude-preview-profile-"),
+);
 const workspace = await mkdtemp(
   path.join(os.tmpdir(), "claude-preview-workspace-"),
 );
@@ -119,7 +122,7 @@ await writeFile(
 const stderr = [];
 const child = spawn(electron, [".", `--remote-debugging-port=${port}`], {
   cwd: process.cwd(),
-  windowsHide: true,
+  windowsHide: false,
   stdio: ["ignore", "ignore", "pipe"],
   env: {
     ...process.env,
@@ -132,27 +135,41 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderr.push(chunk));
 
 try {
-  const appTarget = await waitForTarget(
-    port,
-    (candidate) =>
-      candidate.type === "page" && candidate.url.startsWith("app://localhost"),
-    child,
-  );
-  const shown = await evaluate(
-    appTarget,
-    `(async () => {
+  const appPredicate = (candidate) =>
+    candidate.type === "page" && candidate.url.startsWith("app://localhost");
+  const shownExpression = `(async () => {
       const deadline = Date.now() + 20000;
       while (!window["claude.web"]?.LocalSessions && Date.now() < deadline)
         await new Promise(resolve => setTimeout(resolve, 100));
-      return window["claude.web"].LocalSessions.showSessionFilePreview(
+      const sessions = window["claude.web"].LocalSessions;
+      const session = await sessions.getSession(${JSON.stringify(sessionId)});
+      const result = await sessions.showSessionFilePreview(
         ${JSON.stringify(sessionId)},
         ${JSON.stringify(path.join(workspace, "index.html"))},
         { x: 420, y: 100, width: 600, height: 500 },
         "preview-probe"
       );
-    })()`,
-  );
-  if (!shown?.ok)
+      return JSON.stringify({
+        result,
+        session,
+        methodType: typeof sessions.showSessionFilePreview,
+      });
+    })()`;
+  let appTarget;
+  let shown;
+  const shownDeadline = Date.now() + 30_000;
+  while (!shown && Date.now() < shownDeadline) {
+    try {
+      appTarget = await waitForTarget(port, appPredicate, child, 2_000);
+      const serialized = await evaluate(appTarget, shownExpression);
+      if (serialized) shown = JSON.parse(serialized);
+    } catch (error) {
+      if (!/Execution context was destroyed|Timed out/u.test(String(error)))
+        throw error;
+    }
+    if (!shown) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!shown?.result?.ok)
     throw new Error(
       `Preview declined: ${JSON.stringify(shown)}\n${stderr.join("").slice(-4000)}`,
     );
@@ -172,13 +189,22 @@ try {
       if (document.readyState === "complete") done(); else addEventListener("load", done, { once: true });
     })`,
   );
-  const capture = await evaluate(
-    appTarget,
-    `window["claude.web"].CoworkFilePreview.parkAndCapture(
-      { x: 430, y: 110, width: 580, height: 480 },
-      "preview-probe"
-    )`,
-  );
+  let capture = null;
+  const captureDeadline = Date.now() + 5_000;
+  while (
+    (typeof capture !== "string" || capture.length < 100) &&
+    Date.now() < captureDeadline
+  ) {
+    capture = await evaluate(
+      appTarget,
+      `window["claude.web"].CoworkFilePreview.parkAndCapture(
+        { x: 430, y: 110, width: 580, height: 480 },
+        "preview-probe"
+      )`,
+    );
+    if (typeof capture !== "string" || capture.length < 100)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+  }
   const hidden = await evaluate(
     appTarget,
     `window["claude.web"].CoworkFilePreview.hide("preview-probe")`,
@@ -186,14 +212,18 @@ try {
   if (!rendered?.text?.includes("Native local preview proof"))
     throw new Error(`Preview HTML did not render: ${JSON.stringify(rendered)}`);
   if (rendered.background !== "rgb(12, 34, 56)")
-    throw new Error(`Relative preview assets failed: ${JSON.stringify(rendered)}`);
+    throw new Error(
+      `Relative preview assets failed: ${JSON.stringify(rendered)}`,
+    );
   if (typeof capture !== "string" || capture.length < 100)
-    throw new Error("Preview capture did not return a PNG");
+    throw new Error(
+      `Preview capture did not return a PNG: ${JSON.stringify(capture)}`,
+    );
   if (hidden !== true) throw new Error("Preview did not hide cleanly");
   process.stdout.write(
     `${JSON.stringify(
       {
-        shown,
+        shown: shown.result,
         rendered,
         captureBytes: Math.floor(capture.length * 0.75),
         hidden,

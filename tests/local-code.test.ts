@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocalCodeSessionManager } from "../src/main/local-code";
 
 const temporaryDirectories: string[] = [];
@@ -31,6 +31,29 @@ async function waitForResult(
 }
 
 describe("LocalCodeSessionManager", () => {
+  it("returns contract-shaped bootstrap values for local-only Code services", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-bootstrap-"),
+    );
+    temporaryDirectories.push(directory);
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      () => undefined,
+      () => undefined,
+    );
+
+    expect(await manager.invoke("getDefaultWorkspaceFolders", [])).toEqual([]);
+    expect(await manager.invoke("getDirectMcpServerStatuses", [])).toEqual([]);
+    expect(await manager.invoke("getManagedAskToolNames", [])).toEqual({
+      names: [],
+      patterns: [],
+      complete: true,
+    });
+    expect(await manager.invoke("getSessionsBridgeEnabled", [])).toBe(false);
+    expect(await manager.invoke("getBridgeConsent", [])).toBe(false);
+  });
+
   it("manages workspace customization files without cloud services", async () => {
     const directory = await mkdtemp(
       path.join(os.tmpdir(), "local-code-custom-"),
@@ -162,23 +185,19 @@ describe("LocalCodeSessionManager", () => {
         }),
       ]),
     );
-    expect(
-      await manager.invoke("getLocalSkillFiles", ["frontend-design"]),
-    ).toEqual([
-      expect.objectContaining({
-        path: "SKILL.md",
-        content: expect.stringContaining(
-          "Process: brainstorm, explore, plan, critique, build, critique again",
-        ),
-      }),
-    ]);
-    expect(
-      (
-        (await manager.invoke("getLocalSkillFiles", [
-          "frontend-design",
-        ])) as Array<{ content: string }>
-      )[0]?.content,
-    ).toContain("license: Complete terms in LICENSE.txt");
+    // The official bundled copy ships SKILL.md plus support files such as
+    // LICENSE.txt, so assert on the manifest rather than an exact file list.
+    const frontendFiles = (await manager.invoke("getLocalSkillFiles", [
+      "frontend-design",
+    ])) as Array<{ path: string; content: string }>;
+    expect(frontendFiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "SKILL.md",
+          content: expect.stringContaining("license: Complete terms in"),
+        }),
+      ]),
+    );
     expect(await manager.invoke("getLocalSkillFiles", ["proof-skill"])).toEqual(
       [
         expect.objectContaining({
@@ -317,6 +336,7 @@ describe("LocalCodeSessionManager", () => {
         {
           cwd: workspace,
           message: "Create proof.txt",
+          model: "stale-ui-model",
           permissionMode: "bypassPermissions",
         },
       ])) as { sessionId: string };
@@ -326,6 +346,21 @@ describe("LocalCodeSessionManager", () => {
         "local code harness proof",
       );
       expect(requests).toHaveLength(3);
+      expect(requests.map((request) => request.model)).toEqual([
+        "test-code-model",
+        "test-code-model",
+        "test-code-model",
+      ]);
+      expect(requests[0].messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: "system",
+            content: expect.stringMatching(
+              /Current local date and time:[\s\S]+Current UTC date and time:[\s\S]+Local timezone:/,
+            ),
+          }),
+        ]),
+      );
       expect(requests[0].messages).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -460,6 +495,255 @@ describe("LocalCodeSessionManager", () => {
         ])) as unknown[],
       ).toHaveLength(transcript.length);
     } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("streams reasoning and assistant text while accumulating fragmented tool calls", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    let providerTimeoutSpy: { mockRestore: () => void } | undefined;
+    const server = createServer(async (request, response) => {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      requests.push(JSON.parse(body) as Record<string, unknown>);
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      const send = (event: unknown) =>
+        response.write(`data: ${JSON.stringify(event)}\n\n`);
+      if (requests.length === 1) {
+        send({
+          choices: [{ delta: { content: "<|channel|>ana" } }],
+        });
+        send({
+          choices: [
+            {
+              delta: {
+                content: "lysisI should create the proof file.<|channel|>fi",
+              },
+            },
+          ],
+        });
+        send({
+          choices: [{ delta: { content: "nalI’m creating it now." } }],
+        });
+        send({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_stream_write",
+                    function: {
+                      name: "Wr",
+                      arguments: '{"file_path":"/home/user/stream-proof.md",',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+        send({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    function: {
+                      name: "ite",
+                      arguments: '"content":"streamed tool proof"}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+        response.end("data: [DONE]\n\n");
+        return;
+      }
+      send({
+        choices: [{ delta: { reasoning_content: "The file exists. " } }],
+      });
+      for (let index = 0; index < 1_000; index += 1)
+        send({ choices: [{ delta: { reasoning_content: "x" } }] });
+      send({ choices: [{ delta: { content: "Created stream-proof.md " } }] });
+      send({ choices: [{ delta: { content: "successfully." } }] });
+      response.end(
+        `data: ${JSON.stringify({ usage: { prompt_tokens: 21, completion_tokens: 9 }, choices: [] })}\n\ndata: [DONE]\n\n`,
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Missing streaming provider address");
+      const directory = await mkdtemp(
+        path.join(os.tmpdir(), "local-code-stream-"),
+      );
+      const workspace = await mkdtemp(
+        path.join(os.tmpdir(), "local-code-stream-root-"),
+      );
+      temporaryDirectories.push(directory, workspace);
+      const events: Array<Record<string, unknown>> = [];
+      const manager = await LocalCodeSessionManager.create(
+        directory,
+        () => ({
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          model: "streaming-code-model",
+          thinkingStartTag: "<|channel|>analysis",
+          thinkingEndTag: "<|channel|>final",
+        }),
+        (event) => events.push(event),
+        () => undefined,
+      );
+      providerTimeoutSpy = vi.spyOn(AbortSignal, "timeout");
+      const started = (await manager.invoke("start", [
+        {
+          cwd: workspace,
+          message: "Create the streaming proof",
+          permissionMode: "bypassPermissions",
+        },
+      ])) as { sessionId: string };
+      const transcript = await waitForResult(manager, started.sessionId);
+
+      expect(providerTimeoutSpy).not.toHaveBeenCalled();
+      expect(requests).toHaveLength(2);
+      expect(requests.every((request) => request.stream === true)).toBe(true);
+      expect(
+        await readFile(path.join(workspace, "stream-proof.md"), "utf8"),
+      ).toBe("streamed tool proof");
+
+      const streamEvents = events.flatMap((outer) => {
+        const message = outer.message;
+        if (
+          outer.type !== "message" ||
+          typeof message !== "object" ||
+          message === null ||
+          !("type" in message) ||
+          message.type !== "stream_event" ||
+          !("event" in message) ||
+          typeof message.event !== "object" ||
+          message.event === null
+        )
+          return [];
+        return [message.event as Record<string, unknown>];
+      });
+      expect(streamEvents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "message_start" }),
+          expect.objectContaining({
+            type: "content_block_delta",
+            delta: expect.objectContaining({
+              type: "thinking_delta",
+              thinking: "I should create the proof file.",
+            }),
+          }),
+          expect.objectContaining({
+            type: "content_block_delta",
+            delta: expect.objectContaining({
+              type: "text_delta",
+              text: "Created stream-proof.md successfully.",
+            }),
+          }),
+          expect.objectContaining({ type: "message_stop" }),
+          expect.objectContaining({
+            type: "content_block_start",
+            content_block: expect.objectContaining({
+              type: "tool_use",
+              id: "call_stream_write",
+              name: "Write",
+            }),
+          }),
+          expect.objectContaining({
+            type: "content_block_delta",
+            delta: expect.objectContaining({
+              type: "input_json_delta",
+              partial_json:
+                '{"file_path":"/home/user/stream-proof.md","content":"streamed tool proof"}',
+            }),
+          }),
+        ]),
+      );
+      expect(
+        streamEvents.filter(
+          (event) =>
+            event.type === "content_block_delta" &&
+            typeof event.delta === "object" &&
+            event.delta !== null &&
+            "type" in event.delta &&
+            event.delta.type === "thinking_delta",
+        ),
+      ).toHaveLength(2);
+      const streamedToolIndex = events.findIndex((outer) => {
+        const message = outer.message;
+        return (
+          outer.type === "message" &&
+          typeof message === "object" &&
+          message !== null &&
+          "type" in message &&
+          message.type === "stream_event" &&
+          "event" in message &&
+          typeof message.event === "object" &&
+          message.event !== null &&
+          "type" in message.event &&
+          message.event.type === "content_block_start" &&
+          "content_block" in message.event &&
+          typeof message.event.content_block === "object" &&
+          message.event.content_block !== null &&
+          "type" in message.event.content_block &&
+          message.event.content_block.type === "tool_use"
+        );
+      });
+      const firstPartialIndex = events.findIndex((outer) => {
+        const message = outer.message;
+        return (
+          outer.type === "message" &&
+          typeof message === "object" &&
+          message !== null &&
+          "type" in message &&
+          message.type === "stream_event"
+        );
+      });
+      const firstFinalAssistantIndex = events.findIndex((outer) => {
+        const message = outer.message;
+        return (
+          outer.type === "message" &&
+          typeof message === "object" &&
+          message !== null &&
+          "type" in message &&
+          message.type === "assistant"
+        );
+      });
+      expect(firstPartialIndex).toBeGreaterThanOrEqual(0);
+      expect(streamedToolIndex).toBeGreaterThan(firstPartialIndex);
+      expect(streamedToolIndex).toBeLessThan(firstFinalAssistantIndex);
+      expect(firstFinalAssistantIndex).toBeGreaterThan(firstPartialIndex);
+      expect(transcript).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "result",
+            result: "Created stream-proof.md successfully.",
+          }),
+        ]),
+      );
+      expect(transcript).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ type: "stream_event" }),
+        ]),
+      );
+    } finally {
+      providerTimeoutSpy?.mockRestore();
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );
@@ -728,6 +1012,92 @@ describe("LocalCodeSessionManager", () => {
           type: "result",
           result: "Fallback tool loop complete.",
         }),
+      );
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("recovers a name-less textual Bash call from a provider that accepts tool schemas", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const server = createServer(async (request, response) => {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      requests.push(JSON.parse(body) as Record<string, unknown>);
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content:
+                  requests.length === 1
+                    ? '<tool_call>{"command":"node -p "40+2""}</tool_call>'
+                    : "Hybrid textual tool loop complete.",
+              },
+            },
+          ],
+        }),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Missing hybrid provider address");
+      const directory = await mkdtemp(
+        path.join(os.tmpdir(), "local-code-hybrid-"),
+      );
+      const workspace = await mkdtemp(
+        path.join(os.tmpdir(), "local-code-hybrid-root-"),
+      );
+      temporaryDirectories.push(directory, workspace);
+      const permissions: object[] = [];
+      let manager: LocalCodeSessionManager;
+      manager = await LocalCodeSessionManager.create(
+        directory,
+        () => ({
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          model: "hybrid-model",
+        }),
+        () => undefined,
+        (request) => {
+          permissions.push(request);
+          queueMicrotask(() => {
+            void manager.invoke("respondToToolPermission", [
+              request.requestId,
+              "once",
+            ]);
+          });
+        },
+      );
+      const started = (await manager.invoke("start", [
+        {
+          cwd: workspace,
+          message: "Run the proof command",
+          permissionMode: "default",
+        },
+      ])) as { sessionId: string };
+      const transcript = await waitForResult(manager, started.sessionId);
+      await manager.invoke("stop", [started.sessionId]);
+
+      expect(requests).toHaveLength(2);
+      expect(requests[0].tools).toEqual(expect.any(Array));
+      expect(requests[1].tools).toBeUndefined();
+      expect(permissions).toHaveLength(1);
+      expect(transcript).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            type: "result",
+            result: "Hybrid textual tool loop complete.",
+          }),
+        ]),
       );
     } finally {
       await new Promise<void>((resolve, reject) =>

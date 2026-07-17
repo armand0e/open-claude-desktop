@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface PersistentState {
@@ -135,18 +135,31 @@ export class StateStore {
   async update(
     mutator: (draft: PersistentState) => void,
   ): Promise<PersistentState> {
-    const draft = this.snapshot();
-    mutator(draft);
-    this.#state = normalizeState(draft);
-    const serialized = `${JSON.stringify(this.#state, null, 2)}\n`;
-    this.#writeChain = this.#writeChain.then(async () => {
-      const directory = path.dirname(this.filePath);
-      await mkdir(directory, { recursive: true });
-      const temporary = `${this.filePath}.${randomUUID()}.tmp`;
-      await writeFile(temporary, serialized, { encoding: "utf8", mode: 0o600 });
-      await rename(temporary, this.filePath);
-    });
-    await this.#writeChain;
-    return this.snapshot();
+    let committed: PersistentState | undefined;
+    const pending = this.#writeChain
+      .catch(() => undefined)
+      .then(async () => {
+        const draft = this.snapshot();
+        mutator(draft);
+        const nextState = normalizeState(draft);
+        const serialized = `${JSON.stringify(nextState, null, 2)}\n`;
+        const directory = path.dirname(this.filePath);
+        await mkdir(directory, { recursive: true });
+        const temporary = `${this.filePath}.${randomUUID()}.tmp`;
+        try {
+          await writeFile(temporary, serialized, {
+            encoding: "utf8",
+            mode: 0o600,
+          });
+          await rename(temporary, this.filePath);
+        } finally {
+          await rm(temporary, { force: true }).catch(() => undefined);
+        }
+        this.#state = nextState;
+        committed = this.snapshot();
+      });
+    this.#writeChain = pending;
+    await pending;
+    return committed ?? this.snapshot();
   }
 }

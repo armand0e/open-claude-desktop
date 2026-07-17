@@ -1,11 +1,13 @@
 {
-  "name": "claude-desktop-open-source-reconstruction",
-  "productName": "Claude Local",
-  "version": "1.21459.1",
+  "name": "open-claude",
+  "productName": "Open-Claude",
+  "desktopName": "Open-Claude.desktop",
+  "version": "0.0.1",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.cjs",
-  "description": "Clean-room, evidence-backed reconstruction of the Claude Desktop shell",
+  "description": "A standalone, local-first reconstruction of the Claude Desktop experience",
+  "author": "Open-Claude contributors",
   "scripts": {
     "reference:extract": "node tools/extract-reference.mjs",
     "reference:analyze": "node tools/analyze-reference.mjs",
@@ -15,6 +17,8 @@
     "reference:coverage": "node tools/report-implementation.mjs",
     "reference:recover": "npm run reference:extract && npm run reference:analyze && npm run reference:preloads && npm run reference:signatures && npm run reference:generate && npm run reference:coverage",
     "build": "npm run typecheck && node tools/build-electron.mjs && vite build",
+    "dist:win": "npm run build && node tools/prepare-package-assets.mjs && electron-builder --win nsis --x64",
+    "dist:linux": "npm run build && node tools/prepare-package-assets.mjs && electron-builder --linux AppImage --x64",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "format": "prettier --write --ignore-unknown .",
@@ -23,21 +27,29 @@
     "smoke:hosted": "node tools/smoke-electron.mjs hosted",
     "smoke:local": "node tools/smoke-electron.mjs local",
     "smoke:local-chat": "node tools/smoke-local-chat.mjs",
+    "probe:streaming-flow": "node tools/smoke-local-chat.mjs flow",
     "smoke:local-reasoning": "node tools/smoke-local-chat.mjs reasoning",
     "smoke:local-diagram": "node tools/smoke-local-chat.mjs diagram",
     "smoke:local-artifact": "node tools/smoke-local-chat.mjs artifact",
+    "probe:web-search-toggle": "node tools/smoke-local-chat.mjs web-disabled",
+    "probe:retry-state": "node tools/smoke-local-chat.mjs retry",
     "smoke:local-attachment": "node tools/smoke-local-chat.mjs attachment",
     "smoke:local-code": "node tools/smoke-local-code.mjs",
+    "probe:code-streaming": "node tools/smoke-local-code.mjs streaming",
     "smoke:local-code-permission": "node tools/smoke-local-code.mjs permission",
     "smoke:local-code-bypass": "node tools/smoke-local-code.mjs bypass",
     "smoke:local-code-terminal": "node tools/smoke-local-code.mjs terminal",
     "smoke:standalone": "node tools/smoke-standalone.mjs",
+    "smoke:packaged": "node tools/smoke-packaged.mjs",
     "probe:real-settings": "node tools/probe-real-settings.mjs",
+    "probe:real-chat-navigation": "node tools/probe-real-chat-navigation.mjs",
     "probe:real-navigation": "node tools/probe-real-navigation.mjs",
     "probe:real-file-preview": "node tools/probe-real-file-preview.mjs",
     "probe:real-launch-preview": "node tools/probe-real-launch-preview.mjs",
+    "probe:real-code-artifact-selection": "node tools/probe-real-code-artifact-selection.mjs",
     "probe:real-artifact-gallery": "node tools/probe-real-artifact-gallery.mjs",
     "smoke:real-chat": "node tools/probe-real-chat.mjs",
+    "smoke:real-web": "node tools/probe-real-chat.mjs web",
     "smoke:real-attachment": "node tools/probe-real-chat.mjs attachment",
     "smoke:real-artifact": "node tools/probe-real-chat.mjs artifact",
     "smoke:real-code": "node tools/smoke-local-code.mjs real",
@@ -46,8 +58,91 @@
     "smoke:real-code-terminal": "node tools/smoke-local-code.mjs real terminal",
     "smoke:real-code-all-tools": "node tools/smoke-local-code.mjs real all-tools",
     "smoke:real": "node tools/smoke-real.mjs",
+    "mock:openai": "node tools/mock-openai-server.mjs",
     "dev": "vite",
     "start": "electron ."
+  },
+  "build": {
+    "appId": "io.openclaude.desktop",
+    "productName": "Open-Claude",
+    "asar": true,
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/node-pty/**/*"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": ".package-assets"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "src/main/local-search-proxy.cjs",
+      "LICENSE",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".package-assets/ion-dist",
+        "to": "ion-dist",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "assets/builtin-skills",
+        "to": "builtin-skills",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "protocols": [
+      {
+        "name": "Open-Claude",
+        "schemes": [
+          "open-claude"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "executableName": "Open-Claude",
+      "icon": ".package-assets/icon.png"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "executableName": "open-claude",
+      "icon": ".package-assets/icon.png",
+      "category": "Development",
+      "artifactName": "Open-Claude-${version}-x86_64.${ext}",
+      "syncDesktopName": true
+    },
+    "nsis": {
+      "artifactName": "Open-Claude-Setup-${version}.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Open-Claude",
+      "uninstallDisplayName": "Open-Claude",
+      "deleteAppDataOnUninstall": false,
+      "perMachine": false
+    }
   },
   "dependencies": {
     "mermaid": "11.16.0",

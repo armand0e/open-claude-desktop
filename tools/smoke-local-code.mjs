@@ -12,6 +12,7 @@ const permissionMode = process.argv.includes("permission");
 const bypassMode = process.argv.includes("bypass");
 const toolPermissionMode = permissionMode || bypassMode;
 const terminalMode = process.argv.includes("terminal");
+const streamingMode = process.argv.includes("streaming");
 const expectedReasoning = toolPermissionMode
   ? "I should request approval before running the command."
   : "I should inspect fixture.txt before writing the proof.";
@@ -183,6 +184,7 @@ async function evaluateEventually(port, expression, timeout = 30_000) {
 }
 
 const requests = [];
+let firstProviderResponseCompletedAt = null;
 const provider = createHttpServer(async (request, response) => {
   if (request.method === "GET" && request.url === "/v1/models") {
     response.writeHead(200, { "Content-Type": "application/json" });
@@ -193,6 +195,137 @@ const provider = createHttpServer(async (request, response) => {
     let body = "";
     for await (const chunk of request) body += chunk;
     requests.push(JSON.parse(body));
+    if (streamingMode) {
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      const send = (event) =>
+        response.write(`data: ${JSON.stringify(event)}\n\n`);
+      if (requests.length === 1) {
+        send({
+          choices: [
+            {
+              delta: {
+                reasoning_content:
+                  "I should inspect fixture.txt before writing the proof.",
+              },
+            },
+          ],
+        });
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        send({ choices: [{ delta: { content: "I’ll inspect " } }] });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        send({ choices: [{ delta: { content: "the fixture first." } }] });
+        send({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_read_fixture",
+                    function: {
+                      name: "Re",
+                      arguments: '{"file_path":"fixt',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+        send({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    function: { name: "ad", arguments: 'ure.txt"}' },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+        // Keep the provider turn open long enough to prove that the native
+        // renderer paints partial content before the completion is finished.
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        response.end(
+          `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 20, completion_tokens: 8 } })}\n\ndata: [DONE]\n\n`,
+        );
+        firstProviderResponseCompletedAt = Date.now();
+        return;
+      }
+      if (requests.length === 2) {
+        send({
+          choices: [
+            {
+              delta: {
+                content: "I found the fixture and will create the proof file.",
+              },
+            },
+          ],
+        });
+        send({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: "call_write_proof",
+                    function: {
+                      name: "Wri",
+                      arguments:
+                        '{"file_path":"code-smoke-proof.md","content":"# Local Code proof\\n\\nRead fixture: ',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+        send({
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    function: {
+                      name: "te",
+                      arguments: 'native Code renderer proof phrase\\n"}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        });
+        response.end("data: [DONE]\n\n");
+        return;
+      }
+      send({
+        choices: [{ delta: { content: "Local Code smoke complete: " } }],
+      });
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      send({
+        choices: [
+          {
+            delta: {
+              content: "I read fixture.txt and created code-smoke-proof.md.",
+            },
+          },
+        ],
+      });
+      response.end(
+        `data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 60, completion_tokens: 15 } })}\n\ndata: [DONE]\n\n`,
+      );
+      return;
+    }
     response.writeHead(200, { "Content-Type": "application/json" });
     if (requests.length === 1) {
       response.end(
@@ -323,27 +456,27 @@ await writeFile(
 );
 execFileSync("git", ["init", "-b", "main", workspace], {
   stdio: "ignore",
-  windowsHide: true,
+  windowsHide: false,
 });
 execFileSync("git", ["-C", workspace, "config", "user.name", "Local Test"], {
   stdio: "ignore",
-  windowsHide: true,
+  windowsHide: false,
 });
 execFileSync(
   "git",
   ["-C", workspace, "config", "user.email", "local@test.invalid"],
   {
     stdio: "ignore",
-    windowsHide: true,
+    windowsHide: false,
   },
 );
 execFileSync("git", ["-C", workspace, "add", "fixture.txt", "pixel.png"], {
   stdio: "ignore",
-  windowsHide: true,
+  windowsHide: false,
 });
 execFileSync("git", ["-C", workspace, "commit", "-m", "fixture"], {
   stdio: "ignore",
-  windowsHide: true,
+  windowsHide: false,
 });
 const seedSessionId = `workspace-seed-${Date.now()}`;
 await writeFile(
@@ -384,10 +517,13 @@ await writeFile(
   "utf8",
 );
 const output = [];
+const packagedExecutable = process.env.OPEN_CLAUDE_TEST_EXECUTABLE
+  ? path.resolve(process.env.OPEN_CLAUDE_TEST_EXECUTABLE)
+  : null;
 const child = spawn(
-  electron,
+  packagedExecutable ?? electron,
   [
-    ".",
+    ...(packagedExecutable ? [] : ["."]),
     ...(terminalMode && process.env.CLAUDE_SMOKE_DOM_TERMINAL === "1"
       ? ["--disable-gpu", "--disable-webgl", "--disable-software-rasterizer"]
       : []),
@@ -395,10 +531,11 @@ const child = spawn(
   ],
   {
     cwd: process.cwd(),
-    windowsHide: true,
+    windowsHide: false,
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
+      OPEN_CLAUDE_USER_DATA_DIR: profile,
       CLAUDE_LOCAL_USER_DATA_DIR: profile,
       CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
       CLAUDE_DESKTOP_LOCAL_UI: "1",
@@ -433,12 +570,16 @@ try {
       if (!detectedProjects.some(project => project.path === ${JSON.stringify(workspace)}))
         throw new Error("Seeded workspace did not hydrate through LocalSessions: " + JSON.stringify(detectedProjects));
       window.__localCodeEvents = [];
-      window["claude.web"].LocalSessions.onOnEvent(event => {
+      window.__localCodeEventUnsubscribe?.();
+      window.__localCodeEventUnsubscribe = window["claude.web"].LocalSessions.onOnEvent(event => {
         window.__localCodeEvents.push({
           type: event?.type,
           sessionId: event?.sessionId,
           hasMessage: Boolean(event?.message),
-          messageType: event?.message?.type
+          messageType: event?.message?.type,
+          streamType: event?.message?.type === "stream_event" ? event.message.event?.type : null,
+          contentBlockType: event?.message?.event?.content_block?.type || null,
+          toolName: event?.message?.event?.content_block?.name || null
         });
       });
       const codeButton = [...document.querySelectorAll("button")].find(button =>
@@ -519,7 +660,9 @@ try {
         .find(button => visible(button) && !button.disabled);
       if (!send)
         throw new Error("Native Code send button was not enabled: " + composer.textContent);
+      const activityWordBeforeSend = document.documentElement.dataset.openClaudeActivityWord;
       send.click();
+      const activityWordAfterSend = document.documentElement.dataset.openClaudeActivityWord;
       const sessionDeadline = Date.now() + 20000;
       let session;
       while (!session && Date.now() < sessionDeadline) {
@@ -534,7 +677,9 @@ try {
       return session ? {
         sessionId: session.sessionId,
         skillNames: skills.map(skill => skill.name),
-        builtinSkills: skills.filter(skill => skill.builtIn).map(skill => skill.name)
+        builtinSkills: skills.filter(skill => skill.builtIn).map(skill => skill.name),
+        activityWordBeforeSend,
+        activityWordAfterSend
       } : null;
     })()`,
   );
@@ -547,6 +692,55 @@ try {
       started.skillNames?.includes("skill-creator"),
     `Built-in local skills were not available through the native API: ${JSON.stringify(started)}`,
   );
+  assert(
+    started.activityWordBeforeSend &&
+      started.activityWordAfterSend &&
+      started.activityWordBeforeSend !== started.activityWordAfterSend,
+    `Code activity word did not randomize for the new turn: ${JSON.stringify(started)}`,
+  );
+
+  let streamingDiagnostics = null;
+  if (streamingMode) {
+    streamingDiagnostics = await evaluateEventually(
+      debuggerPort,
+      `(async () => {
+        const deadline = Date.now() + 12000;
+        const streamedToolVisible = () => (window.__localCodeEvents || []).some(event =>
+          event.streamType === "content_block_start" &&
+          event.contentBlockType === "tool_use" &&
+          event.toolName === "Read"
+        );
+        while (!(document.body?.innerText?.includes("I’ll inspect the fixture first.") && streamedToolVisible()) && Date.now() < deadline)
+          await new Promise(resolve => setTimeout(resolve, 25));
+        return {
+          observedAt: Date.now(),
+          partialVisible: document.body?.innerText?.includes("I’ll inspect") || false,
+          exactPartialVisible: document.body?.innerText?.includes("I’ll inspect the fixture first.") || false,
+          duplicatedPartialVisible: document.body?.innerText?.includes("I’ll inspect I’ll inspect") || false,
+          streamedToolVisible: streamedToolVisible(),
+          activityWord: document.documentElement.dataset.openClaudeActivityWord || null,
+          activityVisible: Boolean(document.documentElement.dataset.openClaudeActivityWord) &&
+            (document.body?.innerText?.includes(document.documentElement.dataset.openClaudeActivityWord + "…") || false),
+          reconnectingVisible: document.body?.innerText?.includes("Reconnecting…") || false,
+          streamEvents: (window.__localCodeEvents || []).filter(event => event.messageType === "stream_event"),
+          bodyText: document.body?.innerText?.slice(-2500) || ""
+        };
+      })()`,
+      15_000,
+    );
+    streamingDiagnostics.providerCompletedAt = firstProviderResponseCompletedAt;
+    assert(
+      streamingDiagnostics.partialVisible &&
+        streamingDiagnostics.exactPartialVisible &&
+        !streamingDiagnostics.duplicatedPartialVisible &&
+        streamingDiagnostics.streamedToolVisible &&
+        streamingDiagnostics.activityWord === started.activityWordAfterSend &&
+        streamingDiagnostics.activityVisible &&
+        !streamingDiagnostics.reconnectingVisible &&
+        firstProviderResponseCompletedAt === null,
+      `Native Code did not render partial text and tool activity before the provider completed: ${JSON.stringify(streamingDiagnostics)}`,
+    );
+  }
 
   let permissionDiagnostics = null;
   if (permissionMode || allToolsMode) {
@@ -562,25 +756,48 @@ try {
             messageType: event?.message?.type
           });
         });
-        const deadline = Date.now() + ${realMode ? 240000 : 20000};
+        const deadline = Date.now() + ${realMode ? 120000 : 20000};
         let candidate;
+        let session;
+        let observedRunning = false;
         while (Date.now() < deadline) {
           candidate = [...document.querySelectorAll("button")].find(button =>
             /^(allow once|approve once|run once)/i.test(button.textContent?.trim() || "")
           );
           if (candidate) break;
+          session = await window["claude.web"].LocalSessions.getSession(${JSON.stringify(started.sessionId)});
+          if (session?.isRunning === true) observedRunning = true;
+          else if (observedRunning && session?.isRunning === false) break;
           await new Promise(resolve => setTimeout(resolve, 100));
         }
         const buttons = [...document.querySelectorAll("button")].map(button => ({
           text: button.textContent?.trim().slice(0, 100),
           ariaLabel: button.getAttribute("aria-label")
         })).filter(item => item.text || item.ariaLabel);
-        if (!candidate) throw new Error("Native approval button was not found: " + JSON.stringify(buttons));
+        if (!candidate) {
+          const transcript = await window["claude.web"].LocalSessions.getTranscript(${JSON.stringify(started.sessionId)});
+          return {
+            clicked: null,
+            bodyText: document.body?.innerText?.slice(0, 4000),
+            buttons,
+            session,
+            transcriptTypes: transcript.map(message => message.type),
+            toolNames: transcript.flatMap(message =>
+              message.type === "assistant" && Array.isArray(message.message?.content)
+                ? message.message.content.filter(block => block.type === "tool_use").map(block => block.name)
+                : []
+            )
+          };
+        }
         const clicked = candidate.textContent?.trim();
         candidate.click();
         return { clicked, bodyText: document.body?.innerText?.slice(0, 4000), buttons };
       })()`,
-      realMode ? 250_000 : 25_000,
+      realMode ? 130_000 : 25_000,
+    );
+    assert(
+      permissionDiagnostics.clicked,
+      `Native approval button was not found: ${JSON.stringify(permissionDiagnostics)}`,
     );
   }
 
@@ -928,6 +1145,35 @@ try {
         12_000,
       )
     : null;
+  const settledStreamDiagnostics = streamingMode
+    ? await evaluateEventually(
+        debuggerPort,
+        `(async () => {
+          const deadline = Date.now() + 6000;
+          let reconnecting = true;
+          while (reconnecting && Date.now() < deadline) {
+            reconnecting = [...document.querySelectorAll("*")].some(element =>
+              [...element.childNodes].some(node =>
+                node.nodeType === Node.TEXT_NODE && /^Reconnecting…?$/.test(node.textContent?.trim() || "")
+              )
+            );
+            if (reconnecting) await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          return {
+            reconnecting,
+            sessionRunning: (await window["claude.web"].LocalSessions.getSession(${JSON.stringify(started.sessionId)}))?.isRunning,
+            bodyText: document.body?.innerText?.slice(-1500) || ""
+          };
+        })()`,
+        10_000,
+      )
+    : null;
+  if (streamingMode)
+    assert(
+      settledStreamDiagnostics?.reconnecting === false &&
+        settledStreamDiagnostics?.sessionRunning === false,
+      `Native Code stream did not settle after completion: ${JSON.stringify(settledStreamDiagnostics)}`,
+    );
   if (!realMode) {
     assert(
       requests.length === (toolPermissionMode ? 2 : 3),
@@ -976,6 +1222,48 @@ try {
         rendered.session?.pendingToolPermissions?.length === 0,
       `Bypass permissions did not survive native session start: ${JSON.stringify(rendered.session)}`,
     );
+  let allToolsDiagnostics = null;
+  let allToolNames = rendered.toolNames || [];
+  if (
+    realMode &&
+    allToolsMode &&
+    !allToolNames.includes("mcp__desktop__present_artifact")
+  ) {
+    allToolsDiagnostics = await evaluateEventually(
+      debuggerPort,
+      `(async () => {
+        const sessions = window["claude.web"].LocalSessions;
+        const sessionId = ${JSON.stringify(started.sessionId)};
+        await sessions.sendMessage(
+          sessionId,
+          "The desktop presentation step is still missing. Call mcp__desktop__present_artifact now with title MCP Artifact Proof, type text/html, and content <html><body>MCP_ARTIFACT_OK</body></html>. Use that exact tool; do not call Read or Artifact. After it succeeds, reply with exactly MCP_RETRY_OK."
+        );
+        const deadline = Date.now() + 120000;
+        let session;
+        let transcript = [];
+        let toolNames = [];
+        while (Date.now() < deadline) {
+          session = await sessions.getSession(sessionId);
+          transcript = await sessions.getTranscript(sessionId);
+          toolNames = transcript.flatMap(message =>
+            message.type === "assistant" && Array.isArray(message.message?.content)
+              ? message.message.content.filter(block => block.type === "tool_use").map(block => block.name)
+              : []
+          );
+          if (session?.isRunning === false && toolNames.includes("mcp__desktop__present_artifact")) break;
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        return {
+          session,
+          toolNames,
+          transcriptTypes: transcript.map(message => message.type),
+          bodyText: document.body?.innerText?.slice(-5000) || ""
+        };
+      })()`,
+      130_000,
+    );
+    allToolNames = allToolsDiagnostics.toolNames || allToolNames;
+  }
   if (allToolsMode) {
     for (const tool of [
       "Glob",
@@ -988,8 +1276,8 @@ try {
       "mcp__desktop__present_artifact",
     ])
       assert(
-        rendered.toolNames?.includes(tool),
-        `Live all-tools session did not execute ${tool}: ${JSON.stringify(rendered.toolNames)}`,
+        allToolNames.includes(tool),
+        `Live all-tools session did not execute ${tool}: ${JSON.stringify({ toolNames: allToolNames, followup: allToolsDiagnostics })}`,
       );
     const store = JSON.parse(
       await readFile(path.join(profile, "local-code-sessions.json"), "utf8"),
@@ -1076,8 +1364,11 @@ try {
         proofPath,
         permissionDiagnostics,
         terminalDiagnostics,
+        streamingDiagnostics,
+        settledStreamDiagnostics,
         thinkingViewDiagnostics,
         lifecycleDiagnostics,
+        allToolsDiagnostics,
         reloadDiagnostics,
         nativeRendererText: rendered.bodyText.slice(0, 1200),
         reconnectingHtml: rendered.reconnectingHtml,

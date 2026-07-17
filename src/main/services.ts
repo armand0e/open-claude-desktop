@@ -28,6 +28,7 @@ import { originOf, TRUSTED_REMOTE_ORIGINS } from "../shared/security";
 import { StateStore } from "./state";
 import { FileAccessPolicy } from "./file-access";
 import type { LocalCodeSessionManager } from "./local-code";
+import type { LocalBackend } from "./local-backend";
 import type { LocalFilePreview } from "./local-file-preview";
 import type { LocalLaunchPreview } from "./local-launch-preview";
 
@@ -36,6 +37,7 @@ const execFileAsync = promisify(execFile);
 export interface ServiceContext {
   readonly state: StateStore;
   readonly codeSessions: LocalCodeSessionManager;
+  readonly localBackend?: LocalBackend | null;
   readonly filePreview: LocalFilePreview;
   readonly launchPreview: LocalLaunchPreview;
   mainWindow(): BrowserWindow | null;
@@ -295,6 +297,24 @@ export class ServiceDispatcher {
   private readonly fileAccess = new FileAccessPolicy();
 
   constructor(private readonly context: ServiceContext) {}
+
+  handleChromeAction(action: unknown, event?: IpcMainInvokeEvent): unknown {
+    if (action === "menu") return this.popupMainMenu(event);
+    if (action === "back") return this.browserNavigation("goBack", event);
+    if (action === "forward") return this.browserNavigation("goForward", event);
+    if (action === "sidebar") {
+      const channel = eventChannel("claude.web.MenuEvents", "toggleSidebar");
+      if (channel) this.context.broadcast(channel);
+      return Boolean(channel);
+    }
+    if (action === "search") {
+      const contents = this.context.mainView()?.webContents;
+      if (!contents || contents.isDestroyed()) return false;
+      contents.send("cmdK");
+      return true;
+    }
+    return false;
+  }
 
   invoke(
     parsed: ParsedChannel,
@@ -1039,7 +1059,7 @@ export class ServiceDispatcher {
     return null;
   }
 
-  private async claudeCode(method: string, _args: unknown[]): Promise<unknown> {
+  private async claudeCode(method: string, args: unknown[]): Promise<unknown> {
     if (method === "checkGitAvailable") {
       return execFileAsync("git", ["--version"], { windowsHide: true }).then(
         () => ({ available: true }),
@@ -1053,9 +1073,33 @@ export class ServiceDispatcher {
     // surface is ready even when Anthropic's separately installed CLI is absent.
     if (method === "getStatus") return "ready";
     if (method === "prepare") return { success: true };
-    if (method === "resolveLocalSettings") return {};
-    if (method === "patchUserSettings" || method === "setEnableWorkflows")
+    if (method === "resolveLocalSettings") {
+      const preferences = this.context.state.get("appConfig").preferences;
+      return typeof preferences.enableWorkflows === "boolean"
+        ? {
+            enableWorkflows: {
+              value: preferences.enableWorkflows,
+              source: "user",
+            },
+          }
+        : {};
+    }
+    if (method === "patchUserSettings" || method === "setEnableWorkflows") {
+      const patch =
+        method === "patchUserSettings" &&
+        args[0] &&
+        typeof args[0] === "object" &&
+        !Array.isArray(args[0])
+          ? (args[0] as Record<string, unknown>)
+          : { enableWorkflows: args[0] };
+      if (!("enableWorkflows" in patch)) return true;
+      await this.context.state.update((draft) => {
+        if (typeof patch.enableWorkflows === "boolean")
+          draft.appConfig.preferences.enableWorkflows = patch.enableWorkflows;
+        else delete draft.appConfig.preferences.enableWorkflows;
+      });
       return true;
+    }
     if (method === "getPeriodUsage") return null;
     return undefined;
   }
@@ -1065,6 +1109,16 @@ export class ServiceDispatcher {
     args: unknown[],
     event?: IpcMainInvokeEvent,
   ): Promise<unknown> {
+    if (method === "openOutputsDir" && typeof args[0] === "string") {
+      const session = (await this.context.codeSessions.invoke("getSession", [
+        args[0],
+      ])) as { cwd?: unknown } | null;
+      if (typeof session?.cwd !== "string")
+        throw new Error("Code session was not found");
+      const error = await shell.openPath(path.resolve(session.cwd));
+      if (error) throw new Error(error);
+      return undefined;
+    }
     if (method === "pickFileAtCwd" && typeof args[0] === "string") {
       const owner = focusedWindow(this.context, event);
       const options = {
@@ -1131,7 +1185,12 @@ export class ServiceDispatcher {
     args: unknown[],
   ): unknown | Promise<unknown> {
     if (method === "getAllArtifacts")
-      return this.context.codeSessions.invoke("getAllArtifacts", []);
+      return Promise.resolve(
+        this.context.codeSessions.invoke("getAllArtifacts", []),
+      ).then((codeArtifacts) => [
+        ...(this.context.localBackend?.artifactSummaries() ?? []),
+        ...(Array.isArray(codeArtifacts) ? codeArtifacts : []),
+      ]);
     if (method === "deleteArtifact")
       return this.context.codeSessions.invoke("deleteArtifactById", [args[0]]);
     if (method === "getArtifactMetadata")

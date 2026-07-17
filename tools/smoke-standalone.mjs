@@ -25,7 +25,7 @@ async function waitForIdentity(output, child) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null)
       throw new Error(
-        `Claude Local exited before identity proof (${child.exitCode})`,
+        `Open-Claude exited before identity proof (${child.exitCode})`,
       );
     const match = output
       .join("")
@@ -33,7 +33,7 @@ async function waitForIdentity(output, child) {
     if (match) return JSON.parse(match[1]);
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
-  throw new Error("Timed out waiting for Claude Local identity proof");
+  throw new Error("Timed out waiting for Open-Claude identity proof");
 }
 
 async function waitForPage(port, child) {
@@ -41,7 +41,7 @@ async function waitForPage(port, child) {
   while (Date.now() < deadline) {
     if (child.exitCode !== null)
       throw new Error(
-        `Claude Local exited before rendering (${child.exitCode})`,
+        `Open-Claude exited before rendering (${child.exitCode})`,
       );
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`);
@@ -87,7 +87,7 @@ async function removeProfileWithRetry(directory) {
 }
 
 const appData = await mkdtemp(path.join(os.tmpdir(), "claude-local-identity-"));
-const expectedUserData = path.join(appData, "Claude Local");
+const expectedUserData = path.join(appData, "Open-Claude");
 const output = [];
 const firstPort = await unusedPort();
 const env = {
@@ -101,7 +101,7 @@ delete env.CLAUDE_USER_DATA_DIR;
 const first = spawn(electron, [".", `--remote-debugging-port=${firstPort}`], {
   cwd: process.cwd(),
   env,
-  windowsHide: true,
+  windowsHide: false,
   stdio: ["ignore", "pipe", "pipe"],
 });
 first.stdout.setEncoding("utf8");
@@ -113,7 +113,7 @@ let second;
 try {
   const identity = await waitForIdentity(output, first);
   await waitForPage(firstPort, first);
-  assert(identity.name === "Claude Local", `Wrong app name: ${identity.name}`);
+  assert(identity.name === "Open-Claude", `Wrong app name: ${identity.name}`);
   assert(
     path.resolve(identity.userData) === path.resolve(expectedUserData),
     `Wrong userData path: ${identity.userData}`,
@@ -134,7 +134,7 @@ try {
   second = spawn(electron, [".", `--remote-debugging-port=${secondPort}`], {
     cwd: process.cwd(),
     env,
-    windowsHide: true,
+    windowsHide: false,
     stdio: "ignore",
   });
   const secondExit = await Promise.race([
@@ -143,7 +143,7 @@ try {
   ]);
   assert(
     secondExit !== "timeout",
-    "Claude Local single-instance lock did not engage",
+    "Open-Claude single-instance lock did not engage",
   );
   assert(
     first.exitCode === null,

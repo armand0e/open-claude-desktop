@@ -32,7 +32,8 @@ async function evaluate(target, expression) {
       socket.addEventListener("message", (event) => {
         const message = JSON.parse(event.data);
         if (message.id !== 1) return;
-        if (message.result?.exceptionDetails)
+        if (message.error) reject(new Error(message.error.message));
+        else if (message.result?.exceptionDetails)
           reject(
             new Error(
               message.result.exceptionDetails.exception?.description ??
@@ -68,6 +69,24 @@ async function waitForTarget(port, predicate, child, timeout = 30_000) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("Timed out waiting for an Electron target");
+}
+
+async function evaluateWhenStable(port, predicate, child, expression) {
+  const deadline = Date.now() + 30_000;
+  let lastError;
+  while (Date.now() < deadline) {
+    try {
+      const target = await waitForTarget(port, predicate, child, 2_000);
+      const value = await evaluate(target, expression);
+      if (value !== undefined) return { target, value };
+    } catch (error) {
+      lastError = error;
+      if (!/Execution context was destroyed|Timed out/u.test(String(error)))
+        throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw lastError ?? new Error("Timed out waiting for a stable renderer");
 }
 
 const debuggerPort = await unusedPort();
@@ -130,7 +149,7 @@ const child = spawn(
   [".", `--remote-debugging-port=${debuggerPort}`],
   {
     cwd: process.cwd(),
-    windowsHide: true,
+    windowsHide: false,
     stdio: ["ignore", "ignore", "pipe"],
     env: {
       ...process.env,
@@ -143,16 +162,14 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => stderr.push(chunk));
 
 try {
-  const appTarget = await waitForTarget(
+  const appPredicate = (candidate) =>
+    candidate.type === "page" &&
+    candidate.url.startsWith("app://localhost") &&
+    !candidate.url.startsWith("app://localhost/blank");
+  const evaluated = await evaluateWhenStable(
     debuggerPort,
-    (candidate) =>
-      candidate.type === "page" &&
-      candidate.url.startsWith("app://localhost") &&
-      !candidate.url.startsWith("app://localhost/blank"),
+    appPredicate,
     child,
-  );
-  const result = await evaluate(
-    appTarget,
     `(async () => {
       const deadline = Date.now() + 20000;
       while (!window["claude.web"]?.Launch && Date.now() < deadline)
@@ -173,6 +190,8 @@ try {
       return { serverId, shown, activeServers, available: launch.isAvailable(), artifactId: artifacts[0].id };
     })()`,
   );
+  const appTarget = evaluated.target;
+  const result = evaluated.value;
   if (!result?.serverId || result.shown !== true || result.available !== true)
     throw new Error(
       `Launch API failed: ${JSON.stringify(result)}\n${stderr.join("").slice(-4000)}`,

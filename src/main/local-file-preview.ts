@@ -43,7 +43,9 @@ function rectangle(value: unknown): Rectangle | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as JsonObject;
   const values = [candidate.x, candidate.y, candidate.width, candidate.height];
-  if (!values.every((part) => typeof part === "number" && Number.isFinite(part)))
+  if (
+    !values.every((part) => typeof part === "number" && Number.isFinite(part))
+  )
     return null;
   return {
     x: Math.max(0, Math.round(candidate.x as number)),
@@ -65,7 +67,9 @@ function previewUrl(token: string, relativePath: string): string {
 export class LocalFilePreview {
   readonly #window: () => BrowserWindow | null;
   readonly #codeSessions: LocalCodeSessionManager;
-  readonly #session = electronSession.fromPartition("persist:claude-local-preview");
+  readonly #session = electronSession.fromPartition(
+    `claude-local-preview-${randomUUID()}`,
+  );
   readonly #roots = new Map<string, string>();
   #view: WebContentsView | null = null;
   #attached = false;
@@ -78,6 +82,20 @@ export class LocalFilePreview {
   ) {
     this.#window = window;
     this.#codeSessions = codeSessions;
+    this.#session.webRequest.onBeforeRequest((details, callback) => {
+      try {
+        const url = new URL(details.url);
+        const allowed =
+          (url.protocol === "claude-local-preview:" &&
+            this.#roots.has(url.hostname)) ||
+          ["data:", "blob:", "about:", "chrome-extension:"].includes(
+            url.protocol,
+          );
+        callback({ cancel: !allowed });
+      } catch {
+        callback({ cancel: true });
+      }
+    });
     this.#session.protocol.handle("claude-local-preview", (request) =>
       this.#handle(request),
     );
@@ -106,6 +124,20 @@ export class LocalFilePreview {
             "application/octet-stream",
           "Cache-Control": "no-store",
           "Cross-Origin-Resource-Policy": "same-origin",
+          "Content-Security-Policy": [
+            "default-src 'self' data: blob:",
+            "script-src 'self' 'unsafe-inline'",
+            "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob:",
+            "font-src 'self' data:",
+            "media-src 'self' data: blob:",
+            "connect-src 'none'",
+            "frame-src 'self' data: blob:",
+            "object-src 'none'",
+            "base-uri 'none'",
+            "form-action 'none'",
+          ].join("; "),
+          "X-Content-Type-Options": "nosniff",
         },
       });
     } catch {
@@ -194,9 +226,14 @@ export class LocalFilePreview {
     }
     this.#setBounds(bounds);
     view.setVisible(true);
-    void view.webContents
-      .loadURL(previewUrl(token, path.basename(resolved)))
-      .catch(() => undefined);
+    try {
+      await view.webContents.loadURL(
+        previewUrl(token, path.basename(resolved)),
+      );
+    } catch {
+      this.hide(requestedConsumer);
+      return { ok: false, declineReason: "preview_load_failed" };
+    }
     return { ok: true };
   }
 

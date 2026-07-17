@@ -41,6 +41,9 @@ interface ClientPatch {
 // flow. Local mode needs the ordinary web-chat route, whose HTTP/SSE contract
 // can be implemented by LocalBackend. Apply this only while serving our private
 // in-memory copy; the installed Anthropic asset is never modified.
+const DISABLED_PATCH_IDS = new Set(
+  (process.env.CLAUDE_LOCAL_DISABLE_PATCHES ?? "").split(","),
+);
 const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
   {
     id: "localize-general-instructions-copy",
@@ -159,6 +162,36 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
     find: 'if(rg(e)||Rf(e))return t.jsx($6,{size:n,className:"text-text-500"})',
     replace:
       'if(rg(e)||Rf(e)||"skill"===e)return t.jsx($6,{size:n,className:"text-text-500"})',
+  },
+  {
+    id: "label-code-skill-row-loaded",
+    assetUrlPath: "/assets/v1/c06173196-DmnMdctC.js",
+    // The Code chain renders Skill calls as "Ran skill" and reads the input
+    // field "skill", but the local Skill tool's argument is "name". Show
+    // "Loaded {skill-name} skill" instead (the " skill" suffix and the link
+    // are rendered by label-code-skill-row-link below).
+    find: 'case"Skill":{const t=a("skill");return{verb:e.formatMessage({defaultMessage:"Ran skill",id:"sSRWkTrDlY"}),runningVerb:e.formatMessage({defaultMessage:"Running skill",id:"kNX7UtF75g"}),meta:t?`/${t}`:void 0,metaIsCode:!0,failedVerb:e.formatMessage({defaultMessage:"Failed to run skill",id:"f7JoMbaMVQ"}),kind:o}}',
+    replace:
+      'case"Skill":{const t=a("skill")??a("name");return{verb:"Loaded",runningVerb:"Loading",meta:"string"==typeof t&&t?t:void 0,failedVerb:"Failed to load skill",kind:o}}',
+  },
+  {
+    id: "disable-code-skill-row-expansion",
+    assetUrlPath: "/assets/v1/c06173196-DmnMdctC.js",
+    // Skill rows show only the "Loaded {skill-name} skill" line; there is no
+    // expandable result body for them.
+    find: 'D=!("todos"===l.kind&&0===Lq(s.input).length||"agent_status"===l.kind&&0===ZB(s.input).length||"peerMessage"===l.kind&&!_&&void 0===oq(s.input)&&cq(s.input))',
+    replace:
+      'D=!("Skill"===s.name||"todos"===l.kind&&0===Lq(s.input).length||"agent_status"===l.kind&&0===ZB(s.input).length||"peerMessage"===l.kind&&!_&&void 0===oq(s.input)&&cq(s.input))',
+  },
+  {
+    id: "label-code-skill-row-link",
+    assetUrlPath: "/assets/v1/c06173196-DmnMdctC.js",
+    // Renders the Skill row meta as "{skill-name} skill" where the name links
+    // to the Customize screen for that skill (SPA navigation; the preload
+    // auto-selects the skill from the ?skill= query parameter).
+    find: ':l.meta&&!se?C?t.jsx("a",{href:C,target:"_blank",rel:"noreferrer",',
+    replace:
+      ':l.meta&&!se?"Skill"===s.name?t.jsxs("span",{className:"text-body text-assistant-primary truncate min-w-0",children:[t.jsx("a",{href:"/customize/skills?skill="+encodeURIComponent(String(l.meta)),onClick:n=>{n.preventDefault(),n.stopPropagation();const a="/customize/skills?skill="+encodeURIComponent(String(l.meta));history.pushState({},"",a),window.dispatchEvent(new PopStateEvent("popstate"))},onKeyDown:n=>n.stopPropagation(),className:"underline underline-offset-[3px] hover:text-assistant-primary",children:String(l.meta)})," skill"]}):C?t.jsx("a",{href:C,target:"_blank",rel:"noreferrer",',
   },
   {
     id: "enable-chat-artifacts-gallery-route",
@@ -1313,7 +1346,7 @@ export async function installLocalUiProtocol(
   const patchedAssets = await patchedClientAssets(
     absoluteRoot,
     indexHtml,
-    LOCAL_CLIENT_PATCHES,
+    LOCAL_CLIENT_PATCHES.filter((patch) => !DISABLED_PATCH_IDS.has(patch.id)),
   );
   protocol.handle("app", async (request) => {
     const url = new URL(request.url);

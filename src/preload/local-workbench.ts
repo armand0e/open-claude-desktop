@@ -1602,6 +1602,33 @@ export function installLocalWorkbench(): void {
     );
 
     document.documentElement.append(host);
+    // A Skill row in the Code chain links to /customize/skills?skill=<name>.
+    // The native Customize page has no deep-link support, so select the
+    // matching row once it renders.
+    let customizeSkillHandledUrl = "";
+    const wireCustomizeSkillSelection = () => {
+      if (location.pathname !== "/customize/skills") return;
+      const requested = new URLSearchParams(location.search).get("skill");
+      if (!requested) return;
+      const url = `${location.pathname}${location.search}`;
+      if (customizeSkillHandledUrl === url) return;
+      const normalize = (value: string) =>
+        value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const wanted = normalize(requested);
+      if (!wanted) return;
+      const candidates = [
+        ...document.querySelectorAll<HTMLElement>('button, [role="button"]'),
+      ].filter((element) =>
+        normalize(element.textContent ?? "").includes(wanted),
+      );
+      if (candidates.length === 0) return;
+      // The tightest match is the row itself rather than a page container.
+      candidates.sort(
+        (a, b) => (a.textContent?.length ?? 0) - (b.textContent?.length ?? 0),
+      );
+      customizeSkillHandledUrl = url;
+      candidates[0].click();
+    };
     const wireLocalUi = () => {
       wireLocalNavigation();
       wireSidebarSettings();
@@ -1610,6 +1637,7 @@ export function installLocalWorkbench(): void {
       wireConfiguredModelLabels();
       wireInlineMermaidDiagrams();
       wireCodeArtifactRoute();
+      wireCustomizeSkillSelection();
     };
     const observer = new MutationObserver(wireLocalUi);
     observer.observe(document.documentElement, {

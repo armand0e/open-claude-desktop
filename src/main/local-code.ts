@@ -2332,7 +2332,7 @@ export class LocalCodeSessionManager {
           )
           .join("\n");
         sections.push(
-          `<available_skills>\nSkills are packaged instructions for specific kinds of tasks. When the user's request matches a skill's description, you MUST call the Skill tool with its exact name BEFORE doing that work, then follow the returned instructions. A message starting with /skill-name requires that skill.\n${catalog}\n</available_skills>`,
+          `<available_skills>\nSkills are packaged expert instructions that markedly improve your results for the tasks they cover. Before starting ANY task, scan this list. If a skill's description plausibly covers the request — even partially — you MUST call the Skill tool with its exact name FIRST and follow the returned instructions while doing the work. When several skills match, load each relevant one. Loading a skill is cheap; skipping a relevant skill produces noticeably worse results, so when in doubt, load it. A message starting with /skill-name requires that skill. Never claim a skill was used without actually calling the Skill tool.\n${catalog}\n</available_skills>`,
         );
       }
       for (const entry of entries) {

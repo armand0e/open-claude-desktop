@@ -1534,7 +1534,7 @@ export class LocalBackend {
         const skills = await this.#skillSource.list();
         if (skills.length > 0)
           sections.push(
-            `<available_skills>\nSkills are packaged instructions for specific kinds of tasks. When the user's request matches one, call the skill tool with its exact name BEFORE doing the work, then follow the returned instructions.\n${skills
+            `<available_skills>\nSkills are packaged expert instructions that markedly improve your results for the tasks they cover. Before starting ANY response, scan this list. If a skill's description plausibly covers the user's request — even partially — you MUST call the skill tool with its exact name FIRST, then follow the returned instructions while completing the request. When several skills match, load each relevant one. Loading a skill is cheap; skipping a relevant skill produces noticeably worse results, so when in doubt, load it. Never claim a skill was used without actually calling the tool.\n${skills
               .map((skill) => `- ${skill.name}: ${skill.description}`)
               .join("\n")}\n</available_skills>`,
           );

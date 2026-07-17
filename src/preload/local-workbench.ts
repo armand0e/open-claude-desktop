@@ -571,6 +571,45 @@ export function installLocalWorkbench(): void {
       true,
     );
 
+    // Sandbox output files: download in place. Left to the SPA these links
+    // would either route through the client-side router (breaking the chat
+    // view) or be handed to the external-link opener, where an app://
+    // URL cannot resolve.
+    document.addEventListener(
+      "click",
+      (event) => {
+        const anchor = (event.target as Element | null)?.closest?.("a");
+        if (!(anchor instanceof HTMLAnchorElement) || !anchor.href) return;
+        let url: URL;
+        try {
+          url = new URL(anchor.href);
+        } catch {
+          return;
+        }
+        if (!url.pathname.startsWith("/api/local/sandbox/files/")) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void (async () => {
+          const response = await fetch(url.pathname);
+          if (!response.ok) return;
+          const blob = await response.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = objectUrl;
+          try {
+            link.download = decodeURIComponent(
+              url.pathname.split("/").at(-1) || "download",
+            );
+          } catch {
+            link.download = "download";
+          }
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+        })();
+      },
+      true,
+    );
+
     const host = document.createElement("div");
     host.id = "local-claude-workbench";
     host.hidden = true;
@@ -609,6 +648,12 @@ export function installLocalWorkbench(): void {
         .actions .primary { background: #d97757; border-color: #d97757; color: #fff; }
         .actions .primary:hover { background: #c96647; }
         #status { min-height: 18px; margin: 0; text-align: right; color: var(--cds-text-secondary, #6b675f); font-size: 12px; white-space: pre-wrap; }
+        .subhead { padding: 30px 0 14px; }
+        #sandbox-status { min-height: 18px; margin: 0; text-align: right; color: var(--cds-text-secondary, #6b675f); font-size: 12px; white-space: pre-wrap; }
+        #sandbox-status.ok { color: #2e7d43; }
+        #sandbox-status.bad { color: #c0392b; }
+        #sandbox-status .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; margin-right: 6px; vertical-align: -1px; animation: sandbox-spin .8s linear infinite; }
+        @keyframes sandbox-spin { to { transform: rotate(360deg); } }
         #models { max-height: 160px; overflow: auto; display: grid; gap: 5px; }
         #models:empty { display: none; }
         #models button { text-align: left; border: 0; border-radius: 7px; padding: 6px 8px; background: var(--cds-fill-ghost-hover, rgba(110,104,94,.08)); cursor: pointer; color: inherit; }
@@ -625,6 +670,14 @@ export function installLocalWorkbench(): void {
           <label class="row"><span class="copy"><span class="label">API key</span><span class="hint">Optional for local OpenAI-compatible servers</span></span><input id="api-key" type="password" autocomplete="off" placeholder="Leave blank to keep current key"></label>
           <div class="actions"><button id="models-button" type="button">Discover models</button><button id="save" class="primary" type="button">Save changes</button></div>
           <div id="models"></div><p id="status" role="status"></p>
+        </div>
+        <h1 class="subhead">Capabilities</h1>
+        <div class="section">
+          <div class="row"><span class="copy"><span class="label">Code execution</span><span class="hint">Requires Docker. Lets chat run commands in an isolated Linux container with Python and Node; generated files become downloadable.</span></span>
+            <span class="checks"><input id="sandbox-enabled" type="checkbox" aria-label="Code execution"></span></div>
+          <div class="row"><span class="copy"><span class="label">Sandbox internet access</span><span class="hint">Off keeps sandbox containers fully offline. Applies to containers started after the change.</span></span>
+            <span class="checks"><input id="sandbox-egress" type="checkbox" aria-label="Sandbox internet access"></span></div>
+          <p id="sandbox-status" role="status"></p>
         </div>
       </section>
       <section id="memory-panel" aria-label="Memory" hidden>
@@ -694,13 +747,101 @@ export function installLocalWorkbench(): void {
     const memoryPanel = element<HTMLElement>("#memory-panel");
     const memoryAuto = element<HTMLInputElement>("#memory-auto");
     const memoryStatus = element<HTMLElement>("#memory-status");
+    const sandboxEnabled = element<HTMLInputElement>("#sandbox-enabled");
+    const sandboxEgress = element<HTMLInputElement>("#sandbox-egress");
+    const sandboxStatus = element<HTMLElement>("#sandbox-status");
+    const renderSandboxStatus = (payload: {
+      enabled?: unknown;
+      egress?: unknown;
+      docker?: unknown;
+      image?: unknown;
+      detail?: unknown;
+    }) => {
+      sandboxEnabled.checked = payload.enabled === true;
+      sandboxEgress.checked = payload.egress === true;
+      sandboxStatus.classList.remove("ok", "bad");
+      sandboxStatus.replaceChildren();
+      if (payload.enabled !== true) return;
+      const detail = typeof payload.detail === "string" ? payload.detail : "";
+      if (payload.docker === "missing") {
+        sandboxStatus.classList.add("bad");
+        sandboxStatus.textContent =
+          "✗ Docker is not installed. Install Docker Desktop to use code execution.";
+      } else if (payload.docker === "stopped") {
+        sandboxStatus.classList.add("bad");
+        sandboxStatus.textContent = "✗ Docker is not running — start it.";
+      } else if (payload.image === "building") {
+        const spinner = document.createElement("span");
+        spinner.className = "spin";
+        sandboxStatus.append(
+          spinner,
+          document.createTextNode(
+            detail || "Building the code execution image (one time)…",
+          ),
+        );
+      } else if (payload.image === "ready") {
+        sandboxStatus.classList.add("ok");
+        sandboxStatus.textContent = "✓ Code execution environment is ready.";
+      } else {
+        sandboxStatus.classList.add("bad");
+        sandboxStatus.textContent = `✗ ${detail || "The code execution image is not built yet."}`;
+      }
+    };
+    const refreshSandboxStatus = async () => {
+      try {
+        const payload = (await (
+          await fetch("/api/local/sandbox/status")
+        ).json()) as Record<string, unknown>;
+        renderSandboxStatus(payload);
+      } catch {
+        // The next poll retries; keep whatever is shown.
+      }
+    };
+    sandboxEnabled.addEventListener("change", async () => {
+      try {
+        await fetch("/api/account/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled_wiggle: sandboxEnabled.checked }),
+        });
+        if (sandboxEnabled.checked)
+          await fetch("/api/local/sandbox/build", { method: "POST" });
+        await refreshSandboxStatus();
+      } catch (error) {
+        sandboxStatus.classList.remove("ok");
+        sandboxStatus.classList.add("bad");
+        sandboxStatus.textContent =
+          error instanceof Error ? error.message : String(error);
+      }
+    });
+    sandboxEgress.addEventListener("change", async () => {
+      try {
+        await fetch("/api/account/settings", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            enabled_wiggle_egress: sandboxEgress.checked,
+          }),
+        });
+      } catch {
+        sandboxEgress.checked = !sandboxEgress.checked;
+      }
+    });
     let activeLocalPanel: "model" | "export" | "memory" = "model";
     const showLocalPanel = (panel: "model" | "export" | "memory") => {
       activeLocalPanel = panel;
       modelPanel.hidden = panel !== "model";
       exportPanel.hidden = panel !== "export";
       memoryPanel.hidden = panel !== "memory";
+      if (panel === "model") void refreshSandboxStatus();
     };
+    // Keep the three-state Docker/image indicator live while the panel is
+    // open (missing/stopped → building → ready).
+    setInterval(() => {
+      if (host.hidden || activeLocalPanel !== "model" || modelPanel.hidden)
+        return;
+      void refreshSandboxStatus();
+    }, 2_500);
     const loadMemorySettings = async () => {
       try {
         const settings = (await (
@@ -2107,11 +2248,19 @@ export function installLocalWorkbench(): void {
     );
 
     document.documentElement.append(host);
-    // Local batch dictation: a mic button beside the composer records with
-    // MediaRecorder and transcribes through the provider's OpenAI-compatible
-    // /audio/transcriptions endpoint when the recording stops.
+    // Local streaming dictation: a mic button beside the composer records
+    // with MediaRecorder and re-transcribes the growing buffer every couple
+    // of seconds, appending newly stabilized words to the composer so the
+    // text streams in while the mic stays on — the user can leave dictation
+    // running and hit send whenever. whisper.cpp is batch-only, so partial
+    // passes hold back the last words (they change while audio grows) and
+    // the final pass on stop commits everything.
     let dictationRecorder: MediaRecorder | null = null;
     let dictationChunks: Blob[] = [];
+    let dictationCommitted: string[] = [];
+    let dictationTimer: ReturnType<typeof setInterval> | null = null;
+    let dictationBusy = false;
+    let dictationGeneration = 0;
     const dictationInsert = (text: string) => {
       const editor = [
         ...document.querySelectorAll<HTMLElement>('[contenteditable="true"]'),
@@ -2176,10 +2325,79 @@ export function installLocalWorkbench(): void {
       }
       return new Blob([wav], { type: "audio/wav" });
     };
+    const transcribeChunks = async (
+      chunks: Blob[],
+      mimeType: string,
+    ): Promise<string> => {
+      const recorded = new Blob(chunks, { type: mimeType || "audio/webm" });
+      if (recorded.size === 0) return "";
+      const blob = await dictationWav(recorded);
+      const response = await fetch("/api/local/dictation/transcribe", {
+        method: "POST",
+        headers: { "Content-Type": blob.type },
+        body: blob,
+      });
+      const payload = (await response.json()) as {
+        text?: string;
+        error?: { message?: string };
+      };
+      if (payload.error?.message) throw new Error(payload.error.message);
+      return (payload.text ?? "").trim();
+    };
+    // Preload fetches are invisible to the page realm; announce passes as
+    // DOM events so probes (and future UI) can observe streaming progress.
+    const announceDictationPass = (phase: "partial" | "final") => {
+      document.dispatchEvent(
+        new CustomEvent("local-dictation-pass", { detail: { phase } }),
+      );
+    };
+    // Append the transcript's words beyond what was already committed.
+    // Partial passes drop the trailing two words: whisper keeps revising
+    // the end of a still-growing recording, and the composer text must
+    // only ever grow — never rewrite what the user already sees.
+    const dictationAppend = (transcript: string, finalPass: boolean) => {
+      const words = transcript.split(/\s+/).filter(Boolean);
+      const usable = finalPass ? words : words.slice(0, -2);
+      if (usable.length <= dictationCommitted.length) return;
+      const fresh = usable.slice(dictationCommitted.length);
+      dictationInsert(
+        (dictationCommitted.length > 0 ? " " : "") + fresh.join(" "),
+      );
+      dictationCommitted = usable;
+    };
+    const dictationTick = async () => {
+      const recorder = dictationRecorder;
+      if (!recorder || dictationBusy) return;
+      const generation = dictationGeneration;
+      dictationBusy = true;
+      try {
+        recorder.requestData();
+        // Let the flushed dataavailable event land before snapshotting.
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        const text = await transcribeChunks(
+          dictationChunks.slice(),
+          recorder.mimeType,
+        );
+        // A stop while this pass was in flight owns the final append.
+        if (generation === dictationGeneration && dictationRecorder) {
+          dictationAppend(text, false);
+          announceDictationPass("partial");
+        }
+      } catch {
+        // Partial passes are best effort; the final pass reports errors.
+      } finally {
+        dictationBusy = false;
+      }
+    };
     const stopDictation = async (button: HTMLButtonElement) => {
       const recorder = dictationRecorder;
       dictationRecorder = null;
       if (!recorder) return;
+      dictationGeneration += 1;
+      if (dictationTimer !== null) {
+        clearInterval(dictationTimer);
+        dictationTimer = null;
+      }
       button.dataset.state = "busy";
       button.style.color = "";
       const finished = new Promise<void>((resolve) => {
@@ -2188,28 +2406,20 @@ export function installLocalWorkbench(): void {
       recorder.stop();
       recorder.stream.getTracks().forEach((track) => track.stop());
       await finished;
+      // Wait out an in-flight partial pass so the final append wins.
+      const busyDeadline = Date.now() + 15_000;
+      while (dictationBusy && Date.now() < busyDeadline)
+        await new Promise((resolve) => setTimeout(resolve, 100));
       try {
-        const recorded = new Blob(dictationChunks, {
-          type: recorder.mimeType || "audio/webm",
-        });
+        const text = await transcribeChunks(dictationChunks, recorder.mimeType);
         dictationChunks = [];
-        if (recorded.size === 0) return;
-        const blob = await dictationWav(recorded);
-        const response = await fetch("/api/local/dictation/transcribe", {
-          method: "POST",
-          headers: { "Content-Type": blob.type },
-          body: blob,
-        });
-        const payload = (await response.json()) as {
-          text?: string;
-          error?: { message?: string };
-        };
-        if (payload.error?.message) throw new Error(payload.error.message);
-        if (payload.text?.trim()) dictationInsert(payload.text.trim());
+        if (text) dictationAppend(text, true);
+        announceDictationPass("final");
       } catch (error) {
         button.title =
           error instanceof Error ? error.message : "Transcription failed";
       } finally {
+        dictationCommitted = [];
         delete button.dataset.state;
       }
     };
@@ -2219,12 +2429,15 @@ export function installLocalWorkbench(): void {
           audio: true,
         });
         dictationChunks = [];
+        dictationCommitted = [];
         const recorder = new MediaRecorder(stream);
         recorder.addEventListener("dataavailable", (event) => {
           if (event.data.size > 0) dictationChunks.push(event.data);
         });
-        recorder.start();
+        // Timesliced so partial passes always have decodable audio.
+        recorder.start(1_000);
         dictationRecorder = recorder;
+        dictationTimer = setInterval(() => void dictationTick(), 2_500);
         button.dataset.state = "recording";
         button.style.color = "#d97757";
       } catch (error) {
@@ -2252,6 +2465,12 @@ export function installLocalWorkbench(): void {
       button.className = anchor.className;
       button.innerHTML =
         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
+      // A route change remounts the composer while a recording may still be
+      // live; the fresh button must show the active state, not idle.
+      if (dictationRecorder) {
+        button.dataset.state = "recording";
+        button.style.color = "#d97757";
+      }
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopPropagation();

@@ -41,6 +41,7 @@ import { LocalCodeSessionManager } from "./local-code";
 import { LocalFilePreview } from "./local-file-preview";
 import { LocalLaunchPreview } from "./local-launch-preview";
 import { LocalMcpManager } from "./local-mcp";
+import { LocalSandbox } from "./local-sandbox";
 import { LocalArtifactTunnel } from "./local-tunnel";
 import { LocalWebTools } from "./local-web-tools";
 import { featureMatrix, ServiceContext, ServiceDispatcher } from "./services";
@@ -92,6 +93,7 @@ let localWebTools: LocalWebTools | null = null;
 let localFilePreview: LocalFilePreview | null = null;
 let localLaunchPreview: LocalLaunchPreview | null = null;
 let localMcpManager: LocalMcpManager | null = null;
+let localSandbox: LocalSandbox | null = null;
 let localArtifactTunnel: LocalArtifactTunnel | null = null;
 let targetUrl = "https://claude.ai";
 
@@ -842,7 +844,25 @@ if (!gotLock) {
               sections.push(`\n(Omitted for length: ${omitted.join(", ")})`);
             return sections.join("\n");
           },
+          files: async (name: string) => {
+            const files = (await sessions.invoke("getLocalSkillFiles", [
+              name,
+            ])) as Array<Record<string, unknown>>;
+            return files
+              .map((file) => ({
+                path: String(file.path ?? ""),
+                content: String(file.content ?? ""),
+              }))
+              .filter((file) => file.path);
+          },
         });
+        // Docker-backed chat code execution ("wiggle"). The manager is
+        // always constructed; the account-level enabled_wiggle setting and
+        // Docker availability gate actual use.
+        localSandbox = new LocalSandbox(app.getPath("userData"));
+        localBackend.setSandboxSource(localSandbox);
+        if (localBackend.accountSettings().enabled_wiggle === true)
+          localSandbox.startImageBuild();
         // The user's configured MCP servers (Settings > Developer) become
         // chat tools through a local stdio JSON-RPC client.
         localMcpManager = new LocalMcpManager(
@@ -873,6 +893,8 @@ app.on("before-quit", () => {
   localArtifactTunnel = null;
   localMcpManager?.disposeAll();
   localMcpManager = null;
+  localSandbox?.dispose();
+  localSandbox = null;
   localLaunchPreview?.dispose();
   localLaunchPreview = null;
   localFilePreview?.dispose();

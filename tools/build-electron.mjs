@@ -11,7 +11,14 @@ for (const [index, [name, input]] of entries.entries()) {
   await build({
     configFile: false,
     logLevel: "info",
-    ...(name === "preload-main-view" ? { ssr: { noExternal: true } } : {}),
+    // The packaged app ships no node_modules: everything must bundle. The
+    // main bundle lists its inlined deps explicitly (pdfjs-dist would
+    // otherwise stay a runtime dynamic import and break in production).
+    ...(name === "preload-main-view"
+      ? { ssr: { noExternal: true } }
+      : name === "main"
+        ? { ssr: { noExternal: ["pdfjs-dist"] } }
+        : {}),
     build: {
       ssr: true,
       outDir: "dist-electron",

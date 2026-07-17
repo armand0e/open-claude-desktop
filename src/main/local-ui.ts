@@ -459,6 +459,28 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       "const We=e.memo(()=>null),WeCloudUnused=e.memo(()=>{const a=n(),{resolved:t,patch:l,isPatchAvailable:o}=Te(),",
   },
   {
+    id: "enable-local-published-artifacts-query",
+    // The publish modal decides between its "Create & copy link" and
+    // "Artifact published" (link + Unpublish) views from this per-message
+    // published-artifacts query. Kill-switched, it never runs locally, so
+    // publishing gave no feedback and unpublish was unreachable.
+    find: "X(`/api/organizations/${s}/published_artifacts?${a.toString()}`,{staleTime:0,queryKey:[sb,{orgUuid:s,includeDeletedArtifacts:t?.includeDeletedArtifacts,noToast:t?.noToast}],enabled:!!s&&(t?.enabled??!0),meta:{noToast:t?.noToast}})",
+    replace:
+      "X(`/api/organizations/${s}/published_artifacts?${a.toString()}`,{custom3pCompatible:!0,staleTime:0,queryKey:[sb,{orgUuid:s,includeDeletedArtifacts:t?.includeDeletedArtifacts,noToast:t?.noToast}],enabled:!!s&&(t?.enabled??!0),meta:{noToast:t?.noToast}})",
+  },
+  {
+    id: "grant-local-project-edit-permissions",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // The permission hook derives knowledge/settings edit rights from
+    // membership and permissions queries that the custom3pCompatible
+    // kill-switch never lets run locally, so every project rendered
+    // read-only: no Files upload UI, no instructions editor. The single
+    // local user owns every project.
+    find: 'return{hasSettingsEditPermission:u,isProjectShared:d||(a?.group_assignments?.length??0)>0||!1===r?.is_private,hasKBEditPermissions:"user"===l||!r?.is_private&&"user"===r?.organization_role||!!s?.permissions.includes(AO.KnowledgeEdit),canManageMembers:"user"===l||!r?.is_private&&"user"===r?.organization_role||!!s?.permissions.includes(AO.MembersManage),isPermissionLoading:c}',
+    replace:
+      "return{hasSettingsEditPermission:!0,isProjectShared:!1,hasKBEditPermissions:!0,canManageMembers:!0,isPermissionLoading:!1}",
+  },
+  {
     id: "defer-local-terminal-pty-delivery",
     find: 'for(const n of nBn)try{n(e)}catch(t){dt.error(ut.DESKTOP_API,"localShellPtyTransport subscriber threw",{err:t})}',
     replace:
@@ -924,6 +946,10 @@ function localAccount(
       // Memory ("saffron") defaults on; the native Settings/Customize
       // toggles persist overrides through the account-settings endpoint.
       enabled_saffron: true,
+      // Code execution ("wiggle") defaults off until the user turns on the
+      // Docker-backed sandbox in the local settings panel.
+      enabled_wiggle: false,
+      enabled_wiggle_egress: false,
       ...accountSettings,
       ...profileSettings,
     },

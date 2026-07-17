@@ -9,6 +9,7 @@ import {
   summarizeForCompaction,
   traceCompaction,
 } from "./context-compaction";
+import { extractRichText } from "./local-extract";
 import { WEB_TOOLS, type WebToolRunner } from "./local-web-tools";
 import { runtimePromptContext } from "./runtime-prompt";
 import {
@@ -210,6 +211,19 @@ interface LocalProjectDoc {
   created_at: string;
 }
 
+// A real uploaded file owned by the project (the knowledge base), with its
+// blob stored beside chat uploads and its extracted text injected into
+// every chat of the project.
+interface LocalProjectFile {
+  uuid: string;
+  file_name: string;
+  file_type: string;
+  size_bytes: number;
+  extracted_content?: string;
+  storage_name: string;
+  created_at: string;
+}
+
 interface LocalProject {
   uuid: string;
   name: string;
@@ -221,6 +235,7 @@ interface LocalProject {
   created_at: string;
   updated_at: string;
   docs: LocalProjectDoc[];
+  files: LocalProjectFile[];
 }
 
 interface LocalData {
@@ -322,14 +337,24 @@ const WEB_SEARCH_ENABLED_PROMPT = `Web search is enabled for this conversation.
 
 const WEB_SEARCH_DISABLED_PROMPT = `Web search is disabled for this conversation. The web_search and visit_website tools are unavailable: do not emit calls to them, claim to have browsed, or imply that current information was verified. Answer from existing knowledge with an appropriate freshness caveat, or tell the user to enable Web search in Search and tools when live verification is required.`;
 
+const CODE_EXECUTION_PROMPT = `Code execution is enabled for this conversation.
+- bash_code_execution runs one bash command in a persistent sandboxed Linux container. The working directory is /workspace; files written there persist across calls within this conversation.
+- Preinstalled: python3 with uv/pip (pandas, numpy, openpyxl, pillow, matplotlib, requests), node 22 with npm, ffmpeg, git, zip, jq. Files the user uploaded to this chat are copied to /workspace/uploads; skill support files load under /workspace/skills/<name>.
+- After each run the tool result lists new or changed files in /workspace with a download link of the form /api/local/sandbox/files/{conversation}/{path}. When you produce an output file for the user, include its download link in your answer as a markdown link.
+- Network access inside the sandbox may be disabled; if a command needs the network and fails, say so instead of retrying repeatedly. Never claim a command succeeded unless its tool result shows it did.`;
+
 function chatSystemPrompt(
   functionToolsSupported: boolean,
   webSearchEnabled: boolean,
+  codeExecutionEnabled = false,
 ): string {
   return [
     CHAT_SYSTEM_PROMPT,
     runtimePromptContext(),
     webSearchEnabled ? WEB_SEARCH_ENABLED_PROMPT : WEB_SEARCH_DISABLED_PROMPT,
+    ...(codeExecutionEnabled && functionToolsSupported
+      ? [CODE_EXECUTION_PROMPT]
+      : []),
     ...(functionToolsSupported
       ? []
       : [
@@ -473,6 +498,9 @@ const SAVE_MEMORY_TOOL = {
 export interface LocalSkillSource {
   list(): Promise<Array<{ name: string; description: string }>>;
   read(name: string): Promise<string>;
+  // Raw skill files (including SKILL.md) for staging into the code-execution
+  // sandbox so skill-provided scripts are runnable.
+  files?(name: string): Promise<Array<{ path: string; content: string }>>;
 }
 
 export interface LocalMcpSource {
@@ -487,6 +515,57 @@ export interface LocalMcpSource {
   >;
   callTool(qualifiedName: string, args: JsonObject): Promise<string>;
 }
+
+// Docker-backed code execution runtime (src/main/local-sandbox.ts satisfies
+// this structurally, like the skill and MCP sources).
+export interface LocalSandboxSource {
+  status(): Promise<{ docker: string; image: string; detail?: string }>;
+  startImageBuild(): void;
+  runCommand(
+    conversationUuid: string,
+    command: string,
+    options: { allowNetwork: boolean; signal: AbortSignal },
+  ): Promise<{
+    output: string;
+    generatedFiles: Array<{ path: string; size_bytes: number }>;
+  }>;
+  stageUpload(
+    conversationUuid: string,
+    fileName: string,
+    sourcePath: string,
+  ): Promise<void>;
+  stageSkillFiles(
+    conversationUuid: string,
+    skillName: string,
+    files: readonly { path: string; content: string }[],
+  ): Promise<void>;
+  workspaceFile(
+    conversationUuid: string,
+    relativePath: string,
+  ): Promise<{ absolutePath: string; size_bytes: number } | null>;
+  markEphemeral?(conversationUuid: string): void;
+  removeWorkspace?(conversationUuid: string): Promise<void>;
+}
+
+const CODE_EXECUTION_TOOL = {
+  type: "function",
+  function: {
+    name: "bash_code_execution",
+    description:
+      "Run one bash command in this conversation's persistent sandboxed Linux container. The working directory is /workspace and files there persist between calls. Python 3 (uv, pip, pandas, numpy, openpyxl, pillow, matplotlib, requests), Node 22 with npm, ffmpeg, git, zip, and jq are preinstalled. User-uploaded chat files are under /workspace/uploads.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      required: ["command"],
+      properties: {
+        command: {
+          type: "string",
+          description: "The bash command to run in /workspace",
+        },
+      },
+    },
+  },
+};
 
 const CHAT_TOOLS = [ARTIFACT_TOOL, SKILL_TOOL, SAVE_MEMORY_TOOL, ...WEB_TOOLS];
 
@@ -1269,6 +1348,14 @@ export class LocalBackend {
     for (const conversation of conversations) {
       for (const message of conversation.chat_messages ?? []) {
         for (const block of message.content ?? []) {
+          // Saved-memory rows recorded before the display rename rendered as
+          // a raw wrench pill once settled; heal them to the generic
+          // description-labeled path (see the save_memory emission).
+          if (
+            (block?.type === "tool_use" || block?.type === "tool_result") &&
+            (block as { name?: unknown }).name === "save_memory"
+          )
+            (block as { name: string }).name = "mcp_tool";
           if (block?.type !== "tool_use" || block.name !== "artifacts")
             continue;
           const blockInput = block.input as unknown as Record<string, unknown>;
@@ -1332,7 +1419,12 @@ export class LocalBackend {
         artifacts,
         files,
         projects: Array.isArray(input.projects)
-          ? (input.projects as LocalProject[])
+          ? (input.projects as LocalProject[]).map((project) => ({
+              ...project,
+              docs: Array.isArray(project.docs) ? project.docs : [],
+              // Projects persisted before knowledge-base uploads existed.
+              files: Array.isArray(project.files) ? project.files : [],
+            }))
           : [],
         memory: (() => {
           const stored = plainJsonObject(input.memory);
@@ -1637,7 +1729,7 @@ export class LocalBackend {
     return this.#data.files.find((file) => file.uuid === uuid);
   }
 
-  #storedFilePath(file: LocalStoredFile): string {
+  #storedFilePath(file: { storage_name: string }): string {
     return path.join(
       path.dirname(this.filePath),
       "local-files",
@@ -1652,7 +1744,9 @@ export class LocalBackend {
     const uuid = randomUUID();
     const fileName = cleanFileName(file.name || "attachment");
     const fileType = file.type || "application/octet-stream";
-    const extractedContent = extractLocalText(bytes, fileName, fileType);
+    const extractedContent =
+      extractLocalText(bytes, fileName, fileType) ??
+      (await extractRichText(bytes, fileName, fileType));
     const stored: LocalStoredFile = {
       uuid,
       file_name: fileName,
@@ -1770,7 +1864,11 @@ export class LocalBackend {
     webSearchEnabled: boolean,
     conversation?: LocalConversation,
   ): Promise<string> {
-    const base = chatSystemPrompt(withTools, webSearchEnabled);
+    const base = chatSystemPrompt(
+      withTools,
+      webSearchEnabled,
+      this.#codeExecutionEnabled(),
+    );
     const sections = [base];
     const project = conversation?.project_uuid
       ? this.#data.projects.find(
@@ -1782,11 +1880,29 @@ export class LocalBackend {
         sections.push(
           `<project_instructions>\nThis conversation belongs to the project “${project.name}”. Follow these project instructions:\n${project.prompt_template}\n</project_instructions>`,
         );
-      if (project.docs.length > 0) {
+      // Text docs and uploaded knowledge-base files inject alike: every
+      // chat in the project sees them without re-attaching.
+      const knowledgeEntries = [
+        ...project.docs.map((doc) => ({
+          file_name: doc.file_name,
+          content: doc.content,
+        })),
+        ...project.files.flatMap((file) =>
+          file.extracted_content !== undefined
+            ? [{ file_name: file.file_name, content: file.extracted_content }]
+            : [
+                {
+                  file_name: file.file_name,
+                  content: `(binary ${file.file_type} file, ${file.size_bytes} bytes — content not text-extractable)`,
+                },
+              ],
+        ),
+      ];
+      if (knowledgeEntries.length > 0) {
         let budget = 30_000;
         const docs: string[] = [];
-        for (const doc of project.docs) {
-          const sectionText = `<document name=${JSON.stringify(doc.file_name)}>\n${doc.content}\n</document>`;
+        for (const entry of knowledgeEntries) {
+          const sectionText = `<document name=${JSON.stringify(entry.file_name)}>\n${entry.content}\n</document>`;
           if (sectionText.length > budget) continue;
           docs.push(sectionText);
           budget -= sectionText.length;
@@ -1833,6 +1949,51 @@ export class LocalBackend {
 
   setMcpSource(source: LocalMcpSource): void {
     this.#mcpSource = source;
+  }
+
+  #sandbox?: LocalSandboxSource;
+
+  setSandboxSource(source: LocalSandboxSource): void {
+    this.#sandbox = source;
+  }
+
+  // Account-level gate for the "wiggle" code-execution capability; the
+  // sandbox itself reports Docker/image readiness separately.
+  #codeExecutionEnabled(): boolean {
+    return (
+      this.#sandbox !== undefined &&
+      this.#data.accountSettings.enabled_wiggle === true
+    );
+  }
+
+  #sandboxEgressEnabled(): boolean {
+    return this.#data.accountSettings.enabled_wiggle_egress === true;
+  }
+
+  // Copy the branch's uploaded chat files into the conversation's sandbox
+  // uploads directory so commands can read them at /workspace/uploads.
+  async #stageSandboxUploads(
+    conversation: LocalConversation,
+    branch: readonly LocalMessage[],
+  ): Promise<void> {
+    if (!this.#sandbox) return;
+    const staged = new Set<string>();
+    for (const message of branch) {
+      for (const file of message.files ?? []) {
+        const stored = this.#storedFile(file.file_uuid);
+        if (!stored || staged.has(stored.uuid)) continue;
+        staged.add(stored.uuid);
+        try {
+          await this.#sandbox.stageUpload(
+            conversation.uuid,
+            stored.file_name,
+            this.#storedFilePath(stored),
+          );
+        } catch {
+          // Best-effort: a missing blob just stays absent from /workspace.
+        }
+      }
+    }
   }
 
   // The user's connected MCP servers as OpenAI-style function tools; a
@@ -1894,8 +2055,9 @@ export class LocalBackend {
         ];
     }
     const reservedTokens =
-      estimateTokens(chatSystemPrompt(true, webSearchEnabled)) +
-      estimateTokens(JSON.stringify(CHAT_TOOLS));
+      estimateTokens(
+        chatSystemPrompt(true, webSearchEnabled, this.#codeExecutionEnabled()),
+      ) + estimateTokens(JSON.stringify(CHAT_TOOLS));
     const providerMessages = effective.map((message) => ({
       role: message.sender === "human" ? "user" : "assistant",
       content: messageText(message, this.#data.files),
@@ -1954,6 +2116,7 @@ export class LocalBackend {
       ...(webSearchEnabled
         ? CHAT_TOOLS
         : [ARTIFACT_TOOL, SKILL_TOOL, SAVE_MEMORY_TOOL]),
+      ...(this.#codeExecutionEnabled() ? [CODE_EXECUTION_TOOL] : []),
       ...(await this.#mcpToolFunctions()),
     ];
     // Both variants are prepared up front: the fallback variant documents the
@@ -2155,9 +2318,17 @@ export class LocalBackend {
       conversation.current_leaf_message_uuid = human.uuid;
     }
 
+    const branch = messageBranch(conversation, human.uuid);
+    const codeExecutionEnabled = this.#codeExecutionEnabled();
+    if (codeExecutionEnabled) {
+      // An incognito chat's workspace must not outlive the session.
+      if (conversation.is_temporary)
+        this.#sandbox?.markEphemeral?.(conversation.uuid);
+      await this.#stageSandboxUploads(conversation, branch);
+    }
     const providerHistory = await this.#compactedChatHistory(
       conversation,
-      messageBranch(conversation, human.uuid),
+      branch,
       webSearchEnabled,
       completionSignal,
     );
@@ -2341,7 +2512,14 @@ export class LocalBackend {
           let prefetchedProviderResponse: Response | undefined =
             firstProviderResponse;
           let terminalTurn = false;
-          for (let providerTurn = 0; providerTurn < 8; providerTurn += 1) {
+          // Code execution legitimately iterates (write → run → fix → run),
+          // so it gets a far larger turn budget than the web-tool loop.
+          const maxProviderTurns = codeExecutionEnabled ? 24 : 8;
+          for (
+            let providerTurn = 0;
+            providerTurn < maxProviderTurns;
+            providerTurn += 1
+          ) {
             const turnTextStart = assistantText.length;
             let thinkingBlockIndex: number | undefined;
             let activeThinkingBlock: LocalThinkingBlock | undefined;
@@ -2521,6 +2699,10 @@ export class LocalBackend {
             const memorySaveCalls = [...toolCalls.values()].filter(
               (toolCall) => toolCall.name === "save_memory",
             );
+            const requestedCodeCalls = [...toolCalls.values()].filter(
+              (toolCall) => toolCall.name === "bash_code_execution",
+            );
+            const codeCalls = codeExecutionEnabled ? requestedCodeCalls : [];
             if (
               webCalls.length === 0 &&
               ![...toolCalls.values()].some(
@@ -2566,11 +2748,38 @@ export class LocalBackend {
                 });
               continue;
             }
+            // Same fail-closed handling for a hallucinated code-execution
+            // call while the capability is off.
+            if (!codeExecutionEnabled && requestedCodeCalls.length > 0) {
+              closeTextBlock();
+              continuation.push({
+                role: "assistant",
+                content: assistantText.slice(turnTextStart) || null,
+                tool_calls: requestedCodeCalls.map((toolCall) => ({
+                  id: toolCall.id,
+                  type: "function",
+                  function: {
+                    name: toolCall.name,
+                    arguments: toolCall.arguments || "{}",
+                  },
+                })),
+              });
+              for (const toolCall of requestedCodeCalls)
+                continuation.push({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  name: toolCall.name,
+                  content:
+                    "Code execution is disabled. Answer without running code or ask the user to enable Code execution in settings.",
+                });
+              continue;
+            }
             if (
               webCalls.length === 0 &&
               skillCalls.length === 0 &&
               mcpCalls.length === 0 &&
-              memorySaveCalls.length === 0
+              memorySaveCalls.length === 0 &&
+              codeCalls.length === 0
             ) {
               terminalTurn = true;
               break;
@@ -2584,6 +2793,7 @@ export class LocalBackend {
                 ...skillCalls,
                 ...mcpCalls,
                 ...memorySaveCalls,
+                ...codeCalls,
               ].map((toolCall) => ({
                 id: toolCall.id,
                 type: "function",
@@ -2623,10 +2833,17 @@ export class LocalBackend {
                 await backend.#persist();
               }
               const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+              // Displayed under the generic mcp_tool name: the retained
+              // renderer labels that path from input.description both while
+              // streaming and after the conversation settles, so the row
+              // renders exactly once, in chain position. The "save_memory"
+              // display name took a different settled path that re-rendered
+              // as a raw wrench "Save memory" pill with a Result chip and
+              // orphaned the preload-rebuilt native row at the chain top.
               const callBlock: LocalWebToolUseBlock = {
                 type: "tool_use",
                 id: displayId,
-                name: "save_memory",
+                name: "mcp_tool",
                 input: {
                   topic,
                   content,
@@ -2638,7 +2855,20 @@ export class LocalBackend {
               };
               assistantBlocks.push(callBlock);
               const callBlockIndex = nextBlockIndex++;
-              controller.enqueue(
+              const resultBlock: LocalWebToolResultBlock = {
+                type: "tool_result",
+                tool_use_id: displayId,
+                name: "mcp_tool",
+                content: failed ? [{ type: "text", text: output }] : [],
+                ...(failed ? { is_error: true } : {}),
+              };
+              assistantBlocks.push(resultBlock);
+              const resultBlockIndex = nextBlockIndex++;
+              // The save already happened, so the call and result events
+              // flush as ONE stream chunk: a result-less mcp_tool block
+              // would paint a transient wrench "Using a MCP tool" row
+              // before the preload rebuilds the native Saved memory row.
+              const memoryEvents = [
                 sse("content_block_start", {
                   type: "content_block_start",
                   index: callBlockIndex,
@@ -2651,8 +2881,6 @@ export class LocalBackend {
                     input: callBlock.input,
                   },
                 }),
-              );
-              controller.enqueue(
                 sse("content_block_delta", {
                   type: "content_block_delta",
                   index: callBlockIndex,
@@ -2661,35 +2889,32 @@ export class LocalBackend {
                     partial_json: JSON.stringify(callBlock.input),
                   },
                 }),
-              );
-              controller.enqueue(
                 sse("content_block_stop", {
                   type: "content_block_stop",
                   index: callBlockIndex,
                 }),
-              );
-              const resultBlock: LocalWebToolResultBlock = {
-                type: "tool_result",
-                tool_use_id: displayId,
-                name: "save_memory",
-                content: failed ? [{ type: "text", text: output }] : [],
-                ...(failed ? { is_error: true } : {}),
-              };
-              assistantBlocks.push(resultBlock);
-              const resultBlockIndex = nextBlockIndex++;
-              controller.enqueue(
                 sse("content_block_start", {
                   type: "content_block_start",
                   index: resultBlockIndex,
                   content_block: resultBlock,
                 }),
-              );
-              controller.enqueue(
                 sse("content_block_stop", {
                   type: "content_block_stop",
                   index: resultBlockIndex,
                 }),
+              ];
+              const combined = new Uint8Array(
+                memoryEvents.reduce(
+                  (total, event) => total + event.byteLength,
+                  0,
+                ),
               );
+              let eventOffset = 0;
+              for (const event of memoryEvents) {
+                combined.set(event, eventOffset);
+                eventOffset += event.byteLength;
+              }
+              controller.enqueue(combined);
               continuation.push({
                 role: "tool",
                 tool_call_id: toolCall.id,
@@ -2855,6 +3080,22 @@ export class LocalBackend {
                 if (!requestedName)
                   throw new Error("The skill tool requires a skill name");
                 output = await backend.#skillSource.read(requestedName);
+                if (
+                  codeExecutionEnabled &&
+                  backend.#sandbox &&
+                  backend.#skillSource.files
+                ) {
+                  try {
+                    await backend.#sandbox.stageSkillFiles(
+                      conversation.uuid,
+                      requestedName,
+                      await backend.#skillSource.files(requestedName),
+                    );
+                    output += `\n\nThis skill's files are staged in the sandbox at /workspace/skills/${requestedName} for bash_code_execution.`;
+                  } catch {
+                    // Staging is best-effort; the inline copies above remain.
+                  }
+                }
               } catch (error) {
                 failed = true;
                 output = `Skill error: ${error instanceof Error ? error.message : String(error)}`;
@@ -2985,9 +3226,121 @@ export class LocalBackend {
                 content: output.slice(0, 50_000),
               });
             }
+            for (const toolCall of codeCalls) {
+              let command = "";
+              try {
+                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
+                if (isObject(parsed))
+                  command = stringValue(parsed.command) ?? "";
+              } catch {
+                // The sandbox rejects the empty command with a clear error.
+              }
+              const commandLabel = command.split("\n")[0].trim().slice(0, 80);
+              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+              // Rendered through the same proven generic tool row as MCP
+              // calls: the retained renderer labels from input.description
+              // and shows the result text when expanded.
+              const callBlock: LocalWebToolUseBlock = {
+                type: "tool_use",
+                id: displayId,
+                name: "mcp_tool",
+                input: {
+                  command,
+                  description: `Ran code${commandLabel ? ` · ${commandLabel}` : ""}`,
+                },
+              };
+              assistantBlocks.push(callBlock);
+              const callBlockIndex = nextBlockIndex++;
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: callBlockIndex,
+                  content_block: {
+                    type: callBlock.type,
+                    id: callBlock.id,
+                    name: callBlock.name,
+                    input: callBlock.input,
+                  },
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_delta", {
+                  type: "content_block_delta",
+                  index: callBlockIndex,
+                  delta: {
+                    type: "input_json_delta",
+                    partial_json: JSON.stringify(callBlock.input),
+                  },
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: callBlockIndex,
+                }),
+              );
+              let output: string;
+              let failed = false;
+              try {
+                if (!backend.#sandbox)
+                  throw new Error("Code execution is not available");
+                const result = await backend.#sandbox.runCommand(
+                  conversation.uuid,
+                  command,
+                  {
+                    allowNetwork: backend.#sandboxEgressEnabled(),
+                    signal: completionSignal,
+                  },
+                );
+                output = result.output;
+                if (result.generatedFiles.length > 0)
+                  output += `\n\nNew or changed files in /workspace:\n${result.generatedFiles
+                    .map(
+                      (file) =>
+                        `- ${file.path} (${file.size_bytes} bytes) — download link: /api/local/sandbox/files/${conversation.uuid}/${file.path
+                          .split("/")
+                          .map(encodeURIComponent)
+                          .join("/")}`,
+                    )
+                    .join("\n")}`;
+              } catch (error) {
+                failed = true;
+                output = `Code execution error: ${error instanceof Error ? error.message : String(error)}`;
+              }
+              const resultBlock: LocalWebToolResultBlock = {
+                type: "tool_result",
+                tool_use_id: displayId,
+                name: "mcp_tool",
+                content: [{ type: "text", text: output.slice(0, 8_000) }],
+                ...(failed ? { is_error: true } : {}),
+              };
+              assistantBlocks.push(resultBlock);
+              const resultBlockIndex = nextBlockIndex++;
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: resultBlockIndex,
+                  content_block: resultBlock,
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: resultBlockIndex,
+                }),
+              );
+              continuation.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                name: toolCall.name,
+                content: output.slice(0, 50_000),
+              });
+            }
           }
           if (!terminalTurn)
-            throw new Error("The local web-tool loop exceeded eight turns");
+            throw new Error(
+              `The local tool loop exceeded ${maxProviderTurns} turns`,
+            );
           const artifactToolCalls = [...toolCalls]
             .sort(([left], [right]) => left - right)
             .flatMap(([, toolCall]) => {
@@ -3315,6 +3668,62 @@ export class LocalBackend {
       }
     }
 
+    if (pathname === "/api/local/sandbox/status" && request.method === "GET") {
+      const status = this.#sandbox
+        ? await this.#sandbox.status()
+        : {
+            docker: "missing",
+            image: "absent",
+            detail: "Code execution is unavailable in this runtime",
+          };
+      return new Response(
+        JSON.stringify({
+          enabled: this.#data.accountSettings.enabled_wiggle === true,
+          egress: this.#sandboxEgressEnabled(),
+          ...status,
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    if (pathname === "/api/local/sandbox/build" && request.method === "POST") {
+      this.#sandbox?.startImageBuild();
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const sandboxFileRoute = pathname.match(
+      /^\/api\/local\/sandbox\/files\/([^/]+)\/(.+)$/,
+    );
+    if (sandboxFileRoute && request.method === "GET") {
+      if (!this.#sandbox) return new Response(null, { status: 404 });
+      let conversationUuid: string;
+      let relativePath: string;
+      try {
+        conversationUuid = decodeURIComponent(sandboxFileRoute[1]);
+        relativePath = decodeURIComponent(sandboxFileRoute[2]);
+      } catch {
+        return errorResponse("Invalid sandbox file path");
+      }
+      const found = await this.#sandbox
+        .workspaceFile(conversationUuid, relativePath)
+        .catch(() => null);
+      if (!found) return new Response(null, { status: 404 });
+      if (found.size_bytes > 200 * 1024 * 1024)
+        return errorResponse("Sandbox file exceeds the 200 MB limit", 413);
+      const bytes = await readFile(found.absolutePath);
+      const downloadName = cleanFileName(
+        relativePath.split("/").at(-1) || "download",
+      ).replaceAll('"', "");
+      return new Response(bytes, {
+        headers: {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${downloadName}"`,
+        },
+      });
+    }
+
     if (
       /^\/api\/organizations\/[^/]+\/convert_document$/.test(pathname) &&
       request.method === "POST"
@@ -3329,14 +3738,16 @@ export class LocalBackend {
         const fileName = cleanFileName(file.name || "attachment");
         const fileType = file.type || "application/octet-stream";
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const extractedContent = extractLocalText(bytes, fileName, fileType);
+        const extractedContent =
+          extractLocalText(bytes, fileName, fileType) ??
+          (await extractRichText(bytes, fileName, fileType));
         if (extractedContent === undefined)
           return new Response(
             JSON.stringify({
               error: {
                 type: "invalid_file_type",
                 message:
-                  "This local build can extract text, code, CSV, JSON, HTML, SVG, and Markdown files.",
+                  "This local build can extract text, code, CSV, JSON, HTML, SVG, Markdown, PDF, docx, xlsx, and pptx files.",
               },
             }),
             {
@@ -3362,9 +3773,10 @@ export class LocalBackend {
       }
     }
 
+    // Project uploads are handled by the projects route below: they attach
+    // to the project's knowledge base instead of the loose chat-file store.
     const uploadRoute =
       /^\/api\/[^/]+\/upload$/.test(pathname) ||
-      /^\/api\/organizations\/[^/]+\/projects\/[^/]+\/upload$/.test(pathname) ||
       /^\/api\/organizations\/[^/]+\/conversations\/[^/]+\/wiggle\/upload-file$/.test(
         pathname,
       );
@@ -3451,6 +3863,45 @@ export class LocalBackend {
       );
     }
 
+    // The publish modal derives per-message published state from this
+    // list; publish/unpublish mutations invalidate and refetch it.
+    if (
+      /^\/api\/organizations\/[^/]+\/published_artifacts\/?$/.test(pathname) &&
+      request.method === "GET"
+    ) {
+      const includeDeleted =
+        url.searchParams.get("include_deleted_artifacts") === "true";
+      const records = this.#data.artifacts.flatMap((artifact) =>
+        artifact.versions.flatMap((version) => {
+          if (
+            typeof version.published_artifact_uuid !== "string" ||
+            !version.published_artifact_uuid
+          )
+            return [];
+          if (!includeDeleted && version.published_artifact_deleted_at !== null)
+            return [];
+          return [
+            {
+              uuid: version.published_artifact_uuid,
+              published_artifact_uuid: version.published_artifact_uuid,
+              artifact_version_uuid: version.uuid,
+              artifact_identifier: version.artifact_identifier,
+              conversation_uuid: version.conversation_uuid,
+              message_uuid: version.message_uuid,
+              title: version.title,
+              artifact_type: version.artifact_type,
+              created_at: version.created_at,
+              updated_at: version.updated_at,
+              deleted_at: version.published_artifact_deleted_at,
+            },
+          ];
+        }),
+      );
+      return new Response(JSON.stringify(records), {
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
     const organizationPublishedArtifact = pathname.match(
       /^\/api\/organizations\/[^/]+\/published_artifacts\/([^/]+)$/,
     );
@@ -3465,7 +3916,7 @@ export class LocalBackend {
     }
 
     const projectsRoute = pathname.match(
-      /^\/api\/organizations\/[^/]+\/projects(_v2)?(?:\/([^/]+))?(?:\/(docs|settings|conversations_v2|syncs|kb\/stats|report|accounts|upload)(?:\/([^/]+))?)?$/,
+      /^\/api\/organizations\/[^/]+\/projects(_v2)?(?:\/([^/]+))?(?:\/(docs|files|settings|conversations_v2|syncs?|kb\/stats|report|accounts|permissions|upload)(?:\/([^/]+))?)?$/,
     );
     if (projectsRoute) {
       const json = (payload: unknown, status = 200) =>
@@ -3533,6 +3984,7 @@ export class LocalBackend {
             created_at: now,
             updated_at: now,
             docs: [],
+            files: [],
           };
           this.#data.projects.push(created);
           await this.#persist();
@@ -3562,8 +4014,102 @@ export class LocalBackend {
             (entry) => entry.uuid !== project.uuid,
           );
           await this.#persist();
+          await Promise.all(
+            project.files.map((file) =>
+              rm(this.#storedFilePath(file), { force: true }).catch(
+                () => undefined,
+              ),
+            ),
+          );
           return new Response(null, { status: 204 });
         }
+      }
+      const projectFileResponse = (file: LocalProjectFile) => ({
+        uuid: file.uuid,
+        file_uuid: file.uuid,
+        file_name: file.file_name,
+        file_type: file.file_type,
+        file_kind: "blob",
+        file_size: file.size_bytes,
+        size_bytes: file.size_bytes,
+        created_at: file.created_at,
+        creator_uuid: localAccountUuid,
+      });
+      if (section === "upload" && request.method === "POST") {
+        try {
+          const uploaded = await this.#uploadedFile(request);
+          if (uploaded.size > MAX_LOCAL_FILE_BYTES)
+            return errorResponse(
+              "Uploaded file exceeds the 50 MB local limit",
+              413,
+            );
+          const bytes = new Uint8Array(await uploaded.arrayBuffer());
+          const fileName = cleanFileName(uploaded.name || "document");
+          const fileType = uploaded.type || "application/octet-stream";
+          const extractedContent =
+            extractLocalText(bytes, fileName, fileType) ??
+            (await extractRichText(bytes, fileName, fileType));
+          const file: LocalProjectFile = {
+            uuid: randomUUID(),
+            file_name: fileName,
+            file_type: fileType,
+            size_bytes: bytes.byteLength,
+            ...(extractedContent !== undefined
+              ? { extracted_content: extractedContent }
+              : {}),
+            storage_name: randomUUID(),
+            created_at: new Date().toISOString(),
+          };
+          const destination = this.#storedFilePath(file);
+          await mkdir(path.dirname(destination), { recursive: true });
+          await writeFile(destination, bytes, { mode: 0o600 });
+          project.files.push(file);
+          project.updated_at = file.created_at;
+          await this.#persist();
+          return json(projectFileResponse(file));
+        } catch (error) {
+          return errorResponse(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      }
+      if (section === "files") {
+        if (sectionId === "delete_many" && request.method === "POST") {
+          const body = await jsonBody(request);
+          const targets = new Set([
+            ...(Array.isArray(body.file_uuids) ? body.file_uuids : []),
+            ...(Array.isArray(body.uuids) ? body.uuids : []),
+          ]);
+          const removed = project.files.filter((file) =>
+            targets.has(file.uuid),
+          );
+          project.files = project.files.filter(
+            (file) => !targets.has(file.uuid),
+          );
+          await this.#persist();
+          await Promise.all(
+            removed.map((file) =>
+              rm(this.#storedFilePath(file), { force: true }).catch(
+                () => undefined,
+              ),
+            ),
+          );
+          return json({ ok: true });
+        }
+        if (sectionId && request.method === "DELETE") {
+          const removed = project.files.find((file) => file.uuid === sectionId);
+          project.files = project.files.filter(
+            (file) => file.uuid !== sectionId,
+          );
+          await this.#persist();
+          if (removed)
+            await rm(this.#storedFilePath(removed), { force: true }).catch(
+              () => undefined,
+            );
+          return new Response(null, { status: 204 });
+        }
+        if (request.method === "GET")
+          return json(project.files.map(projectFileResponse));
       }
       if (section === "docs") {
         if (sectionId === "delete_many" && request.method === "POST") {
@@ -3607,11 +4153,47 @@ export class LocalBackend {
       }
       if (section === "settings")
         return json(request.method === "GET" ? {} : { ok: true });
-      if (section === "syncs")
+      if (section === "syncs" || section === "sync")
         return json(request.method === "GET" ? [] : { ok: true });
-      if (section === "kb/stats") return json({});
+      if (section === "kb/stats") {
+        const docBytes = project.docs.reduce(
+          (total, doc) => total + new TextEncoder().encode(doc.content).length,
+          0,
+        );
+        const fileBytes = project.files.reduce(
+          (total, file) => total + file.size_bytes,
+          0,
+        );
+        return json({
+          doc_count: project.docs.length,
+          file_count: project.files.length,
+          total_size_bytes: docBytes + fileBytes,
+          max_size_bytes: 200 * 1024 * 1024,
+        });
+      }
       if (section === "report") return json({ ok: true });
-      if (section === "accounts") return json([]);
+      // The knowledge-base permission hook derives edit rights from the
+      // caller's membership role here; an empty list reads as "none" and
+      // hides the Files upload UI and the instructions editor.
+      if (section === "accounts")
+        return json([
+          {
+            account: {
+              uuid: localAccountUuid,
+              display_name:
+                stringValue(this.#data.accountProfile.display_name) ??
+                "Local User",
+            },
+            role: "user",
+          },
+        ]);
+      if (section === "permissions")
+        return json({
+          permissions: [
+            "chat_project:knowledge:edit",
+            "chat_project:settings:edit",
+          ],
+        });
       return new Response(null, { status: 405 });
     }
 
@@ -3906,6 +4488,7 @@ export class LocalBackend {
         });
       if (request.method === "DELETE") {
         this.#abortActiveCompletion(uuid);
+        void this.#sandbox?.removeWorkspace?.(uuid).catch(() => undefined);
         const candidateFiles = new Set(
           conversation.chat_messages.flatMap((message) =>
             message.files.map((file) => file.file_uuid),
@@ -3948,6 +4531,11 @@ export class LocalBackend {
         if (typeof body.name === "string") conversation.name = body.name;
         if (typeof body.is_starred === "boolean")
           conversation.is_starred = body.is_starred;
+        // The composer's project chip assigns or removes the chat's project
+        // (null clears it).
+        if (typeof body.project_uuid === "string" && body.project_uuid)
+          conversation.project_uuid = body.project_uuid;
+        else if (body.project_uuid === null) delete conversation.project_uuid;
         if (isObject(body.settings))
           conversation.settings = {
             ...conversation.settings,

@@ -1315,6 +1315,19 @@ export class LocalBackend {
 
   async #persist(): Promise<void> {
     const persisted = structuredClone(this.#data);
+    // Incognito conversations live only in memory: they survive within the
+    // running app but are never written to disk, listed, or exported.
+    persisted.conversations = persisted.conversations.filter(
+      (conversation) => !conversation.is_temporary,
+    );
+    persisted.artifacts = persisted.artifacts.filter(
+      (artifact) =>
+        !this.#data.conversations.some(
+          (conversation) =>
+            conversation.is_temporary &&
+            conversation.uuid === artifact.conversation_uuid,
+        ),
+    );
     if (persisted.provider.apiKey) {
       if (this.#secretCodec)
         persisted.provider.apiKey = `safe:v1:${this.#secretCodec.seal(persisted.provider.apiKey)}`;
@@ -3113,6 +3126,8 @@ export class LocalBackend {
         const limit = Number(url.searchParams.get("limit") || 30);
         const filtered = this.#data.conversations.filter(
           (conversation) =>
+            // Temporary (incognito) chats never surface in Recents/search.
+            !conversation.is_temporary &&
             (starred === null ||
               conversation.is_starred === (starred === "true")) &&
             (!search || conversation.name.toLowerCase().includes(search)),

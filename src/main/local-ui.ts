@@ -203,6 +203,24 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       ':l.meta&&!se?"Skill"===s.name?t.jsxs("span",{className:"text-body text-assistant-primary truncate min-w-0",children:[t.jsx("a",{href:"/customize/skills?skill="+encodeURIComponent(String(l.meta)),onClick:n=>{n.preventDefault(),n.stopPropagation();const a="/customize/skills?skill="+encodeURIComponent(String(l.meta));history.pushState({},"",a),window.dispatchEvent(new PopStateEvent("popstate"))},onKeyDown:n=>n.stopPropagation(),className:"underline underline-offset-[3px] hover:text-assistant-primary",children:String(l.meta)})," skill"]}):C?t.jsx("a",{href:C,target:"_blank",rel:"noreferrer",',
   },
   {
+    id: "enable-incognito-feature-gate",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // The incognito ("saffron ghost") feature flag is off in the retained
+    // build; the local backend implements temporary conversations.
+    find: 'H2=()=>av("claudeai_saffron_ghost_enabled")',
+    replace: "H2=()=>!0",
+  },
+  {
+    id: "enable-incognito-chat-toggle",
+    // The incognito (temporary chat) toggle is gated off in the retained
+    // desktop build. The local backend implements temporary conversations
+    // (memory-only, never persisted, never listed, never exported), so
+    // surface the native toggle.
+    find: 'l=Ge(),c=ot(),d=SC();return l||!i||c&&d?null:t.jsx("div",{children:t.jsx(CZ,{hoverable:!1,side:"left",shortcut:o,content:r?t.jsx(K$,{defaultMessage:"Exit incognito",id:"ItG+wlzX/s"})',
+    replace:
+      'l=Ge(),c=ot(),d=SC();return!1?null:t.jsx("div",{children:t.jsx(CZ,{hoverable:!1,side:"left",shortcut:o,content:r?t.jsx(K$,{defaultMessage:"Exit incognito",id:"ItG+wlzX/s"})',
+  },
+  {
     id: "enable-chat-artifacts-gallery-route",
     assetUrlPath: "/assets/v1/c1b9abf13-bG6VlbXV.js",
     // The /artifacts chat-surface gallery route is feature-gated off in the

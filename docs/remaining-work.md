@@ -1,8 +1,8 @@
-# Open-Claude — Remaining Work
+# Remaining Work
 
 Detailed outline of what's left to build. Everything below is scoped from the
-native Claude Desktop reference bundle (`.package-assets/ion-dist`) plus the
-patterns already established in `src/main/local-backend.ts`,
+reference bundle (`.package-assets/ion-dist`) plus the patterns already
+established in `src/main/local-backend.ts`,
 `src/main/local-ui.ts` (the `LOCAL_CLIENT_PATCHES` array), and
 `src/preload/local-workbench.ts`.
 
@@ -32,13 +32,14 @@ patterns already established in `src/main/local-backend.ts`,
 **Goal:** a working Customize → Connectors page that manages the local MCP
 servers, replacing the current "Connectors have moved to Customize" dead end.
 
-**Status:** The MCP *client* is fully built and connectors already work in
-chat. Only the management *page* is missing. The route gate is already patched
+**Status:** The MCP _client_ is fully built and connectors already work in
+chat. Only the management _page_ is missing. The route gate is already patched
 (`keep-customize-connectors-route`), but the page component (`_l` in
 `c63a78ed4`) still bounces to `/customize/skills` through a second internal
 availability gate that needs tracing.
 
 **To do:**
+
 - Trace `_l`'s origin (it's not a plain import in `c63a78ed4`; likely a
   lazy-loaded chunk) and find the second gate that redirects it. Patch that
   gate on.
@@ -72,6 +73,7 @@ capability gate and a "restart the desktop app to enable this" fallback string
 to unlock.
 
 **To do:**
+
 - **Task store**: add a `scheduledTasks` array to `LocalData` (persisted in
   `local-backend.json`): id, name, prompt, schedule (cron-ish or interval),
   enabled, last-run, next-run, created-at, and per-run history/output refs.
@@ -105,12 +107,13 @@ toggles and back them locally.
 (`code_execution`, `memory`, `web_search`, and a `claude_brow…` /
 computer-use entry). i18n has the macOS permission strings ("Computer use
 needs two macOS permissions…", "Computer use is on. To finish setup, grant
-the macOS permissions below."). Playwright is already a dependency
+the macOS permissions below."), we can also make this more possible on windows and linux by using something like open-computer-use or other similar tools for those platforms. Playwright is already a dependency
 (`playwright-core`, `playwright-extra`, stealth plugin) and there's existing
 launch-preview/element-picker infrastructure in
 `src/main/local-launch-preview.ts`.
 
 **To do — Browser use (do this first; lower risk):**
+
 - Add a tool (or tool set) the chat loop exposes when browser use is on:
   navigate, click, type, read page, screenshot — backed by the existing
   Playwright stack.
@@ -120,6 +123,7 @@ launch-preview/element-picker infrastructure in
 - Reuse the element-picker/launch-preview plumbing where possible.
 
 **To do — Computer use (harder; platform-specific):**
+
 - Screen capture + input injection (mouse/keyboard) at the OS level. On
   Windows this is native input APIs; the native app's macOS flow needs two
   system permissions (Accessibility + Screen Recording) — replicate the
@@ -135,14 +139,48 @@ work + safety review.
 
 ---
 
-## 4. Chat-mode code execution sandbox (Docker) — researched, ready to build
+## 4. Chat-mode code execution sandbox (Docker) — DONE (2026-07-17)
+
+Shipped. Implementation notes vs. the original plan below:
+
+- `src/main/local-sandbox.ts` embeds the Dockerfile (python:3.12-slim +
+  node 22 + uv/pip with pandas/numpy/openpyxl/pillow/matplotlib/requests +
+  ffmpeg/git/zip/jq) and builds it via `docker build -` from stdin — no
+  packaged asset file needed. Image tag `open-claude-sandbox`.
+- Per-conversation containers bind-mount `userData/sandbox/<uuid>` at
+  `/workspace` (no docker cp), run `--network none` unless the
+  `enabled_wiggle_egress` account setting is on, with 2 GB / 2 CPU / pids
+  limits, in-container `timeout 180`, 30-min idle reaping, label-based
+  stale-container cleanup, and disposal on quit.
+- Chat tool `bash_code_execution` is exposed only when `enabled_wiggle` is
+  true; hallucinated calls while disabled fail closed like disabled web
+  search. Uploads copy to `/workspace/uploads` before each completion; a
+  loaded skill's files stage to `/workspace/skills/<name>` (new optional
+  `files()` on LocalSkillSource). New/changed files after each run are
+  listed in the tool result with `/api/local/sandbox/files/{conv}/{path}`
+  download links (route validates traversal, serves as attachment).
+- Chain rows reuse the proven generic `mcp_tool` display path with
+  `description: "Ran code · <command>"` rather than gambling on the native
+  wiggle renderer expecting `server_tool_use` shapes.
+- Settings toggle lives in the injected Model settings panel under a
+  "Capabilities" heading (bespoke-panel pattern), with the three status
+  states (red ✗ missing/stopped, spinner while building, green ✓ ready)
+  polled from `/api/local/sandbox/status` every 2.5 s while the panel is
+  open, plus a separate "Sandbox internet access" toggle
+  (`enabled_wiggle_egress`; allowed-hosts restriction not implemented).
+- Tests: `tests/local-sandbox-wiring.test.ts` (status route, tool
+  execution + generated-file links, fail-closed gating, download
+  traversal), plus a real-Docker end-to-end drive of build/run/staging.
+
+### Original plan (for reference)
 
 **Goal:** a "Code execution" general setting (requires Docker) that gives chat
 a sandboxed runtime with node/npm, python/uv, and common packages preinstalled,
-so Claude can run scripts, process uploaded/generated files, and produce
+so the model can run scripts, process uploaded/generated files, and produce
 downloadable outputs — including running scripts that skills provide.
 
 **Reference (from research):** the native feature is codenamed **"wiggle"**.
+
 - Feature gate: `wiggle` (rbac entitlement `code_execution`).
 - Account/org setting: `enabled_wiggle` (displayed as `code_execution_enabled`).
 - Network egress controls: `enabled_wiggle_egress` +
@@ -156,6 +194,7 @@ downloadable outputs — including running scripts that skills provide.
   `hM()` treats `tool_use` / `server_tool_use` / `mcp_tool_use` alike).
 
 **To do:**
+
 - **Runtime image** (`assets/sandbox/Dockerfile`): base with node+npm,
   python3 + uv/pip, and common packages (pandas, numpy, openpyxl, pillow,
   matplotlib, requests, ffmpeg, etc.). Tag e.g. `open-claude-sandbox`. Keep it
@@ -198,10 +237,35 @@ already exist in the client.
 
 ---
 
-## 5. Project-wide file uploads (knowledge base)
+## 5. Project-wide file uploads (knowledge base) — DONE (2026-07-17)
+
+Shipped. Notes vs. the plan below:
+
+- The native Files card and instructions editor were hidden by the
+  permissions hook (`hasKBEditPermissions`), whose membership/permissions
+  queries the `custom3pCompatible` kill-switch never runs locally — every
+  project rendered read-only. Fixed with the
+  `grant-local-project-edit-permissions` patch in `c6eedc03a` (single local
+  user owns every project); `/accounts` and `/permissions` routes also
+  return a real "user" membership as belt-and-braces.
+- The native upload control extracts client-side and POSTs `/docs` — that
+  path now works end to end (probed: file lands in the Files card list).
+  `/projects/{id}/upload` and `/projects/{id}/files` (+ `delete_many`,
+  single DELETE) are additionally backed with real blob storage and
+  extraction; `kb/stats` returns real counts/bytes; `/sync` (singular) no
+  longer 404s.
+- Injection: docs AND uploaded files inject into every chat of the project
+  through the budget-capped `<project_knowledge>` block
+  (`tests/local-project-files.test.ts` proves a fresh project chat sees
+  uploaded content without attaching).
+- The composer's project chip can now also remove/assign a chat's project
+  (conversation PUT handles `project_uuid`, including null).
+- Probe: `tools/probe-project-page.mjs`.
+
+### Original plan (for reference)
 
 **Goal:** projects should accept real file uploads at the project level that
-are automatically referenced across *every* chat started in that project — a
+are automatically referenced across _every_ chat started in that project — a
 persistent project knowledge base, not just per-chat attachments.
 
 **Status:** Projects already exist with a text-only `docs` array that injects
@@ -211,10 +275,10 @@ file uploads with extraction.
 **Reference:** the native project detail page already has the upload UI and
 endpoints — `/projects/{id}/upload`, `/projects/{id}/files`,
 `/projects/{id}/docs` (and `docs/delete_many`, `files/delete_many`), plus a
-`kb/stats` endpoint for knowledge-base size. The "Claude references the same
-knowledge every time you talk to it in this project" copy is already shown.
+`kb/stats` endpoint for knowledge-base size.
 
 **To do:**
+
 - **Upload handling**: back `/projects/{id}/upload` and `/projects/{id}/files`
   locally — accept a file, store it in the project's directory under the
   profile, and extract its text (reuse the chat attachment extraction path:
@@ -242,7 +306,7 @@ and the existing project store + knowledge injection).
 
 ## Suggested order
 
-1. **Code execution sandbox** — highest user value, fully researched.
+1. ~~**Code execution sandbox**~~ — done 2026-07-17.
 2. **Project-wide file uploads** — reuses the attachment pipeline + existing
    project store; high value, moderate effort.
 3. **Browser use** — reuses the existing Playwright stack.
@@ -256,4 +320,18 @@ Export/training-data, incognito chats, memory (+ save_memory chain rows +
 settings tab + editing), local projects, publish screenshots, MCP connectors
 in chat, artifact share tunnel (localtunnel), built-in whisper.cpp dictation,
 the occlusion-throttling fix (stabilized artifacts), cache no-store on
-upgrades, and the native toggle/button styling on custom settings screens.
+upgrades, the native toggle/button styling on custom settings screens, and
+the Docker code-execution sandbox (bash_code_execution chat tool + settings
+toggle with live Docker/image status).
+
+Also (2026-07-17, second pass): streaming dictation (partial transcripts
+while recording); code-mode rewind/fork/context-meter/queue+steer (queue
+persisted across restarts, resumed on session open); PDF/docx/xlsx/pptx
+extraction (`src/main/local-extract.ts`, pdfjs bundled into main);
+project knowledge-base uploads + Files card/instructions unlock
+(`grant-local-project-edit-permissions`); publish-artifact modal fixed —
+the kill-switched published-artifacts list query is enabled
+(`enable-local-published-artifacts-query`) and `GET /published_artifacts`
+is backed, so publishing flips the modal to "Artifact published" with the
+link and a working Unpublish, surviving reloads (probe
+`probe:publish-artifact`).

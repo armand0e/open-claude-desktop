@@ -76,6 +76,9 @@ export interface CodeSession {
 interface StoredCodeSession extends CodeSession {
   transcript: JsonObject[];
   artifacts: CodeArtifact[];
+  // Prompts sent mid-run and not yet executed. Persisted so a restart does
+  // not strand their already-appended user messages as forever-unanswered.
+  queuedPrompts?: Array<{ uuid: string; prompt: string }>;
   // Automatic context compaction: a model-written summary standing in for
   // transcript entries before upToTranscriptIndex when rebuilding context.
   contextSummary?: {
@@ -1137,7 +1140,13 @@ export class LocalCodeSessionManager {
       case "start":
         return this.start(args[0]);
       case "sendMessage":
-        return this.sendMessage(args[0], args[1]);
+        return this.sendMessage(args[0], args[1], args[5]);
+      case "promoteQueuedMessage":
+        return this.promoteQueued(args[0], args[1]);
+      case "reorderQueuedMessage":
+        return this.reorderQueued(args[0], args[1], args[2]);
+      case "cancelQueuedMessage":
+        return this.cancelQueued(args[0], args[1]);
       case "getAll":
         return this.getAll();
       case "getSession":
@@ -1180,6 +1189,11 @@ export class LocalCodeSessionManager {
         return this.delete(args[0]);
       case "clearSession":
         return this.clear(args[0]);
+      case "rewind":
+      case "rewindV2":
+        return this.rewind(args[0], args[1]);
+      case "forkSession":
+        return this.forkSession(args[0], args[1], args[2], args[3]);
       case "updateSession":
         return this.updateSession(args[0], args[1]);
       case "searchSessions":
@@ -1643,14 +1657,39 @@ export class LocalCodeSessionManager {
   private async sendMessage(
     sessionId: unknown,
     message: unknown,
+    priority?: unknown,
   ): Promise<void> {
     const session = this.session(sessionId);
     if (!session) throw new Error("Code session was not found");
     if (typeof message !== "string" || !message.trim())
       throw new Error("Message is required");
     const userMessage = userTranscriptMessage(session.sessionId, message);
+    const uuid = stringValue(userMessage.uuid) || randomUUID();
+    // Busy covers an active run, a deferred initial run that has not been
+    // activated yet, and an existing queue (ordering must hold).
+    const running =
+      this.#queues.has(session.sessionId) ||
+      this.#pendingStarts.has(session.sessionId) ||
+      (session.queuedPrompts?.length ?? 0) > 0;
     this.append(session, userMessage);
     await this.persist();
+    if (running) {
+      const priorityValue = (stringValue(priority) ?? "").toLowerCase();
+      if (/steer|immediate|interrupt/.test(priorityValue)) {
+        // Steering: delivered inside the running turn at the next agent
+        // iteration instead of waiting for the run to finish.
+        const inbox = this.#steeringInbox.get(session.sessionId) ?? [];
+        inbox.push({ uuid, prompt: message });
+        this.#steeringInbox.set(session.sessionId, inbox);
+        return;
+      }
+      session.queuedPrompts = [
+        ...(session.queuedPrompts ?? []),
+        { uuid, prompt: message },
+      ];
+      await this.persist();
+      return;
+    }
     this.enqueue(session, message);
   }
 
@@ -1740,7 +1779,115 @@ export class LocalCodeSessionManager {
     void next.finally(() => {
       if (this.#queues.get(session.sessionId) === next)
         this.#queues.delete(session.sessionId);
+      this.drainPromptQueue(session.sessionId);
     });
+  }
+
+  // Messages sent while a turn is running either steer the live turn
+  // (delivered between agent iterations) or queue for their own turn after
+  // the current run finishes. Queued prompts live on the session — not in
+  // opaque promise chains — so promote/reorder/cancel can manipulate them
+  // and a restart resumes them instead of stranding their user messages.
+  readonly #steeringInbox = new Map<
+    string,
+    Array<{ uuid: string; prompt: string }>
+  >();
+
+  private drainPromptQueue(sessionId: string): void {
+    if (this.#queues.has(sessionId) || this.#pendingStarts.has(sessionId))
+      return;
+    const session = this.#sessions.get(sessionId);
+    const nextPrompt = session?.queuedPrompts?.shift();
+    if (!session || !nextPrompt) return;
+    if (session.queuedPrompts?.length === 0) delete session.queuedPrompts;
+    void this.persist().catch(() => undefined);
+    this.enqueue(session, nextPrompt.prompt);
+  }
+
+  // Steering messages drain at the top of every agent iteration, so
+  // guidance lands inside the running task instead of after it.
+  private drainSteering(
+    session: StoredCodeSession,
+    messages: JsonObject[],
+  ): void {
+    const inbox = this.#steeringInbox.get(session.sessionId);
+    if (!inbox || inbox.length === 0) return;
+    this.#steeringInbox.delete(session.sessionId);
+    for (const entry of inbox)
+      messages.push({ role: "user", content: entry.prompt });
+  }
+
+  private removeQueuedTranscriptEntry(
+    session: StoredCodeSession,
+    messageUuid: string,
+  ): void {
+    const index = session.transcript.findIndex(
+      (entry) => stringValue(entry.uuid) === messageUuid,
+    );
+    if (index === -1) return;
+    session.transcript.splice(index, 1);
+    this.emit(session.sessionId, {
+      type: "cleared",
+      hasPreClearSession: false,
+    });
+    for (const message of session.transcript)
+      this.emit(session.sessionId, {
+        type: "message",
+        message: structuredClone(message),
+      });
+  }
+
+  private async promoteQueued(
+    sessionId: unknown,
+    messageUuid: unknown,
+  ): Promise<boolean> {
+    const id = stringValue(sessionId);
+    const uuid = stringValue(messageUuid);
+    const session = this.session(sessionId);
+    const queue = session?.queuedPrompts;
+    if (!id || !uuid || !queue) return false;
+    const index = queue.findIndex((entry) => entry.uuid === uuid);
+    if (index === -1) return false;
+    const [entry] = queue.splice(index, 1);
+    queue.unshift(entry);
+    await this.persist();
+    this.drainPromptQueue(id);
+    return true;
+  }
+
+  private async reorderQueued(
+    sessionId: unknown,
+    messageUuid: unknown,
+    overUuid: unknown,
+  ): Promise<boolean> {
+    const uuid = stringValue(messageUuid);
+    const over = stringValue(overUuid);
+    const queue = this.session(sessionId)?.queuedPrompts;
+    if (!uuid || !over || !queue) return false;
+    const from = queue.findIndex((entry) => entry.uuid === uuid);
+    const to = queue.findIndex((entry) => entry.uuid === over);
+    if (from === -1 || to === -1) return false;
+    const [entry] = queue.splice(from, 1);
+    queue.splice(to, 0, entry);
+    await this.persist();
+    return true;
+  }
+
+  private async cancelQueued(
+    sessionId: unknown,
+    messageUuid: unknown,
+  ): Promise<boolean> {
+    const uuid = stringValue(messageUuid);
+    const session = this.session(sessionId);
+    const queue = session?.queuedPrompts;
+    if (!uuid || !session || !queue) return false;
+    const index = queue.findIndex((entry) => entry.uuid === uuid);
+    if (index === -1) return false;
+    queue.splice(index, 1);
+    if (queue.length === 0) delete session.queuedPrompts;
+    this.removeQueuedTranscriptEntry(session, uuid);
+    await this.persist();
+    return true;
   }
 
   // A message starting with /skill-name forces that skill: its full
@@ -1812,6 +1959,7 @@ export class LocalCodeSessionManager {
     let emptyTurns = 0;
     try {
       for (; turns < MAX_AGENT_TURNS; turns += 1) {
+        this.drainSteering(session, messages);
         await this.maybeCompactAgentContext(
           session,
           provider,
@@ -2386,6 +2534,9 @@ export class LocalCodeSessionManager {
         body: JSON.stringify({
           model: session.model || provider.model,
           stream: true,
+          // Real token counts feed the live context meter; providers that
+          // ignore stream_options fall back to the estimate below.
+          stream_options: { include_usage: true },
           messages: withTools
             ? messages
             : [
@@ -2499,6 +2650,19 @@ export class LocalCodeSessionManager {
       if (reasoning && !streamedFallbackReasoning)
         onDelta?.({ type: "reasoning", text: reasoning });
       if (text) onDelta?.({ type: "text", text });
+    }
+    if (
+      numberValue(usage.input_tokens ?? usage.prompt_tokens, 0) === 0 &&
+      numberValue(usage.output_tokens ?? usage.completion_tokens, 0) === 0
+    ) {
+      // Providers that never report usage still need the context meter to
+      // move: approximate with the same chars/4 heuristic the meter's
+      // fallback display uses, so every finished turn carries growing
+      // numbers in its message_delta usage.
+      usage = {
+        input_tokens: Math.ceil(JSON.stringify(messages).length / 4),
+        output_tokens: Math.ceil((text.length + reasoning.length) / 4),
+      };
     }
     return {
       text:
@@ -3744,6 +3908,9 @@ export class LocalCodeSessionManager {
       // session that is already generating.
       this.activatePendingStart(id);
       this.scheduleStreamReplay(id);
+      // Prompts queued before a restart resume when the session is opened;
+      // the guard inside skips sessions with an active run.
+      this.drainPromptQueue(id);
     }
     return structuredClone(this.session(id)?.transcript ?? []);
   }
@@ -3873,6 +4040,102 @@ export class LocalCodeSessionManager {
       hasPreClearSession: false,
     });
     await this.persist();
+  }
+
+  // Rewind the conversation to (and including) a previous user message.
+  // Contract from the retained client: resolve the rewound message's text
+  // (it returns to the composer) on success, null when impossible — null is
+  // what raises its "Can't rewind to this message" toast.
+  private async rewind(
+    sessionId: unknown,
+    targetMessageUuid: unknown,
+  ): Promise<string | null> {
+    const session = this.session(sessionId);
+    const target = stringValue(targetMessageUuid);
+    if (!session || !target) return null;
+    const index = session.transcript.findIndex(
+      (entry) =>
+        stringValue(entry.uuid) === target ||
+        (isObject(entry.message) && stringValue(entry.message.id) === target),
+    );
+    if (index === -1) return null;
+    const entry = session.transcript[index];
+    if (entry.type !== "user") return null;
+    const entryText = isObject(entry.message)
+      ? contentText(entry.message.content)
+      : "";
+    await this.stop(session.sessionId);
+    session.transcript = session.transcript.slice(0, index);
+    // A compaction summary covering removed entries would resurrect them.
+    if (
+      session.contextSummary &&
+      session.contextSummary.upToTranscriptIndex > session.transcript.length
+    )
+      delete session.contextSummary;
+    session.lastActivityAt = Date.now();
+    // The client has no partial-truncation event; reset its bucket and
+    // replay the surviving transcript, exactly like a fresh session open.
+    this.emit(session.sessionId, {
+      type: "cleared",
+      hasPreClearSession: false,
+    });
+    for (const message of session.transcript)
+      this.emit(session.sessionId, {
+        type: "message",
+        message: structuredClone(message),
+      });
+    this.emit(session.sessionId, {
+      type: "session_updated",
+      session: publicSession(session),
+    });
+    await this.persist();
+    return entryText;
+  }
+
+  // Fork a session into a new one, optionally cutting the copied transcript
+  // after forkAtMessageUuid. Mirrors start()'s announce-and-return shape.
+  private async forkSession(
+    parentSessionId: unknown,
+    sessionId?: unknown,
+    forkAtMessageUuid?: unknown,
+    targetCwd?: unknown,
+  ): Promise<JsonObject | null> {
+    const parent = this.session(parentSessionId);
+    if (!parent) return null;
+    const newId = stringValue(sessionId) || randomUUID();
+    if (this.#sessions.has(newId)) return null;
+    const cutUuid = stringValue(forkAtMessageUuid);
+    let transcript = structuredClone(parent.transcript);
+    if (cutUuid) {
+      const cut = transcript.findIndex(
+        (entry) => stringValue(entry.uuid) === cutUuid,
+      );
+      if (cut !== -1) transcript = transcript.slice(0, cut + 1);
+    }
+    for (const entry of transcript) {
+      if ("sessionId" in entry) entry.sessionId = newId;
+      if ("session_id" in entry) entry.session_id = newId;
+    }
+    const requestedCwd = stringValue(targetCwd);
+    const now = Date.now();
+    const forked: StoredCodeSession = {
+      ...structuredClone(parent),
+      sessionId: newId,
+      ...(requestedCwd ? { cwd: path.resolve(requestedCwd) } : {}),
+      isRunning: false,
+      createdAt: now,
+      lastActivityAt: now,
+      pendingToolPermissions: [],
+      title: `${parent.title} (fork)`,
+      transcript,
+      artifacts: [],
+    };
+    delete forked.error;
+    delete forked.errorCategory;
+    this.#sessions.set(newId, forked);
+    this.emit(newId, { type: "start", session: publicSession(forked) });
+    await this.persist();
+    return publicSession(forked) as unknown as JsonObject;
   }
 
   private async updateSession(

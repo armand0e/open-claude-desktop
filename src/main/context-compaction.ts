@@ -110,9 +110,12 @@ function strippedThinking(text: string): string {
   return text.replace(/^\s*<think>[\s\S]*?<\/think>\s*/u, "").trim();
 }
 
-export async function summarizeForCompaction(
+// One non-streaming provider completion; shared by context compaction and
+// the local memory synthesizer.
+export async function providerSummaryCompletion(
   provider: CompactionProviderConfig,
-  messages: readonly JsonObject[],
+  systemPrompt: string,
+  userPrompt: string,
   signal?: AbortSignal,
 ): Promise<string> {
   const timeout = AbortSignal.timeout(SUMMARY_TIMEOUT_MS);
@@ -129,23 +132,33 @@ export async function summarizeForCompaction(
       model: provider.model,
       stream: false,
       messages: [
-        { role: "system", content: COMPACTION_SYSTEM_PROMPT },
-        {
-          role: "user",
-          content: `Summarize this conversation transcript for compaction:\n\n${compactionTranscript(messages)}`,
-        },
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
       ],
     }),
   });
   if (!response.ok)
-    throw new Error(`Compaction summary failed: HTTP ${response.status}`);
+    throw new Error(`Provider summary failed: HTTP ${response.status}`);
   const payload = (await response.json()) as {
     choices?: Array<{ message?: { content?: unknown } }>;
   };
   const content = payload.choices?.[0]?.message?.content;
   const summary = strippedThinking(typeof content === "string" ? content : "");
-  if (!summary) throw new Error("Compaction summary was empty");
+  if (!summary) throw new Error("Provider summary was empty");
   return summary;
+}
+
+export async function summarizeForCompaction(
+  provider: CompactionProviderConfig,
+  messages: readonly JsonObject[],
+  signal?: AbortSignal,
+): Promise<string> {
+  return providerSummaryCompletion(
+    provider,
+    COMPACTION_SYSTEM_PROMPT,
+    `Summarize this conversation transcript for compaction:\n\n${compactionTranscript(messages)}`,
+    signal,
+  );
 }
 
 export function compactionSummaryText(summary: string): string {

@@ -5,6 +5,7 @@ import {
   compactionSummaryText,
   estimateTokens,
   planCompaction,
+  providerSummaryCompletion,
   summarizeForCompaction,
   traceCompaction,
 } from "./context-compaction";
@@ -192,6 +193,16 @@ interface LocalConversation {
   };
 }
 
+interface LocalMemoryState {
+  // The synthesized memory document injected into chat system prompts.
+  memory: string;
+  // User-written instructions the synthesizer must honor (the native
+  // memory page calls these "controls").
+  controls: string[];
+  updated_at: string | null;
+  settings: JsonObject;
+}
+
 interface LocalData {
   version: 3;
   provider: LocalProviderConfig;
@@ -200,7 +211,20 @@ interface LocalData {
   conversations: LocalConversation[];
   artifacts: LocalArtifact[];
   files: LocalStoredFile[];
+  memory: LocalMemoryState;
 }
+
+const DEFAULT_MEMORY_STATE: LocalMemoryState = {
+  memory: "",
+  controls: [],
+  updated_at: null,
+  settings: {
+    enabled_saffron: true,
+    enabled_melange: false,
+    enabled_saffron_search: false,
+    memory_mode: null,
+  },
+};
 
 type JsonObject = Record<string, unknown>;
 
@@ -1248,6 +1272,23 @@ export class LocalBackend {
         conversations,
         artifacts,
         files,
+        memory: (() => {
+          const stored = plainJsonObject(input.memory);
+          return {
+            memory: stringValue(stored.memory) ?? "",
+            controls: Array.isArray(stored.controls)
+              ? stored.controls.filter(
+                  (entry): entry is string => typeof entry === "string",
+                )
+              : [],
+            updated_at:
+              typeof stored.updated_at === "string" ? stored.updated_at : null,
+            settings: {
+              ...structuredClone(DEFAULT_MEMORY_STATE.settings),
+              ...plainJsonObject(stored.settings),
+            },
+          };
+        })(),
       },
       webTools,
       secretCodec,
@@ -1274,6 +1315,106 @@ export class LocalBackend {
   // Read-only snapshot for the local data-export pipeline.
   exportConversations(): LocalConversation[] {
     return structuredClone(this.#data.conversations);
+  }
+
+  #memoryEnabled(): boolean {
+    return this.#data.memory.settings.enabled_saffron !== false;
+  }
+
+  #memoryResponse(): JsonObject {
+    const memory = this.#data.memory;
+    return {
+      memory: memory.memory,
+      controls: memory.controls.length > 0 ? memory.controls : null,
+      updated_at: memory.updated_at,
+    };
+  }
+
+  #memorySynthesisActive = false;
+
+  // Rebuilds the synthesized memory document from recent non-temporary
+  // conversations. Incognito chats can read memory but never feed it.
+  async synthesizeMemory(): Promise<void> {
+    if (this.#memorySynthesisActive) return;
+    this.#memorySynthesisActive = true;
+    try {
+      const sources = this.#data.conversations
+        .filter(
+          (conversation) =>
+            !conversation.is_temporary && conversation.chat_messages.length > 0,
+        )
+        .sort(
+          (left, right) =>
+            Date.parse(right.updated_at) - Date.parse(left.updated_at),
+        )
+        .slice(0, 20);
+      if (sources.length === 0) return;
+      let budget = 48_000;
+      const transcripts: string[] = [];
+      for (const conversation of sources) {
+        const turns = messageBranch(
+          conversation,
+          conversation.current_leaf_message_uuid ??
+            conversation.chat_messages[conversation.chat_messages.length - 1]
+              .uuid,
+        )
+          .map(
+            (message) =>
+              `${message.sender === "human" ? "User" : "Assistant"}: ${message.text.slice(0, 1_500)}`,
+          )
+          .join("\n");
+        const section =
+          `## ${conversation.name || "Untitled"} (${conversation.updated_at})\n${turns}`.slice(
+            0,
+            6_000,
+          );
+        if (section.length > budget) break;
+        transcripts.push(section);
+        budget -= section.length;
+      }
+      const controls = this.#data.memory.controls;
+      const existing = this.#data.memory.memory;
+      const summary = await providerSummaryCompletion(
+        this.#data.provider,
+        [
+          "You maintain the user's long-term memory profile for a local AI assistant. Produce an updated memory document capturing stable, useful facts about the user: who they are, preferences, ongoing projects, tools, recurring context. Write plain prose/bullets under 800 words. Keep only durable information; drop one-off task details. Never invent facts.",
+          controls.length > 0
+            ? `The user set these mandatory memory instructions; follow them exactly:\n${controls.map((entry) => `- ${entry}`).join("\n")}`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+        [
+          existing ? `Current memory document:\n${existing}` : "",
+          `Recent conversations:\n\n${transcripts.join("\n\n")}`,
+          "Return only the updated memory document.",
+        ]
+          .filter(Boolean)
+          .join("\n\n"),
+      );
+      this.#data.memory.memory = summary;
+      this.#data.memory.updated_at = new Date().toISOString();
+      await this.#persist();
+    } finally {
+      this.#memorySynthesisActive = false;
+    }
+  }
+
+  #memorySynthesisTimer?: NodeJS.Timeout;
+
+  // Trailing debounce: a completed chat schedules one synthesis a minute
+  // after the session goes quiet, and at most every 15 minutes overall.
+  maybeSynthesizeMemory(): void {
+    if (!this.#memoryEnabled()) return;
+    const last = this.#data.memory.updated_at
+      ? Date.parse(this.#data.memory.updated_at)
+      : 0;
+    if (Date.now() - last < 15 * 60_000) return;
+    clearTimeout(this.#memorySynthesisTimer);
+    this.#memorySynthesisTimer = setTimeout(() => {
+      void this.synthesizeMemory().catch(() => undefined);
+    }, 60_000);
+    this.#memorySynthesisTimer.unref?.();
   }
 
   artifactSummaries(): JsonObject[] {
@@ -1550,6 +1691,11 @@ export class LocalBackend {
     if (instructions)
       sections.push(
         `<user_instructions>\nThe user has set these preferences for how you should respond. Apply them whenever they are relevant:\n${instructions}\n</user_instructions>`,
+      );
+    const memory = this.#data.memory.memory.trim();
+    if (memory && this.#memoryEnabled())
+      sections.push(
+        `<user_memory>\nWhat you remember about this user from previous conversations. Use it to personalize responses when relevant; never claim to remember something that is not written here:\n${memory}\n</user_memory>`,
       );
     if (this.#skillSource) {
       try {
@@ -2599,6 +2745,8 @@ export class LocalBackend {
           await backend.#persist();
           backend.#clearActiveCompletion(conversationUuid, completionAbort);
           controller.close();
+          // Incognito chats read memory but never contribute to it.
+          if (!conversation.is_temporary) backend.maybeSynthesizeMemory();
         } catch (error) {
           backend.#clearActiveCompletion(conversationUuid, completionAbort);
           const message =
@@ -2917,6 +3065,61 @@ export class LocalBackend {
       version.updated_at = version.published_artifact_deleted_at;
       await this.#persist();
       return new Response(null, { status: 204 });
+    }
+
+    const memoryRoute = pathname.match(
+      /^\/api\/organizations\/[^/]+\/memory(?:\/(settings|synthesize|reset|controls|themes))?$/,
+    );
+    if (memoryRoute) {
+      const json = (payload: JsonObject) =>
+        new Response(JSON.stringify(payload), {
+          headers: { "Content-Type": "application/json" },
+        });
+      const sub = memoryRoute[1];
+      if (!sub && request.method === "GET") return json(this.#memoryResponse());
+      if (sub === "settings") {
+        if (request.method === "GET")
+          return json(structuredClone(this.#data.memory.settings));
+        if (request.method === "POST") {
+          this.#data.memory.settings = {
+            ...this.#data.memory.settings,
+            ...plainJsonObject(await jsonBody(request)),
+          };
+          await this.#persist();
+          return json(structuredClone(this.#data.memory.settings));
+        }
+      }
+      if (sub === "controls" && request.method === "PUT") {
+        const body = await jsonBody(request);
+        this.#data.memory.controls = Array.isArray(body.controls)
+          ? body.controls.filter(
+              (entry): entry is string => typeof entry === "string",
+            )
+          : [];
+        this.#data.memory.updated_at = new Date().toISOString();
+        await this.#persist();
+        return json(this.#memoryResponse());
+      }
+      if (sub === "synthesize" && request.method === "POST") {
+        try {
+          await this.synthesizeMemory();
+        } catch (error) {
+          return errorResponse(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+        return json(this.#memoryResponse());
+      }
+      if (sub === "reset" && request.method === "POST") {
+        this.#data.memory.memory = "";
+        this.#data.memory.controls = [];
+        this.#data.memory.updated_at = null;
+        await this.#persist();
+        return json(this.#memoryResponse());
+      }
+      if (sub === "themes" && request.method === "GET")
+        return json({ themes: [] });
+      return new Response(null, { status: 405 });
     }
 
     if (

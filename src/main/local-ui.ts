@@ -203,6 +203,74 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       ':l.meta&&!se?"Skill"===s.name?t.jsxs("span",{className:"text-body text-assistant-primary truncate min-w-0",children:[t.jsx("a",{href:"/customize/skills?skill="+encodeURIComponent(String(l.meta)),onClick:n=>{n.preventDefault(),n.stopPropagation();const a="/customize/skills?skill="+encodeURIComponent(String(l.meta));history.pushState({},"",a),window.dispatchEvent(new PopStateEvent("popstate"))},onKeyDown:n=>n.stopPropagation(),className:"underline underline-offset-[3px] hover:text-assistant-primary",children:String(l.meta)})," skill"]}):C?t.jsx("a",{href:C,target:"_blank",rel:"noreferrer",',
   },
   {
+    id: "enable-memory-feature-gate",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // Memory ("saffron") is feature-gated off in the retained build; the
+    // local backend implements the full /memory API.
+    find: 'P2=()=>av("claudeai_saffron_enabled")',
+    replace: "P2=()=>!0",
+  },
+  {
+    id: "enable-memory-feature-registration",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // The feature-registry entry keeps its own client-side gate; open it so
+    // the Settings surface shows the native memory controls.
+    find: 'saffron:FL({feature:"saffron",useClientSideGate:()=>av("claudeai_saffron_enabled")',
+    replace: 'saffron:FL({feature:"saffron",useClientSideGate:()=>!0',
+  },
+  {
+    id: "keep-customize-memory-route",
+    assetUrlPath: "/assets/v1/c63a78ed4-C202DsUQ.js",
+    // The Customize > Memory route redirects to /settings/capabilities when
+    // its statsig gates are off; the local backend serves the memory API.
+    find: '{isPending:a}=E({forModal:!0}),n=O(),c=R(),o=!(n||c||a||t&&i);return e.useEffect(()=>{o&&l.replace("/settings/capabilities")},[o,l]),o?null:s.jsx(dl,{})',
+    replace:
+      '{isPending:a}=E({forModal:!0}),n=O(),c=R(),o=!1;return e.useEffect(()=>{o&&l.replace("/settings/capabilities")},[o,l]),o?null:s.jsx(dl,{})',
+  },
+  {
+    id: "force-memory-page-summary-view",
+    assetUrlPath: "/assets/v1/c06a0b3df-DP2HU9yQ.js",
+    // The Customize > Memory page picks between the Cowork file-memory view
+    // and the account "Summary" view behind statsig gates. Local mode
+    // implements the summary API (/memory, /memory/controls, /synthesize),
+    // so pin the page to that view.
+    find: 'function le(){const a=k("claudeai_customize_memory_tab_main"),t=S(),l=z(),',
+    replace: "function le(){const a=!0,t=!1,l=!0,",
+  },
+  {
+    id: "force-memory-summary-query",
+    assetUrlPath: "/assets/v1/c06a0b3df-DP2HU9yQ.js",
+    // The Summary panel's memory fetch chains through cloud availability
+    // hooks; the local /memory endpoint is always available.
+    find: "const K=s.memo(()=>{const a=L(),t=n(),{isAvailable:l}=b(),{data:i,isLoading:r}=v(void 0,{enabled:l}),",
+    replace:
+      "const K=s.memo(()=>{const a=L(),t=n(),{isAvailable:l}=b(),{data:i,isLoading:r}=v(void 0,{enabled:!0}),",
+  },
+  {
+    id: "unblock-memory-query-gates",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // The shared query wrapper force-disables queries not marked
+    // custom3pCompatible, and the enabled chain requires cloud org state the
+    // local build does not model. The local /memory endpoint is always safe.
+    find: "enabled:Boolean(r)&&(t?.enabled??!0)&&s&&!i},e=>E2.parse(e))",
+    replace: "custom3pCompatible:!0,enabled:t?.enabled??!0},e=>E2.parse(e))",
+  },
+  {
+    id: "unblock-memory-settings-query",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // Same custom3p kill-switch for the memory settings query backing the
+    // native Settings toggles.
+    find: "{queryKey:y2(n),enabled:e&&!!n,staleTime:6e4,meta:{noToast:!0}}",
+    replace:
+      "{queryKey:y2(n),custom3pCompatible:!0,enabled:e&&!!n,staleTime:6e4,meta:{noToast:!0}}",
+  },
+  {
+    id: "show-customize-memory-nav-entry",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    find: 'a&&s&&n.push({id:"customize-memory",href:"/customize/memory"',
+    replace: 'n.push({id:"customize-memory",href:"/customize/memory"',
+  },
+  {
     id: "enable-incognito-feature-gate",
     assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
     // The incognito ("saffron ghost") feature flag is off in the retained
@@ -773,6 +841,9 @@ function localAccount(
       // cards render but clicking them cannot open the panel after a restart
       // or when returning to an old chat.
       preview_feature_uses_artifacts: true,
+      // Memory ("saffron") defaults on; the native Settings/Customize
+      // toggles persist overrides through the account-settings endpoint.
+      enabled_saffron: true,
       ...accountSettings,
       ...profileSettings,
     },

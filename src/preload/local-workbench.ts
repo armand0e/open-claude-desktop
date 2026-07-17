@@ -591,14 +591,23 @@ export function installLocalWorkbench(): void {
         input:focus { border-color: #d97757; box-shadow: 0 0 0 2px color-mix(in srgb, #d97757 25%, transparent); }
         .hint { margin: 0; color: var(--cds-text-secondary, #8a8781); font-size: 13px; font-weight: 400; line-height: 1.4; }
         select { width: 100%; border: 0; border-radius: 10px; padding: 10px 12px; background: var(--cds-bg-200, rgba(110,104,94,.16)); color: inherit; outline: none; }
-        .checks { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
-        .checks label { display: flex; gap: 7px; align-items: center; cursor: pointer; }
-        .checks input[type="checkbox"] { width: auto; accent-color: #d97757; }
+        .checks { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
+        .checks label { display: flex; gap: 9px; align-items: center; cursor: pointer; }
+        /* Native-style toggle switch, rendered straight from the checkbox. */
+        .checks input[type="checkbox"] { appearance: none; -webkit-appearance: none; margin: 0; width: 38px; height: 22px; flex-shrink: 0; border: 0; border-radius: 999px; padding: 0; background: var(--cds-bg-300, rgba(110,104,94,.32)); position: relative; cursor: pointer; transition: background .15s ease; }
+        .checks input[type="checkbox"]::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s ease; }
+        .checks input[type="checkbox"]:checked { background: #d97757; }
+        .checks input[type="checkbox"]:checked::after { transform: translateX(16px); }
+        .checks input[type="checkbox"]:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, #d97757 40%, transparent); }
         .checks input[type="date"] { flex: 1; min-width: 130px; }
+        .checks button { border: 1px solid var(--cds-border, rgba(110,104,94,.28)); border-radius: 8px; padding: 7px 13px; font-weight: 500; cursor: pointer; background: var(--cds-bg-200, rgba(110,104,94,.14)); color: inherit; transition: background .12s ease; }
+        .checks button:hover { background: var(--cds-bg-300, rgba(110,104,94,.24)); }
         #export-status { min-height: 18px; margin: 0; text-align: right; color: var(--cds-text-secondary, #6b675f); font-size: 12px; white-space: pre-wrap; }
         .actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 9px; padding: 18px 0 8px; }
-        .actions button { border: 1px solid var(--cds-border, rgba(110,104,94,.3)); border-radius: 9px; padding: 8px 12px; cursor: pointer; background: var(--cds-bg-200, rgba(110,104,94,.16)); color: inherit; }
+        .actions button { border: 1px solid var(--cds-border, rgba(110,104,94,.28)); border-radius: 8px; padding: 8px 14px; font-weight: 500; cursor: pointer; background: var(--cds-bg-200, rgba(110,104,94,.14)); color: inherit; transition: background .12s ease; }
+        .actions button:hover { background: var(--cds-bg-300, rgba(110,104,94,.24)); }
         .actions .primary { background: #d97757; border-color: #d97757; color: #fff; }
+        .actions .primary:hover { background: #c96647; }
         #status { min-height: 18px; margin: 0; text-align: right; color: var(--cds-text-secondary, #6b675f); font-size: 12px; white-space: pre-wrap; }
         #models { max-height: 160px; overflow: auto; display: grid; gap: 5px; }
         #models:empty { display: none; }
@@ -622,7 +631,7 @@ export function installLocalWorkbench(): void {
         <h1>Memory</h1>
         <div class="section">
           <div class="row"><span class="copy"><span class="label">Auto-generate memories</span><span class="hint">Summarize your recent chats into memory in the background. Incognito chats are never used.</span></span>
-            <span class="checks"><label><input id="memory-auto" type="checkbox"> Enabled</label></span></div>
+            <span class="checks"><input id="memory-auto" type="checkbox" aria-label="Auto-generate memories"></span></div>
           <div class="row"><span class="copy"><span class="label">Maintenance</span><span class="hint">Regenerate rebuilds the summary from recent chats; reset clears everything Claude remembers.</span></span>
             <span class="checks"><button id="memory-regenerate" type="button">Regenerate now</button><button id="memory-reset" type="button">Reset memory…</button></span></div>
           <p id="memory-status" role="status"></p>

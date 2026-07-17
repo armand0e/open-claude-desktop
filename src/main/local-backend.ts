@@ -203,6 +203,26 @@ interface LocalMemoryState {
   settings: JsonObject;
 }
 
+interface LocalProjectDoc {
+  uuid: string;
+  file_name: string;
+  content: string;
+  created_at: string;
+}
+
+interface LocalProject {
+  uuid: string;
+  name: string;
+  description: string;
+  is_private: boolean;
+  is_starred: boolean;
+  is_archived: boolean;
+  prompt_template: string;
+  created_at: string;
+  updated_at: string;
+  docs: LocalProjectDoc[];
+}
+
 interface LocalData {
   version: 3;
   provider: LocalProviderConfig;
@@ -212,6 +232,7 @@ interface LocalData {
   artifacts: LocalArtifact[];
   files: LocalStoredFile[];
   memory: LocalMemoryState;
+  projects: LocalProject[];
 }
 
 const DEFAULT_MEMORY_STATE: LocalMemoryState = {
@@ -1285,6 +1306,9 @@ export class LocalBackend {
         conversations,
         artifacts,
         files,
+        projects: Array.isArray(input.projects)
+          ? (input.projects as LocalProject[])
+          : [],
         memory: (() => {
           const stored = plainJsonObject(input.memory);
           return {
@@ -1695,9 +1719,35 @@ export class LocalBackend {
   async #chatSystemPromptWithInstructions(
     withTools: boolean,
     webSearchEnabled: boolean,
+    conversation?: LocalConversation,
   ): Promise<string> {
     const base = chatSystemPrompt(withTools, webSearchEnabled);
     const sections = [base];
+    const project = conversation?.project_uuid
+      ? this.#data.projects.find(
+          (entry) => entry.uuid === conversation.project_uuid,
+        )
+      : undefined;
+    if (project) {
+      if (project.prompt_template.trim())
+        sections.push(
+          `<project_instructions>\nThis conversation belongs to the project “${project.name}”. Follow these project instructions:\n${project.prompt_template}\n</project_instructions>`,
+        );
+      if (project.docs.length > 0) {
+        let budget = 30_000;
+        const docs: string[] = [];
+        for (const doc of project.docs) {
+          const sectionText = `<document name=${JSON.stringify(doc.file_name)}>\n${doc.content}\n</document>`;
+          if (sectionText.length > budget) continue;
+          docs.push(sectionText);
+          budget -= sectionText.length;
+        }
+        if (docs.length > 0)
+          sections.push(
+            `<project_knowledge>\nReference material the user added to the project “${project.name}”:\n${docs.join("\n")}\n</project_knowledge>`,
+          );
+      }
+    }
     const instructions = (
       stringValue(this.#data.accountProfile.conversation_preferences) ?? ""
     ).trim();
@@ -1861,9 +1911,14 @@ export class LocalBackend {
     const systemContentWithTools = await this.#chatSystemPromptWithInstructions(
       true,
       webSearchEnabled,
+      conversation,
     );
     const systemContentWithoutTools =
-      await this.#chatSystemPromptWithInstructions(false, webSearchEnabled);
+      await this.#chatSystemPromptWithInstructions(
+        false,
+        webSearchEnabled,
+        conversation,
+      );
     const send = (withTools: boolean) =>
       fetch(`${provider.baseUrl}/chat/completions`, {
         method: "POST",
@@ -2969,6 +3024,9 @@ export class LocalBackend {
       updated_at: now,
       is_starred: false,
       is_temporary: body.is_temporary === true,
+      ...(stringValue(body.project_uuid)
+        ? { project_uuid: stringValue(body.project_uuid) }
+        : {}),
       settings: {
         enabled_web_search: true,
         ...requestedSettings,
@@ -3242,6 +3300,150 @@ export class LocalBackend {
       version.updated_at = version.published_artifact_deleted_at;
       await this.#persist();
       return new Response(null, { status: 204 });
+    }
+
+    const projectsRoute = pathname.match(
+      /^\/api\/organizations\/[^/]+\/projects(_v2)?(?:\/([^/]+))?(?:\/(docs|settings|conversations_v2|syncs|kb\/stats|report|accounts|upload)(?:\/([^/]+))?)?$/,
+    );
+    if (projectsRoute) {
+      const json = (payload: unknown, status = 200) =>
+        new Response(JSON.stringify(payload), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      const summary = (project: LocalProject) => ({
+        uuid: project.uuid,
+        name: project.name,
+        description: project.description,
+        is_private: project.is_private,
+        is_starred: project.is_starred,
+        is_archived: project.is_archived,
+        prompt_template: project.prompt_template,
+        created_at: project.created_at,
+        updated_at: project.updated_at,
+        type: "project",
+        creator: this.#data.accountProfile.display_name
+          ? { display_name: this.#data.accountProfile.display_name }
+          : { display_name: "Local User" },
+      });
+      const projectUuid = projectsRoute[2]
+        ? decodeURIComponent(projectsRoute[2])
+        : undefined;
+      const section = projectsRoute[3];
+      const sectionId = projectsRoute[4]
+        ? decodeURIComponent(projectsRoute[4])
+        : undefined;
+      const project = projectUuid
+        ? this.#data.projects.find((entry) => entry.uuid === projectUuid)
+        : undefined;
+      if (projectUuid === "count" && request.method === "GET")
+        return json({ count: this.#data.projects.length });
+      if (!projectUuid) {
+        if (request.method === "GET") {
+          const archived = url.searchParams.get("is_archived") === "true";
+          const list = this.#data.projects.filter(
+            (entry) => entry.is_archived === archived,
+          );
+          return json(
+            projectsRoute[1]
+              ? { data: list.map(summary), pagination: { has_more: false } }
+              : list.map(summary),
+          );
+        }
+        if (request.method === "POST") {
+          const body = await jsonBody(request);
+          const now = new Date().toISOString();
+          const created: LocalProject = {
+            uuid: randomUUID(),
+            name: stringValue(body.name) ?? "Untitled project",
+            description: stringValue(body.description) ?? "",
+            is_private: body.is_private !== false,
+            is_starred: false,
+            is_archived: false,
+            prompt_template: stringValue(body.prompt_template) ?? "",
+            created_at: now,
+            updated_at: now,
+            docs: [],
+          };
+          this.#data.projects.push(created);
+          await this.#persist();
+          return json(summary(created));
+        }
+      }
+      if (!project) return errorResponse("Project not found", 404);
+      if (!section) {
+        if (request.method === "GET") return json(summary(project));
+        if (request.method === "PUT") {
+          const body = await jsonBody(request);
+          if (typeof body.name === "string") project.name = body.name;
+          if (typeof body.description === "string")
+            project.description = body.description;
+          if (typeof body.prompt_template === "string")
+            project.prompt_template = body.prompt_template;
+          if (typeof body.is_starred === "boolean")
+            project.is_starred = body.is_starred;
+          if (typeof body.is_archived === "boolean")
+            project.is_archived = body.is_archived;
+          project.updated_at = new Date().toISOString();
+          await this.#persist();
+          return json(summary(project));
+        }
+        if (request.method === "DELETE") {
+          this.#data.projects = this.#data.projects.filter(
+            (entry) => entry.uuid !== project.uuid,
+          );
+          await this.#persist();
+          return new Response(null, { status: 204 });
+        }
+      }
+      if (section === "docs") {
+        if (sectionId === "delete_many" && request.method === "POST") {
+          const body = await jsonBody(request);
+          const targets = new Set(
+            Array.isArray(body.doc_uuids) ? body.doc_uuids : [],
+          );
+          project.docs = project.docs.filter((doc) => !targets.has(doc.uuid));
+          await this.#persist();
+          return json({ ok: true });
+        }
+        if (sectionId && request.method === "DELETE") {
+          project.docs = project.docs.filter((doc) => doc.uuid !== sectionId);
+          await this.#persist();
+          return new Response(null, { status: 204 });
+        }
+        if (request.method === "GET") return json(project.docs);
+        if (request.method === "POST") {
+          const body = await jsonBody(request);
+          const doc: LocalProjectDoc = {
+            uuid: randomUUID(),
+            file_name: stringValue(body.file_name) ?? "document.txt",
+            content: stringValue(body.content) ?? "",
+            created_at: new Date().toISOString(),
+          };
+          project.docs.push(doc);
+          project.updated_at = doc.created_at;
+          await this.#persist();
+          return json(doc);
+        }
+      }
+      if (section === "conversations_v2" && request.method === "GET") {
+        const data = this.#data.conversations
+          .filter(
+            (conversation) =>
+              conversation.project_uuid === project.uuid &&
+              !conversation.is_temporary,
+          )
+          .map(conversationSummary);
+        return json({ data, pagination: { has_more: false } });
+      }
+      if (section === "settings")
+        return json(request.method === "GET" ? {} : { ok: true });
+      if (section === "syncs")
+        return json(request.method === "GET" ? [] : { ok: true });
+      if (section === "kb/stats") return json({});
+      if (section === "report") return json({ ok: true });
+      if (section === "accounts") return json([]);
+      return new Response(null, { status: 405 });
     }
 
     const memoryRoute = pathname.match(

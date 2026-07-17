@@ -215,6 +215,52 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       ':l.meta&&!se?"Skill"===s.name?t.jsxs("span",{className:"text-body text-assistant-primary truncate min-w-0",children:[t.jsx("a",{href:"/customize/skills?skill="+encodeURIComponent(String(l.meta)),onClick:n=>{n.preventDefault(),n.stopPropagation();const a="/customize/skills?skill="+encodeURIComponent(String(l.meta));history.pushState({},"",a),window.dispatchEvent(new PopStateEvent("popstate"))},onKeyDown:n=>n.stopPropagation(),className:"underline underline-offset-[3px] hover:text-assistant-primary",children:String(l.meta)})," skill"]}):C?t.jsx("a",{href:C,target:"_blank",rel:"noreferrer",',
   },
   {
+    id: "keep-projects-routes",
+    assetUrlPath: "/assets/v1/c1b9abf13-bG6VlbXV.js",
+    // The projects layout redirects home unless a cloud access check
+    // allows it; the local backend serves the projects API.
+    find: 'function He({children:s}){const t=_(),i=a(!0),n=Ye(),o=Xe();if("redirecting"===i)return null;const c=n&&(o.loading||o.spacesAvailable);return"allowed"===t||c?',
+    replace:
+      'function He({children:s}){const t=_(),i=a(!0),n=Ye(),o=Xe();if("redirecting"===i)return null;const c=n&&(o.loading||o.spacesAvailable);return!0?',
+  },
+  {
+    id: "show-projects-nav-entry",
+    // Projects are cloud-gated in the retained build; the local backend now
+    // serves the projects API.
+    find: 'priority:LAn}),m.isAvailable&&a&&e.push({id:"projects",href:"/projects"',
+    replace: 'priority:LAn}),e.push({id:"projects",href:"/projects"',
+  },
+  {
+    id: "unblock-projects-list-query",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // The shared query wrapper force-disables queries not marked
+    // custom3pCompatible; the projects queries hit the local backend.
+    find: "IM(`/api/organizations/${p}/projects_v2?${h.toString()}`,{queryKey:[TT,{orgUuid:p},{limit:t,offset:r,starred:o,creatorFilter:a,projectFilter:s,orderBy:i,searchQuery:c,isArchived:l}],enabled:Boolean(e&&u&&d),select:g})",
+    replace:
+      "IM(`/api/organizations/${p}/projects_v2?${h.toString()}`,{queryKey:[TT,{orgUuid:p},{limit:t,offset:r,starred:o,creatorFilter:a,projectFilter:s,orderBy:i,searchQuery:c,isArchived:l}],custom3pCompatible:!0,enabled:Boolean(e),select:g})",
+  },
+  {
+    id: "unblock-project-detail-query",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    find: "IM(`/api/organizations/${r}/projects/${e}`,{queryKey:[xT,{orgUuid:r,projectUuid:e}],enabled:Boolean(t&&n&&e),staleTime:0,",
+    replace:
+      "IM(`/api/organizations/${r}/projects/${e}`,{queryKey:[xT,{orgUuid:r,projectUuid:e}],custom3pCompatible:!0,enabled:Boolean(t&&e),staleTime:0,",
+  },
+  {
+    id: "unblock-project-docs-query",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    find: "IM(`/api/organizations/${r}/projects/${e}/docs`,{queryKey:[jT,{orgUuid:r,projectUuid:e}],enabled:!!n&&!!e&&t})",
+    replace:
+      "IM(`/api/organizations/${r}/projects/${e}/docs`,{queryKey:[jT,{orgUuid:r,projectUuid:e}],custom3pCompatible:!0,enabled:!!e&&t})",
+  },
+  {
+    id: "unblock-project-count-query",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    find: "IM(`/api/organizations/${t}/projects/count`,{queryKey:[CT,{orgUuid:t}],staleTime:3e5,enabled:!!e,",
+    replace:
+      "IM(`/api/organizations/${t}/projects/count`,{queryKey:[CT,{orgUuid:t}],custom3pCompatible:!0,staleTime:3e5,enabled:!0,",
+  },
+  {
     id: "enable-memory-feature-gate",
     assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
     // Memory ("saffron") is feature-gated off in the retained build; the

@@ -2080,35 +2080,87 @@ export class LocalBackend {
           // block while the provider is still generating the arguments, so
           // the retained client shows the generating (shimmering) card
           // immediately instead of after the completion settles.
+          interface LiveToolCall {
+            id: string;
+            name: string;
+            arguments: string;
+          }
           interface LiveArtifactBlock {
             blockIndex: number;
             sent: number;
             closed: boolean;
+            toolCall: LiveToolCall;
           }
           const liveArtifactBlocks = new WeakMap<object, LiveArtifactBlock>();
           const openLiveArtifacts: LiveArtifactBlock[] = [];
+          // A live block materializes its artifact when it closes so the
+          // final input_json_delta can carry version_uuid inside the streamed
+          // JSON — the drawer needs it to reopen without waiting for the
+          // post-completion tree refetch.
+          const materializedInputs = new Map<object, ArtifactToolInput>();
           const closeLiveArtifactBlocks = () => {
-            for (const live of openLiveArtifacts)
-              if (!live.closed) {
+            for (const live of openLiveArtifacts) {
+              if (live.closed) continue;
+              const raw = live.toolCall.arguments;
+              let remainder = raw.slice(live.sent);
+              try {
+                const parsed = normalizeArtifactInput(JSON.parse(raw || "{}"));
+                if (parsed) {
+                  const input =
+                    (materializedInputs.get(live.toolCall) as
+                      ArtifactToolInput | undefined) ??
+                    backend.#materializeArtifact(
+                      conversation,
+                      assistantUuid,
+                      parsed,
+                    );
+                  materializedInputs.set(live.toolCall, input);
+                  const lastBrace = raw.lastIndexOf("}");
+                  if (
+                    typeof input.version_uuid === "string" &&
+                    lastBrace >= live.sent
+                  )
+                    remainder =
+                      raw.slice(live.sent, lastBrace) +
+                      `,"version_uuid":${JSON.stringify(input.version_uuid)}` +
+                      raw.slice(lastBrace);
+                }
+              } catch {
+                // Unparseable arguments close with the raw tail; the
+                // persisted message heals the input on reload.
+              }
+              if (remainder)
                 controller.enqueue(
-                  sse("content_block_stop", {
-                    type: "content_block_stop",
+                  sse("content_block_delta", {
+                    type: "content_block_delta",
                     index: live.blockIndex,
+                    delta: {
+                      type: "input_json_delta",
+                      partial_json: remainder,
+                    },
                   }),
                 );
-                live.closed = true;
-              }
+              live.sent = raw.length;
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: live.blockIndex,
+                }),
+              );
+              live.closed = true;
+            }
           };
-          const streamLiveArtifact = (toolCall: {
-            id: string;
-            name: string;
-            arguments: string;
-          }) => {
+          const streamLiveArtifact = (toolCall: LiveToolCall) => {
             let live = liveArtifactBlocks.get(toolCall);
             if (live?.closed) return;
             if (!live) {
               closeTextBlock();
-              live = { blockIndex: nextBlockIndex++, sent: 0, closed: false };
+              live = {
+                blockIndex: nextBlockIndex++,
+                sent: 0,
+                closed: false,
+                toolCall,
+              };
               liveArtifactBlocks.set(toolCall, live);
               openLiveArtifacts.push(live);
               controller.enqueue(
@@ -2124,18 +2176,21 @@ export class LocalBackend {
                 }),
               );
             }
-            if (toolCall.arguments.length > live.sent) {
+            // Hold the last byte back so the closing flush can splice
+            // version_uuid before the final brace of the streamed JSON.
+            const cap = Math.max(live.sent, toolCall.arguments.length - 1);
+            if (cap > live.sent) {
               controller.enqueue(
                 sse("content_block_delta", {
                   type: "content_block_delta",
                   index: live.blockIndex,
                   delta: {
                     type: "input_json_delta",
-                    partial_json: toolCall.arguments.slice(live.sent),
+                    partial_json: toolCall.arguments.slice(live.sent, cap),
                   },
                 }),
               );
-              live.sent = toolCall.arguments.length;
+              live.sent = cap;
             }
           };
           let prefetchedProviderResponse: Response | undefined =
@@ -2586,31 +2641,10 @@ export class LocalBackend {
                 return [];
               }
             });
-          // Close every live-streamed artifact block before opening any other
-          // block: the retained client's SSE reducer expects a strictly
-          // sequential block lifecycle, and an interleaved status-text block
-          // while a tool_use block is still open breaks rendering entirely.
-          for (const { toolCall } of artifactToolCalls) {
-            const live = liveArtifactBlocks.get(toolCall);
-            if (!live || live.closed) continue;
-            const remainder = toolCall.arguments.slice(live.sent);
-            if (remainder)
-              controller.enqueue(
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: live.blockIndex,
-                  delta: { type: "input_json_delta", partial_json: remainder },
-                }),
-              );
-            controller.enqueue(
-              sse("content_block_stop", {
-                type: "content_block_stop",
-                index: live.blockIndex,
-              }),
-            );
-            live.closed = true;
-            live.sent = toolCall.arguments.length;
-          }
+          // Close every live-streamed artifact block (materializing and
+          // splicing version_uuid into the streamed JSON) before opening any
+          // other block: the retained client's SSE reducer expects a strictly
+          // sequential block lifecycle.
           closeLiveArtifactBlocks();
           if (!assistantText.trim() && artifactToolCalls.length > 0) {
             const first = artifactToolCalls[0].parsed;
@@ -2647,11 +2681,11 @@ export class LocalBackend {
           closeTextBlock();
 
           for (const { toolCall, parsed } of artifactToolCalls) {
-            const input = backend.#materializeArtifact(
-              conversation,
-              assistantUuid,
-              parsed,
-            );
+            // A live-streamed block already materialized on close; reuse it
+            // so a second artifact version is never minted for one call.
+            const input =
+              materializedInputs.get(toolCall) ??
+              backend.#materializeArtifact(conversation, assistantUuid, parsed);
             const block: LocalArtifactToolUseBlock = {
               type: "tool_use",
               id: toolCall.id,

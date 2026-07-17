@@ -51,6 +51,14 @@ registerAppScheme();
 // readiness so this app cannot attach to or write into Anthropic's profile.
 app.name = LOCAL_APP_NAME;
 app.setAppUserModelId(LOCAL_APP_USER_MODEL_ID);
+// Chromium freezes rAF and CSS-transition completion in occluded or
+// backgrounded frames — including the artifact sandbox iframe, whose stuck
+// expand transition leaves a 0x0 pane when the window is covered.
+// backgroundThrottling:false only covers the main view's own frame, so
+// disable occlusion throttling process-wide.
+app.commandLine.appendSwitch("disable-renderer-backgrounding");
+app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+app.commandLine.appendSwitch("disable-background-timer-throttling");
 const profilePaths = localProfilePaths(
   app.getPath("appData"),
   process.env[LOCAL_PROFILE_ENV] ??
@@ -540,6 +548,7 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
   ipcMain.removeHandler("connect-to-mcp-server");
   ipcMain.removeHandler("request-open-mcp-settings");
   ipcMain.removeHandler("local-pick-directory");
+  ipcMain.removeHandler("local-artifact-screenshot");
   ipcMain.removeHandler("local-open-settings");
   ipcMain.removeHandler("local-chrome-action");
   ipcMain.removeHandler("local-code-artifact-details");
@@ -568,6 +577,54 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
       ? await dialog.showOpenDialog(mainWindow, options)
       : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
+  ipcMain.handle("local-artifact-screenshot", async (event, payload) => {
+    assertLocalIpcSender(event);
+    // Rasterizes artifact content in a hidden offscreen window: the visible
+    // pane may be occluded by the publish modal, and the local sandbox
+    // renderer cannot screenshot itself.
+    const content = typeof payload?.content === "string" ? payload.content : "";
+    const type = typeof payload?.type === "string" ? payload.type : "";
+    if (!content || content.length > 2_000_000) return null;
+    if (type !== "text/html" && type !== "image/svg+xml") return null;
+    const html =
+      type === "image/svg+xml"
+        ? `<!doctype html><style>html,body{margin:0;background:#fff}svg{max-width:100%;height:auto}</style>${content}`
+        : content;
+    const capture = new BrowserWindow({
+      show: false,
+      width: 800,
+      height: 600,
+      webPreferences: {
+        offscreen: true,
+        sandbox: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        partition: `local-artifact-capture-${randomUUID()}`,
+      },
+    });
+    try {
+      // The capture stays fully local: only data/blob/about URLs may load.
+      capture.webContents.session.webRequest.onBeforeRequest(
+        (details, callback) => {
+          callback({ cancel: !/^(data|blob|about):/i.test(details.url) });
+        },
+      );
+      await capture.loadURL(
+        `data:text/html;charset=utf-8;base64,${Buffer.from(html, "utf8").toString("base64")}`,
+      );
+      // Let scripts and layout settle before compositing.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const image = await capture.webContents.capturePage();
+      if (image.isEmpty()) return null;
+      const dataUrl = image.toDataURL();
+      // The publish flow rejects payloads above 10 MiB.
+      return dataUrl.length > 10_000_000 ? null : dataUrl;
+    } catch {
+      return null;
+    } finally {
+      capture.destroy();
+    }
   });
   ipcMain.handle("local-open-settings", (event) => {
     assertLocalIpcSender(event);

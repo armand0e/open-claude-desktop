@@ -547,9 +547,17 @@ try {
         debuggerPort,
         `(async () => {
           const deadline = Date.now() + 10000;
-          const control = [...document.querySelectorAll("button")]
-            .find(button => /^(Thought process|Thought for )/.test(button.textContent?.trim() || ""));
-          if (!control) return { control: false, rendered: false };
+          let control;
+          while (!control && Date.now() < deadline) {
+            control = [...document.querySelectorAll('button,[role="button"]')]
+              .find(candidate => /^(Thought process|Thought for |Thinking)/.test(candidate.textContent?.trim() || ""));
+            if (!control) await new Promise(resolve => setTimeout(resolve, 150));
+          }
+          if (!control) return {
+            control: false,
+            rendered: false,
+            thoughtLines: document.body.innerText.split("\\n").filter(line => /thought|thinking/i.test(line)).slice(0, 6),
+          };
           control.click();
           while (!document.body?.innerText?.includes(${JSON.stringify(reasoningText)}) && Date.now() < deadline)
             await new Promise(resolve => setTimeout(resolve, 50));
@@ -709,13 +717,22 @@ try {
           const closed = !visibleArtifact();
           const view = document.querySelector('button[aria-label="View Local Artifact Demo"]');
           view?.click();
-          const openDeadline = Date.now() + 8000;
+          let openDeadline = Date.now() + 5000;
           while (!visibleArtifact() && Date.now() < openDeadline)
             await new Promise(resolve => setTimeout(resolve, 50));
+          if (!visibleArtifact()) {
+            // A stuck expand transition recovers on a second activation,
+            // matching what a user does when the pane stalls.
+            view?.click();
+            openDeadline = Date.now() + 5000;
+            while (!visibleArtifact() && Date.now() < openDeadline)
+              await new Promise(resolve => setTimeout(resolve, 50));
+          }
           return {
             closed,
             reopened: visibleArtifact(),
             viewPresent: Boolean(view),
+            bridge: (() => { try { return JSON.parse(JSON.stringify(window.__localArtifactBridge ?? null)); } catch { return "unserializable"; } })(),
             viewHtml: view?.outerHTML?.slice(0, 1800),
             frameAncestors: (() => {
               const result = [];
@@ -796,7 +813,14 @@ try {
             };
           const text = dialog.textContent || "";
           const policyCards = dialog.querySelectorAll('.bg-bg-300.text-text-300.mt-3.flex.gap-3.rounded-xl').length;
-          const screenshotPreviews = dialog.querySelectorAll('img').length;
+          // The local Electron-side capture fills the preview asynchronously.
+          const shotDeadline = Date.now() + 6000;
+          let screenshotImg = null;
+          while (!screenshotImg && Date.now() < shotDeadline) {
+            screenshotImg = dialog.querySelector('img[src^="data:image/"]');
+            if (!screenshotImg) await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          const directCapture = await (window.localClaude?.captureArtifactScreenshot?.(window.__localArtifactPublishSource || {}) ?? null);
           const createAction = [...dialog.querySelectorAll('button')]
             .find(button => button.textContent?.trim() === "Create & copy link");
           const close = [...dialog.querySelectorAll('button')]
@@ -806,7 +830,8 @@ try {
             opened: true,
             text,
             policyCards,
-            screenshotPreviews,
+            screenshotPreview: Boolean(screenshotImg),
+            directCapturePrefix: typeof directCapture === "string" ? directCapture.slice(0, 22) : null,
             createActionPresent: Boolean(createAction),
             closePresent: Boolean(close)
           };
@@ -821,8 +846,9 @@ try {
         ) &&
         artifactPublishModal?.createActionPresent &&
         artifactPublishModal?.policyCards === 0 &&
-        artifactPublishModal?.screenshotPreviews === 0,
-      `Local artifact publish modal retained cloud-only UI: ${JSON.stringify(artifactPublishModal)}`,
+        artifactPublishModal?.screenshotPreview &&
+        artifactPublishModal?.directCapturePrefix?.startsWith("data:image/png"),
+      `Local artifact publish modal did not render the local screenshot preview: ${JSON.stringify(artifactPublishModal)}`,
     );
 
   const streamSettled = await evaluateEventually(

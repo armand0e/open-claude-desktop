@@ -1033,8 +1033,32 @@ describe("LocalBackend", () => {
       // The artifacts tool_use block streams the provider's raw argument
       // fragments as they arrive (live generating card), so the content
       // spans two input_json_delta events.
-      expect(events).toContain("<h1>Hello ");
+      expect(events).toContain("<h1>Hello");
       expect(events).toContain("artifact</h1>");
+      // The streamed fragments must concatenate into valid JSON carrying the
+      // spliced version_uuid so the drawer can reopen without a refetch.
+      {
+        const artifactBlockIndex = [
+          ...(events ?? "").matchAll(
+            /"content_block_start","index":(\d+),"content_block":\{"type":"tool_use","id":"call_artifact_1"/g,
+          ),
+        ][0]?.[1];
+        expect(artifactBlockIndex).toBeDefined();
+        const partials = [
+          ...(events ?? "").matchAll(
+            new RegExp(
+              `"content_block_delta","index":${artifactBlockIndex},"delta":\\{"type":"input_json_delta","partial_json":("(?:[^"\\\\]|\\\\.)*")`,
+              "g",
+            ),
+          ),
+        ].map((match) => JSON.parse(match[1]) as string);
+        const streamedInput = JSON.parse(partials.join("")) as {
+          version_uuid?: string;
+          content?: string;
+        };
+        expect(typeof streamedInput.version_uuid).toBe("string");
+        expect(streamedInput.content).toBe("<h1>Hello artifact</h1>");
+      }
       expect(events).toContain('"stop_reason":"tool_use"');
       expect(events).toContain('"type":"thinking"');
       expect(events).toContain(

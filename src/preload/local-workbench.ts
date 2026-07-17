@@ -131,6 +131,19 @@ async function pickDirectory(): Promise<string | null> {
   return ipcRenderer.invoke("local-pick-directory") as Promise<string | null>;
 }
 
+// Rasterizes artifact content offscreen in the main process for the publish
+// modal's preview (the local sandbox renderer cannot screenshot itself).
+async function captureArtifactScreenshot(payload?: {
+  content?: string;
+  type?: string;
+}): Promise<string | null> {
+  if (!payload || typeof payload.content !== "string") return null;
+  return ipcRenderer.invoke("local-artifact-screenshot", {
+    content: payload.content,
+    type: payload.type,
+  }) as Promise<string | null>;
+}
+
 async function getCustomization(
   cwd: string,
 ): Promise<{ cwd: string; entries: CustomizationEntry[] }> {
@@ -183,6 +196,7 @@ export const localClaudeApi = {
   getCustomization,
   saveCustomization,
   deleteCustomization,
+  captureArtifactScreenshot,
   version: 1,
 };
 

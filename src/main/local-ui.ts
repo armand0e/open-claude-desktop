@@ -152,10 +152,22 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       ',b=null&&e.jsxs("div",{className:"bg-bg-300 text-text-300 mt-3 flex gap-3 rounded-xl px-4 py-3 text-sm leading-normal"',
   },
   {
-    id: "remove-local-publish-screenshot-capture",
-    assetUrlPath: "/assets/v1/cf774f0c4-BGDGm7sd.js",
-    find: "return e.jsx(q,{canScreenshot:!0,title:t.title",
-    replace: "return e.jsx(q,{canScreenshot:!1,title:t.title",
+    id: "use-local-artifact-screenshot-capture",
+    // The cloud renderer answers GetScreenshot from inside the sandbox; the
+    // local renderer cannot rasterize itself, so capture the artifact iframe
+    // through the Electron compositor instead.
+    find: 'if(!ue)return void t("aborted","screenshot_no_communicator");const n=Symbol("timeout");',
+    replace:
+      'if(window.localClaude?.captureArtifactScreenshot){try{const e=await window.localClaude.captureArtifactScreenshot(window.__localArtifactPublishSource||{});if(e)return t("success"),e}catch{}}if(!ue)return void t("aborted","screenshot_no_communicator");const n=Symbol("timeout");',
+  },
+  {
+    id: "stash-artifact-content-for-screenshot",
+    // Records the displayed artifact's content/type for the offscreen
+    // publish-screenshot capture (fe cannot reach these directly because its
+    // local `n` shadows the component's content variable).
+    find: "e.useEffect(()=>{N&&n&&a&&(d?.(),Object.values(Zs).includes(a),ue?.(Ur.SetContent,",
+    replace:
+      "e.useEffect(()=>{N&&n&&a&&(window.__localArtifactPublishSource={content:n,type:a},d?.(),Object.values(Zs).includes(a),ue?.(Ur.SetContent,",
   },
   {
     id: "remove-local-publish-embed-settings",

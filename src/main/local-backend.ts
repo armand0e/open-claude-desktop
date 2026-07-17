@@ -113,14 +113,14 @@ interface LocalArtifactToolUseBlock {
 interface LocalWebToolUseBlock {
   type: "tool_use";
   id: string;
-  name: "web_search" | "web_fetch" | "skill";
+  name: "web_search" | "web_fetch" | "skill" | "mcp_tool";
   input: JsonObject;
 }
 
 interface LocalWebToolResultBlock {
   type: "tool_result";
   tool_use_id: string;
-  name: "web_search" | "web_fetch" | "skill";
+  name: "web_search" | "web_fetch" | "skill" | "mcp_tool";
   content: JsonObject[];
   is_error?: boolean;
 }
@@ -427,6 +427,19 @@ const SKILL_TOOL = {
 export interface LocalSkillSource {
   list(): Promise<Array<{ name: string; description: string }>>;
   read(name: string): Promise<string>;
+}
+
+export interface LocalMcpSource {
+  listTools(): Promise<
+    Array<{
+      server: string;
+      name: string;
+      qualifiedName: string;
+      description: string;
+      inputSchema: JsonObject;
+    }>
+  >;
+  callTool(qualifiedName: string, args: JsonObject): Promise<string>;
 }
 
 const CHAT_TOOLS = [ARTIFACT_TOOL, SKILL_TOOL, ...WEB_TOOLS];
@@ -1717,6 +1730,31 @@ export class LocalBackend {
     this.#skillSource = source;
   }
 
+  #mcpSource?: LocalMcpSource;
+
+  setMcpSource(source: LocalMcpSource): void {
+    this.#mcpSource = source;
+  }
+
+  // The user's connected MCP servers as OpenAI-style function tools; a
+  // failing or absent manager contributes nothing.
+  async #mcpToolFunctions(): Promise<JsonObject[]> {
+    if (!this.#mcpSource) return [];
+    try {
+      const tools = await this.#mcpSource.listTools();
+      return tools.slice(0, 64).map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.qualifiedName,
+          description: `[${tool.server}] ${tool.description}`.slice(0, 1_000),
+          parameters: tool.inputSchema,
+        },
+      }));
+    } catch {
+      return [];
+    }
+  }
+
   #summaryHistoryMessage(summary: string): LocalMessage {
     const now = new Date().toISOString();
     const text = compactionSummaryText(summary);
@@ -1813,9 +1851,10 @@ export class LocalBackend {
     requestOptions: JsonObject = {},
   ): Promise<Response> {
     const provider = this.#data.provider;
-    const availableTools = webSearchEnabled
-      ? CHAT_TOOLS
-      : [ARTIFACT_TOOL, SKILL_TOOL];
+    const availableTools = [
+      ...(webSearchEnabled ? CHAT_TOOLS : [ARTIFACT_TOOL, SKILL_TOOL]),
+      ...(await this.#mcpToolFunctions()),
+    ];
     // Both variants are prepared up front: the fallback variant documents the
     // inline artifact and skill protocols for endpoints without function
     // tools, and must not be replaced by the function-tool wording.
@@ -2370,6 +2409,9 @@ export class LocalBackend {
             const skillCalls = [...toolCalls.values()].filter(
               (toolCall) => toolCall.name === "skill",
             );
+            const mcpCalls = [...toolCalls.values()].filter((toolCall) =>
+              toolCall.name.startsWith("mcp__"),
+            );
             if (
               webCalls.length === 0 &&
               ![...toolCalls.values()].some(
@@ -2415,7 +2457,11 @@ export class LocalBackend {
                 });
               continue;
             }
-            if (webCalls.length === 0 && skillCalls.length === 0) {
+            if (
+              webCalls.length === 0 &&
+              skillCalls.length === 0 &&
+              mcpCalls.length === 0
+            ) {
               terminalTurn = true;
               break;
             }
@@ -2423,14 +2469,16 @@ export class LocalBackend {
             continuation.push({
               role: "assistant",
               content: assistantText.slice(turnTextStart) || null,
-              tool_calls: [...webCalls, ...skillCalls].map((toolCall) => ({
-                id: toolCall.id,
-                type: "function",
-                function: {
-                  name: toolCall.name,
-                  arguments: toolCall.arguments || "{}",
-                },
-              })),
+              tool_calls: [...webCalls, ...skillCalls, ...mcpCalls].map(
+                (toolCall) => ({
+                  id: toolCall.id,
+                  type: "function",
+                  function: {
+                    name: toolCall.name,
+                    arguments: toolCall.arguments || "{}",
+                  },
+                }),
+              ),
             });
             for (const toolCall of webCalls) {
               const webName =
@@ -2623,6 +2671,101 @@ export class LocalBackend {
                 tool_call_id: toolCall.id,
                 name: toolCall.name,
                 content: output,
+              });
+            }
+            for (const toolCall of mcpCalls) {
+              let input: JsonObject = {};
+              try {
+                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
+                if (isObject(parsed)) input = parsed;
+              } catch {
+                // The tool receives an empty object and reports the problem.
+              }
+              const nameParts = toolCall.name.split("__");
+              const serverLabel = nameParts[1] ?? "connector";
+              const toolLabel = nameParts.slice(2).join("__") || toolCall.name;
+              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+              const callBlock: LocalWebToolUseBlock = {
+                type: "tool_use",
+                id: displayId,
+                name: "mcp_tool",
+                input: {
+                  ...input,
+                  description: `Called ${serverLabel} · ${toolLabel}`,
+                },
+              };
+              assistantBlocks.push(callBlock);
+              const callBlockIndex = nextBlockIndex++;
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: callBlockIndex,
+                  // The row renderer labels from input.description, so the
+                  // full input must be present from the start event.
+                  content_block: {
+                    type: callBlock.type,
+                    id: callBlock.id,
+                    name: callBlock.name,
+                    input: callBlock.input,
+                  },
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_delta", {
+                  type: "content_block_delta",
+                  index: callBlockIndex,
+                  delta: {
+                    type: "input_json_delta",
+                    partial_json: JSON.stringify(callBlock.input),
+                  },
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: callBlockIndex,
+                }),
+              );
+              let output: string;
+              let failed = false;
+              try {
+                if (!backend.#mcpSource)
+                  throw new Error("MCP connectors are not available");
+                output = await backend.#mcpSource.callTool(
+                  toolCall.name,
+                  input,
+                );
+              } catch (error) {
+                failed = true;
+                output = `MCP tool error: ${error instanceof Error ? error.message : String(error)}`;
+              }
+              const resultBlock: LocalWebToolResultBlock = {
+                type: "tool_result",
+                tool_use_id: displayId,
+                name: "mcp_tool",
+                content: [{ type: "text", text: output.slice(0, 8_000) }],
+                ...(failed ? { is_error: true } : {}),
+              };
+              assistantBlocks.push(resultBlock);
+              const resultBlockIndex = nextBlockIndex++;
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: resultBlockIndex,
+                  content_block: resultBlock,
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: resultBlockIndex,
+                }),
+              );
+              continuation.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                name: toolCall.name,
+                content: output.slice(0, 50_000),
               });
             }
           }

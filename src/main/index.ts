@@ -40,6 +40,7 @@ import { LocalBackend } from "./local-backend";
 import { LocalCodeSessionManager } from "./local-code";
 import { LocalFilePreview } from "./local-file-preview";
 import { LocalLaunchPreview } from "./local-launch-preview";
+import { LocalMcpManager } from "./local-mcp";
 import { LocalWebTools } from "./local-web-tools";
 import { featureMatrix, ServiceContext, ServiceDispatcher } from "./services";
 import { StateStore } from "./state";
@@ -89,6 +90,7 @@ let codeSessions: LocalCodeSessionManager | null = null;
 let localWebTools: LocalWebTools | null = null;
 let localFilePreview: LocalFilePreview | null = null;
 let localLaunchPreview: LocalLaunchPreview | null = null;
+let localMcpManager: LocalMcpManager | null = null;
 let targetUrl = "https://claude.ai";
 
 function preloadPath(name: "preload-main-view" | "preload-shell"): string {
@@ -833,6 +835,12 @@ if (!gotLock) {
             return sections.join("\n");
           },
         });
+        // The user's configured MCP servers (Settings > Developer) become
+        // chat tools through a local stdio JSON-RPC client.
+        localMcpManager = new LocalMcpManager(
+          () => state.get("appConfig").mcpServers as Record<string, unknown>,
+        );
+        localBackend.setMcpSource(localMcpManager);
       }
       const dispatcher = new ServiceDispatcher(context);
       disposeIpc = registerGeneratedIpc(dispatcher);
@@ -853,6 +861,8 @@ if (!gotLock) {
 }
 
 app.on("before-quit", () => {
+  localMcpManager?.disposeAll();
+  localMcpManager = null;
   localLaunchPreview?.dispose();
   localLaunchPreview = null;
   localFilePreview?.dispose();

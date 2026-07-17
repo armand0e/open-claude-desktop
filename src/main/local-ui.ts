@@ -282,6 +282,14 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
     replace: 'saffron:FL({feature:"saffron",useClientSideGate:()=>!0',
   },
   {
+    id: "keep-customize-connectors-route",
+    assetUrlPath: "/assets/v1/c63a78ed4-C202DsUQ.js",
+    // The Connectors page redirects to /customize when its cloud gate is
+    // off; the local MCP client backs the connectors surface.
+    find: 'path:"connectors",component:function(){return S()||b("/customize"),s.jsx(_l,{})}}',
+    replace: 'path:"connectors",component:function(){return s.jsx(_l,{})}}',
+  },
+  {
     id: "keep-customize-memory-route",
     assetUrlPath: "/assets/v1/c63a78ed4-C202DsUQ.js",
     // The Customize > Memory route redirects to /settings/capabilities when

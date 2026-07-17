@@ -1679,14 +1679,20 @@ export function installLocalWorkbench(): void {
     // The Customize landing lists only its native sections; add a Memory row
     // that opens the (fully wired) /customize/memory page.
     const wireCustomizeMemoryEntry = () => {
+      // Connectors joins this list once the local connectors surface is
+      // fully backed; its page still bounces to /customize/skills.
+      const entries = [
+        {
+          testid: "local-customize-memory-row",
+          label: "Memory",
+          href: "/customize/memory",
+        },
+      ];
       if (!location.pathname.startsWith("/customize")) {
-        document
-          .querySelector('[data-testid="local-customize-memory-row"]')
-          ?.remove();
+        for (const entry of entries)
+          document.querySelector(`[data-testid="${entry.testid}"]`)?.remove();
         return;
       }
-      if (document.querySelector('[data-testid="local-customize-memory-row"]'))
-        return;
       const skillsRow = [
         ...document.querySelectorAll<HTMLElement>("a,button,[role=button]"),
       ].find(
@@ -1695,24 +1701,35 @@ export function installLocalWorkbench(): void {
           (row.textContent ?? "").trim() === "Skills",
       );
       if (!skillsRow?.parentElement) return;
-      const row = skillsRow.cloneNode(true) as HTMLElement;
-      row.dataset.testid = "local-customize-memory-row";
-      row.removeAttribute("id");
-      for (const element of [row, ...row.querySelectorAll("*")])
-        if (
-          element.childElementCount === 0 &&
-          (element.textContent ?? "").trim() === "Skills"
-        )
-          element.textContent = "Memory";
-      row.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        history.pushState(history.state, "", "/customize/memory");
-        window.dispatchEvent(
-          new PopStateEvent("popstate", { state: history.state }),
-        );
-      });
-      skillsRow.parentElement.insertBefore(row, skillsRow.nextSibling);
+      let anchor: HTMLElement = skillsRow;
+      for (const entry of entries) {
+        if (document.querySelector(`[data-testid="${entry.testid}"]`)) {
+          const existing = document.querySelector<HTMLElement>(
+            `[data-testid="${entry.testid}"]`,
+          );
+          if (existing) anchor = existing;
+          continue;
+        }
+        const row = skillsRow.cloneNode(true) as HTMLElement;
+        row.dataset.testid = entry.testid;
+        row.removeAttribute("id");
+        for (const element of [row, ...row.querySelectorAll("*")])
+          if (
+            element.childElementCount === 0 &&
+            (element.textContent ?? "").trim() === "Skills"
+          )
+            element.textContent = entry.label;
+        row.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          history.pushState(history.state, "", entry.href);
+          window.dispatchEvent(
+            new PopStateEvent("popstate", { state: history.state }),
+          );
+        });
+        anchor.parentElement?.insertBefore(row, anchor.nextSibling);
+        anchor = row;
+      }
     };
 
     const wireSettingsDialog = () => {
@@ -1753,6 +1770,8 @@ export function installLocalWorkbench(): void {
         const existingButtons = [
           ...navigation.querySelectorAll<HTMLButtonElement>("button"),
         ];
+        // Connectors stays hidden until the local connectors surface is
+        // fully backed; MCP servers already work through the MCP settings.
         const cloudOnlySettings = new Set(["Privacy", "Connectors", "Cowork"]);
         for (const button of existingButtons) {
           const label =

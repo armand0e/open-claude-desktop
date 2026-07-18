@@ -249,6 +249,7 @@ export interface RecoveredDesktopNamespaces {
       "installAndLaunch": (req: unknown) => Promise<void>;
       "listDevices": (kind?: string) => Promise<readonly unknown[]>;
       "saveScreenshot": (udid: string) => Promise<unknown>;
+      "setEditShortcutsClaimed": (udid: string, claimed: boolean) => Promise<void>;
       "startRecording": (udid: string) => Promise<null | unknown>;
       "stopRecording": (udid: string) => Promise<unknown>;
     };
@@ -598,6 +599,7 @@ export interface RecoveredDesktopNamespaces {
       "onPreviewCloseShortcut": (callback: (serverId: string, tabId: string) => void) => () => void;
       "onPreviewFocusExit": (callback: (serverId: string) => void) => () => void;
       "onPreviewNewTabShortcut": (callback: (serverId: string) => void) => () => void;
+      "onPreviewRevealRequested": (callback: (previewId: string, sessionId: string, tabId?: string) => void) => () => void;
       "onPreviewSelectionShortcut": (callback: (serverId: string) => void) => () => void;
       "onPreviewTabsChanged": (callback: (serverId: string, tabs: readonly unknown[], activeTabId: string) => void) => () => void;
       "onPreviewUrlChanged": (callback: (serverId: string, url: string) => void) => () => void;
@@ -616,6 +618,7 @@ export interface RecoveredDesktopNamespaces {
       "showPreview": (serverId: string, bounds: unknown, claimantId?: string) => Promise<boolean>;
       "startBrowserPreview": (cwd: string, sessionId: string) => Promise<null | string>;
       "startFromConfig": (cwd: string, name?: string, sessionId?: string) => Promise<unknown>;
+      "startRemoteBrowserPreview": (sessionId: string, initialUrl: string) => Promise<null | string>;
       "stopServer": (serverId: string) => Promise<boolean>;
       "toggleSelectionMode": (serverId: string, enabled: boolean, tabId?: string) => Promise<boolean>;
     };
@@ -668,6 +671,7 @@ export interface RecoveredDesktopNamespaces {
       "mcpReconnect": (sessionId: string, serverName: string) => Promise<unknown>;
       "mcpSubmitOAuthCallbackUrl": (sessionId: string, serverName: string, callbackUrl: string) => Promise<unknown>;
       "noteCuWindowMentions": (sessionId: string, apps: readonly unknown[]) => Promise<void>;
+      "onAutoModeOverrideAlwaysAllow": (sessionId: string, toolName: string, toolUseId: string) => Promise<void>;
       "onOnBridgePermissionPreflight": (callback: (request: unknown) => void) => () => void;
       "onOnCoworkFromMain": (callback: (request: unknown) => void) => () => void;
       "onOnCuEmergencyStop": (callback: (sessionId: string, orgUuid: null | string) => void) => () => void;
@@ -681,8 +685,8 @@ export interface RecoveredDesktopNamespaces {
       "refetchMyAccess": (...args: unknown[]) => Promise<unknown>;
       "releaseRemoteCuLock": (sessionId: null | string, source: null | string) => Promise<void>;
       "removeTrustedFolder": (folder: string) => Promise<void>;
-      "replaceEnabledMcpTools": (sessionId: string, enabledMcpTools: unknown) => Promise<unknown>;
-      "replaceRemoteMcpServers": (sessionId: string, servers: readonly unknown[]) => Promise<unknown>;
+      "replaceEnabledMcpTools": (sessionId: string, enabledMcpTools: unknown) => Promise<null | unknown>;
+      "replaceRemoteMcpServers": (sessionId: string, servers: readonly unknown[]) => Promise<null | unknown>;
       "requestDocumentsTccAccess": () => Promise<unknown>;
       "requestFolderTccAccess": () => Promise<unknown>;
       "resetBridge": (...args: unknown[]) => Promise<unknown>;
@@ -709,7 +713,7 @@ export interface RecoveredDesktopNamespaces {
       "setExtendedThinking": (sessionId: string, enabled: boolean) => Promise<void>;
       "setFocusedSession": (sessionId: null | string) => Promise<void>;
       "setLocalSkillEnabled": (name: string, enabled: boolean) => Promise<unknown>;
-      "setMcpServers": (sessionId: string, servers: readonly unknown[]) => Promise<unknown>;
+      "setMcpServers": (sessionId: string, servers: readonly unknown[]) => Promise<null | unknown>;
       "setModel": (sessionId: string, model: string) => Promise<void>;
       "setPermissionMode": (sessionId: string, mode: unknown, _chromeAllowedDomains?: readonly string[], options?: unknown) => Promise<boolean>;
       "setSessionsBridgeEnabled": (enabled: boolean) => Promise<void>;
@@ -742,7 +746,7 @@ export interface RecoveredDesktopNamespaces {
       "setPluginShimPermission": (pluginId: string, op: string, permission: string, pluginContext?: unknown, cliName?: string) => Promise<readonly string[]>;
       "startPluginOAuthFlow": (pluginId: string, cliName: string, pluginContext?: unknown) => Promise<unknown>;
       "syncRemotePlugins": (pluginContext?: unknown) => Promise<unknown>;
-      "uploadPlugin": (filename: string, base64Content: string, replaceExisting?: boolean, pluginContext?: unknown) => Promise<unknown>;
+      "uploadPlugin": (filename: string, base64Content: string, replaceExisting?: boolean, pluginContext?: unknown, uploadSource?: string) => Promise<unknown>;
     };
     "LocalSessionEnvironment": {
       "get": () => Promise<unknown>;
@@ -759,8 +763,10 @@ export interface RecoveredDesktopNamespaces {
       "checkGhAvailable": (cwd: string) => Promise<boolean>;
       "checkRemoteTargetTrust": (remoteTarget: unknown, cwd: string) => Promise<unknown>;
       "checkRemoteTrust": (config: unknown, cwd: string) => Promise<unknown>;
+      "checkStoredTrust": (cwd: string) => Promise<boolean>;
       "checkTrust": (cwd: string) => Promise<unknown>;
       "classifyTccFolderKind": (path: string) => Promise<null | unknown>;
+      "cleanupAutoModeProposalFile": (path: string) => Promise<boolean>;
       "clearSession": (sessionId: string, stashForResume?: boolean) => Promise<void>;
       "commitAllChanges": (cwd: string, message: string) => Promise<unknown>;
       "commitWipForBranchSwitch": (cwd: string, fromBranch: string) => Promise<unknown>;
@@ -770,6 +776,7 @@ export interface RecoveredDesktopNamespaces {
       "delete": (sessionId: string) => Promise<void>;
       "dequeuePr": (sessionId: string, cwd: string, prNumber: number, repo?: string) => Promise<unknown>;
       "disableAutoMerge": (cwd: string, prNumber: number, repo?: string, sessionId?: string) => Promise<unknown>;
+      "discardPendingTurn": (sessionId: string) => Promise<boolean>;
       "discardWorkingTree": (cwd: string) => Promise<unknown>;
       "dismissBoundPr": (sessionId: string, repo: string, prNumber: number, host?: string) => Promise<void>;
       "enableAutoMerge": (cwd: string, prNumber: number, repo?: string, sessionId?: string) => Promise<unknown>;
@@ -845,6 +852,7 @@ export interface RecoveredDesktopNamespaces {
       "isVSCodeInstalled": () => Promise<boolean>;
       "isWorkingTreeDirty": (cwd: string) => Promise<boolean>;
       "launchUltrareview": (sessionId: string, args: string, confirm?: boolean) => Promise<unknown>;
+      "listCliSessions": (limit?: number) => Promise<readonly unknown[]>;
       "listGhIssues": (cwd: string, query: string) => Promise<readonly unknown[]>;
       "listSessionDirectory": (sessionId: string, dirPath: string) => Promise<readonly unknown[]>;
       "listSSHDirectory": (config: unknown, path: string) => Promise<unknown>;
@@ -871,15 +879,17 @@ export interface RecoveredDesktopNamespaces {
       "pickSessionFile": (sessionId: string) => Promise<null | string>;
       "popBackgroundTaskSuggestion": (sessionId: string, launched: boolean) => Promise<void>;
       "popBackgroundTaskSuggestionById": (sessionId: string, taskId: string, launched: boolean) => Promise<boolean>;
+      "prewarmAuth": (...args: unknown[]) => Promise<unknown>;
       "promoteQueuedMessage": (sessionId: string, messageUuid: string) => Promise<boolean>;
+      "readCliTranscript": (handle: string, offset?: number, limit?: number) => Promise<unknown>;
       "readFileAtCwd": (cwd: string, filePath: string) => Promise<null | unknown>;
-      "readSessionFile": (sessionId: string, filePath: string) => Promise<null | unknown>;
+      "readSessionFile": (sessionId: string, filePath: string, options?: unknown) => Promise<null | unknown>;
       "readSessionImageAsDataUrl": (sessionId: string, filePath: string, userInitiated?: boolean) => Promise<null | string>;
       "readSessionMediaAsDataUrl": (sessionId: string, filePath: string) => Promise<null | string>;
       "readSessionPanelMediaAsDataUrl": (sessionId: string, filePath: string) => Promise<null | string>;
       "reorderQueuedMessage": (sessionId: string, messageUuid: string, overUuid: string) => Promise<boolean>;
-      "replaceEnabledMcpTools": (sessionId: string, enabledMcpTools: unknown) => Promise<unknown>;
-      "replaceRemoteMcpServers": (sessionId: string, servers: readonly unknown[]) => Promise<unknown>;
+      "replaceEnabledMcpTools": (sessionId: string, enabledMcpTools: unknown) => Promise<null | unknown>;
+      "replaceRemoteMcpServers": (sessionId: string, servers: readonly unknown[]) => Promise<null | unknown>;
       "replyToPrReviewComment": (cwd: string, prNumber: number, commentId: number, body: string, repo?: string, sessionId?: string) => Promise<unknown>;
       "reportComposerInp": (timing: unknown) => Promise<void>;
       "reportStreamRender": (summary: unknown) => Promise<void>;
@@ -909,7 +919,7 @@ export interface RecoveredDesktopNamespaces {
       "setEffort": (sessionId: string, effort: null | string) => Promise<void>;
       "setFastMode": (sessionId: string, fastMode: boolean) => Promise<void>;
       "setFocusedSession": (sessionId: null | string) => Promise<void>;
-      "setMcpServers": (sessionId: string, servers: readonly unknown[]) => Promise<unknown>;
+      "setMcpServers": (sessionId: string, servers: readonly unknown[]) => Promise<null | unknown>;
       "setModel": (sessionId: string, model: string) => Promise<void>;
       "setPermissionMode": (sessionId: string, mode: unknown, _chromeAllowedDomains?: readonly string[], options?: unknown) => Promise<boolean>;
       "setSSHConfigs": (configs: readonly unknown[]) => Promise<void>;
@@ -921,7 +931,7 @@ export interface RecoveredDesktopNamespaces {
       "showSessionFilePreview": (sessionId: string, filePath: string, bounds: unknown, consumerId?: string) => Promise<unknown>;
       "start": (info: unknown) => Promise<unknown>;
       "startPty": (sessionId: string, cols: number, rows: number) => Promise<boolean>;
-      "startShellPty": (sessionId: string, cols: number, rows: number) => Promise<unknown>;
+      "startShellPty": (sessionId: string, cols: number, rows: number, spawnReason?: string) => Promise<unknown>;
       "startSideChat": (sessionId: string) => Promise<void>;
       "stashWorkingTree": (cwd: string, message: string) => Promise<unknown>;
       "stop": (sessionId: string) => Promise<void>;
@@ -942,6 +952,7 @@ export interface RecoveredDesktopNamespaces {
       "updateSession": (sessionId: string, options: unknown) => Promise<void>;
       "validateSSHPath": (config: unknown, path: string) => Promise<unknown>;
       "warmSession": (sessionId: string) => Promise<void>;
+      "writeAutoModeProposalFile": (sessionId: string, proposalJson: string) => Promise<unknown>;
       "writePty": (sessionId: string, data: string) => Promise<void>;
       "writeSessionFile": (sessionId: string, filePath: string, contents: string, expectedHash?: string) => Promise<null | unknown>;
       "writeShellPty": (sessionId: string, data: string) => Promise<void>;

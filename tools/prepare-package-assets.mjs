@@ -4,7 +4,7 @@ import path from "node:path";
 
 const workspace = path.resolve(process.cwd());
 const staging = path.join(workspace, ".package-assets");
-const compatibilityVersion = process.env.CLAUDE_DESKTOP_VERSION || "1.21459.1";
+const compatibilityVersion = process.env.CLAUDE_DESKTOP_VERSION || "1.22209.0";
 
 function insideWorkspace(candidate) {
   const relative = path.relative(workspace, candidate);

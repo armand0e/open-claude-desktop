@@ -1,13 +1,13 @@
 {
   "productName": "Claude",
   "packageName": "@ant/desktop",
-  "version": "1.21459.1",
+  "version": "1.22209.0",
   "author": "Anthropic PBC",
   "main": ".vite/build/index.pre.js",
-  "sentryRelease": "85cb5c02268829ab7605f76dfa13a4217159ca9f",
+  "sentryRelease": "77c938bac27689d6df971289c10759e512785c73",
   "appAsar": {
-    "bytes": 37434802,
-    "sha256": "ab6588c7a90a13c9b522f0d371cdbe848c80f49bcdcc93d51b8ebbd577082fbf"
+    "bytes": 38210695,
+    "sha256": "43cc109c81a379101b2ddcc7baba0040fae3f440ec2fa483a5ebe0bd964a97ed"
   },
-  "installResources": "C:\\ProgramData\\aranr\\AnthropicClaude\\app-1.21459.1\\resources"
+  "installResources": "C:\\ProgramData\\aranr\\AnthropicClaude\\app-1.22209.0\\resources"
 }

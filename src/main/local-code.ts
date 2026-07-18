@@ -72,6 +72,10 @@ export interface CodeSession {
   // Set when a scheduled task started this session; the sidebar groups
   // runs under their task by this id.
   scheduledTaskId?: string;
+  // "agent" for Cowork tasks. The folder list feeds the Cowork
+  // folder-picker's recents, so it is kept verbatim.
+  sessionType?: string;
+  userSelectedFolders?: string[];
   error?: string;
   errorCategory?: string;
 }
@@ -137,6 +141,10 @@ interface StartInfo {
   effort?: string;
   additionalDirectories?: string[];
   scheduledTaskId?: string;
+  // Cowork composer shape: folders picked in the UI instead of cwd, and a
+  // sessionType of "agent" (task) rather than a code session.
+  userSelectedFolders?: string[];
+  sessionType?: string;
 }
 
 interface ToolCall {
@@ -674,6 +682,24 @@ async function readOpenAiStream(
 function safeTitle(message: string): string {
   const normalized = message.replace(/\s+/g, " ").trim();
   return normalized.slice(0, 72) || "New Code session";
+}
+
+// Where folderless Cowork tasks work and store their output files
+// (settings > Cowork files; the reference default is ~/Claude). The
+// configured root comes from persistent state via setCoworkFilesRoot.
+let configuredCoworkFilesRoot: string | undefined;
+
+export function setCoworkFilesRoot(root: string | undefined): void {
+  configuredCoworkFilesRoot =
+    typeof root === "string" && root.trim() ? root : undefined;
+}
+
+export function coworkFilesDir(): string {
+  return (
+    process.env.CLAUDE_LOCAL_COWORK_FILES_DIR?.trim() ||
+    configuredCoworkFilesRoot ||
+    path.join(os.homedir(), "Claude")
+  );
 }
 
 function publicSession(session: StoredCodeSession): CodeSession {
@@ -1613,9 +1639,19 @@ export class LocalCodeSessionManager {
   private async start(input: unknown): Promise<{ sessionId: string }> {
     if (!isObject(input)) throw new Error("Code session details are required");
     const info = input as unknown as StartInfo;
-    if (!info.cwd || !info.message)
-      throw new Error("A workspace folder and message are required");
-    const cwd = path.resolve(info.cwd);
+    if (!info.message) throw new Error("A message is required");
+    // Cowork tasks send userSelectedFolders instead of cwd; a task with no
+    // folder picked runs in the Cowork files directory (ref: settings >
+    // Cowork files, default ~/Claude).
+    const pickedFolders = (info.userSelectedFolders ?? []).filter(
+      (entry): entry is string => typeof entry === "string" && entry.length > 0,
+    );
+    let requestedCwd = info.cwd || pickedFolders[0];
+    if (!requestedCwd) {
+      requestedCwd = coworkFilesDir();
+      await mkdir(requestedCwd, { recursive: true });
+    }
+    const cwd = path.resolve(requestedCwd);
     const cwdInfo = await stat(cwd);
     if (!cwdInfo.isDirectory()) throw new Error("Workspace is not a directory");
     const now = Date.now();
@@ -1639,12 +1675,19 @@ export class LocalCodeSessionManager {
         ? (info.permissionMode ?? "acceptEdits")
         : "acceptEdits",
       rootDetected: true,
-      additionalDirectories: (info.additionalDirectories ?? []).map((entry) =>
-        path.resolve(entry),
-      ),
+      additionalDirectories: [
+        ...(info.additionalDirectories ?? []),
+        ...pickedFolders.slice(1),
+      ].map((entry) => path.resolve(entry)),
       initialMessage: info.message,
       ...(typeof info.scheduledTaskId === "string"
         ? { scheduledTaskId: info.scheduledTaskId }
+        : {}),
+      ...(typeof info.sessionType === "string"
+        ? { sessionType: info.sessionType }
+        : {}),
+      ...(pickedFolders.length > 0
+        ? { userSelectedFolders: pickedFolders }
         : {}),
       transcript: [],
       artifacts: [],

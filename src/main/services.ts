@@ -1,6 +1,15 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -28,6 +37,7 @@ import { originOf, TRUSTED_REMOTE_ORIGINS } from "../shared/security";
 import { StateStore } from "./state";
 import { FileAccessPolicy } from "./file-access";
 import type { LocalCodeSessionManager } from "./local-code";
+import { coworkFilesDir, setCoworkFilesRoot } from "./local-code";
 import type { LocalBackend } from "./local-backend";
 import type { LocalFilePreview } from "./local-file-preview";
 import type { LocalPluginManager } from "./local-plugins";
@@ -405,6 +415,29 @@ export class ServiceDispatcher {
           this.context.plugins?.invoke(parsed.method, args) ??
           genericDefault(parsed)
         );
+      // Settings > Cowork files: where folderless Cowork tasks keep their
+      // output (default ~/Claude, persisted in coworkFilesRoot).
+      case "claude.web.CoworkUserFiles":
+        return this.coworkUserFiles(parsed, args, event);
+      // Cowork sessions run directly through the local session runner
+      // ("host loop" mode); there is no Anthropic VM to download or boot.
+      // Reporting host-loop mode makes the composer skip the VM-readiness
+      // wait that otherwise stalls task submission forever.
+      case "claude.web.ClaudeVM":
+        switch (parsed.method) {
+          case "isHostLoopModeEnabled":
+            return true;
+          case "isHostLoopDevOverrideActive":
+            return false;
+          case "checkVirtualMachinePlatform":
+            return { enabled: true, requiresRestart: false };
+          case "getDownloadStatus":
+            return "ready";
+          case "getRunningStatus":
+            return "ready";
+          default:
+            return genericDefault(parsed);
+        }
       // The Cowork surface and the Code (CCD) surface each reach scheduled
       // tasks through their own service name; both share one local manager.
       case "claude.web.CoworkScheduledTasks":
@@ -1242,6 +1275,68 @@ export class ServiceDispatcher {
     if (method === "parkAndCapture")
       return this.context.filePreview.parkAndCapture(args[0], args[1]);
     return undefined;
+  }
+
+  private async coworkUserFiles(
+    parsed: ParsedChannel,
+    args: unknown[],
+    event?: IpcMainInvokeEvent,
+  ): Promise<unknown> {
+    const method = parsed.method;
+    if (method === "getInfo") {
+      const currentRoot = coworkFilesDir();
+      await mkdir(currentRoot, { recursive: true }).catch(() => undefined);
+      return { currentRoot, isLegacyDocumentsRoot: false };
+    }
+    if (method === "reveal") {
+      const error = await shell.openPath(coworkFilesDir());
+      return !error;
+    }
+    if (method === "pickTarget") {
+      const selected =
+        (await pickPaths(this.context, event, true, false))?.[0] ?? null;
+      return selected ? { path: selected } : null;
+    }
+    if (method === "migrate") {
+      const target = typeof args[0] === "string" ? args[0].trim() : "";
+      if (!target) return { ok: false, errorCode: "target-invalid" };
+      if (target.startsWith("\\\\"))
+        return { ok: false, errorCode: "target-unc" };
+      const current = coworkFilesDir();
+      const resolved = path.resolve(target);
+      if (
+        resolved === path.resolve(current) ||
+        resolved.startsWith(path.resolve(current) + path.sep)
+      )
+        return { ok: false, errorCode: "target-inside-current" };
+      try {
+        await mkdir(resolved, { recursive: true });
+        await access(resolved, fsConstants.W_OK);
+      } catch {
+        return { ok: false, errorCode: "target-not-writable" };
+      }
+      try {
+        const existing = await stat(current).catch(() => null);
+        if (existing?.isDirectory())
+          await cp(current, resolved, {
+            recursive: true,
+            force: false,
+            errorOnExist: false,
+          });
+      } catch {
+        return { ok: false, errorCode: "copy-failed" };
+      }
+      try {
+        await this.context.state.update((draft) => {
+          draft.coworkFilesRoot = resolved;
+        });
+        setCoworkFilesRoot(resolved);
+      } catch {
+        return { ok: false, errorCode: "state-write-failed" };
+      }
+      return { ok: true };
+    }
+    return genericDefault(parsed);
   }
 
   private coworkArtifacts(

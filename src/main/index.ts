@@ -25,6 +25,7 @@ import {
   localProfilePaths,
 } from "../shared/app-identity";
 import { parseChannel, serviceKey } from "../shared/channels";
+import { RETAINED_DESKTOP_VERSION } from "../shared/desktop-version";
 import {
   isTrustedRendererUrl,
   originOf,
@@ -289,7 +290,7 @@ function installNavigationPolicy(contents: WebContents): void {
             contextIsolation: true,
             sandbox: true,
             nodeIntegration: false,
-            additionalArguments: [`--desktop-app-version=${app.getVersion()}`],
+            additionalArguments: [`--desktop-app-version=${RETAINED_DESKTOP_VERSION}`],
           },
         },
       };
@@ -337,7 +338,7 @@ function createMainWindow(): BrowserWindow {
       sandbox: true,
       nodeIntegration: false,
       additionalArguments: [
-        `--desktop-app-version=${app.getVersion()}`,
+        `--desktop-app-version=${RETAINED_DESKTOP_VERSION}`,
         "--desktop-enterprise-config={}",
       ],
     },
@@ -356,7 +357,7 @@ function createMainWindow(): BrowserWindow {
       // and those dialogs deadlock open.
       backgroundThrottling: false,
       additionalArguments: [
-        `--desktop-app-version=${app.getVersion()}`,
+        `--desktop-app-version=${RETAINED_DESKTOP_VERSION}`,
         `--desktop-features=${JSON.stringify(featureMatrix())}`,
         "--desktop-enterprise-config={}",
         `--desktop-telemetry-config=${JSON.stringify({
@@ -375,9 +376,17 @@ function createMainWindow(): BrowserWindow {
   mainView = view;
   // The retained client distinguishes its native Code surface from the web
   // Code product by the official desktop user-agent token. Without this it
-  // redirects /code and /epitaxy into cloud-only enrollment pages.
+  // redirects /code and /epitaxy into cloud-only enrollment pages. The token
+  // must carry the retained shell's version, not ours: the renderer
+  // semver-gates surfaces on it (the Desktop app settings group with the
+  // Local MCP servers page needs >= 0.12.0, which "0.0.1" failed). The
+  // default UA's own "Open-Claude/<version>" token must go: the renderer's
+  // version regex is unanchored and case-insensitive, so it reads the
+  // "Claude/0.0.1" inside it before ever reaching the real token.
   view.webContents.setUserAgent(
-    `${view.webContents.getUserAgent()} Claude/${app.getVersion()}`,
+    `${view.webContents
+      .getUserAgent()
+      .replace(` ${app.name}/${app.getVersion()}`, "")} Claude/${RETAINED_DESKTOP_VERSION}`,
   );
   if (process.env.CLAUDE_TRACE_LOCAL_API === "1") {
     view.webContents.on(
@@ -806,6 +815,7 @@ if (!gotLock) {
         scheduledTasks: localScheduledTasks,
         filePreview: localFilePreview,
         launchPreview: localLaunchPreview,
+        mcpManager: () => localMcpManager,
         mainWindow: () => mainWindow,
         mainView: () => mainView,
         broadcast,

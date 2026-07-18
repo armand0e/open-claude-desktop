@@ -51,6 +51,8 @@
     "probe:plugins": "node tools/probe-plugins.mjs",
     "probe:device-use": "node tools/probe-device-use.mjs",
     "probe:connectors": "node tools/probe-connectors.mjs",
+    "probe:mcp-settings": "node tools/probe-mcp-settings.mjs",
+    "probe:scheduled-sidebar": "node tools/probe-scheduled-sidebar.mjs",
     "probe:real-settings": "node tools/probe-real-settings.mjs",
     "probe:real-chat-navigation": "node tools/probe-real-chat-navigation.mjs",
     "probe:real-navigation": "node tools/probe-real-navigation.mjs",

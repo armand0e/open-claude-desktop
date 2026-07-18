@@ -33,6 +33,7 @@ import type { LocalFilePreview } from "./local-file-preview";
 import type { LocalPluginManager } from "./local-plugins";
 import type { LocalScheduledTasks } from "./local-scheduled-tasks";
 import type { LocalLaunchPreview } from "./local-launch-preview";
+import type { LocalMcpManager } from "./local-mcp";
 
 const execFileAsync = promisify(execFile);
 
@@ -44,6 +45,7 @@ export interface ServiceContext {
   readonly scheduledTasks?: LocalScheduledTasks;
   readonly filePreview: LocalFilePreview;
   readonly launchPreview: LocalLaunchPreview;
+  mcpManager?(): LocalMcpManager | null;
   mainWindow(): BrowserWindow | null;
   mainView(): WebContentsView | null;
   broadcast(channel: string, ...args: unknown[]): void;
@@ -538,28 +540,73 @@ export class ServiceDispatcher {
     };
   }
 
+  // The Local MCP servers settings page renders each server's config plus a
+  // status badge ("initializing" | "running" | "failed"). Statuses come from
+  // the MCP manager's last listing; servers it has not tried yet report
+  // "initializing" and a warm-up listing pushes the refreshed map through
+  // mcpConfigChange.
+  private mcpServersWithStatus(): Record<string, unknown> {
+    const manager = this.context.mcpManager?.() ?? null;
+    const servers = this.context.state.get("appConfig").mcpServers;
+    let warming = false;
+    const withStatus: Record<string, unknown> = {};
+    for (const [name, config] of Object.entries(servers)) {
+      if (!config || typeof config !== "object") continue;
+      const status = manager?.statusFor(name) ?? null;
+      if (status === null) warming = true;
+      withStatus[name] = {
+        ...(config as Record<string, unknown>),
+        status:
+          status === "connected"
+            ? "running"
+            : status === "error"
+              ? "failed"
+              : "initializing",
+      };
+    }
+    if (warming && manager)
+      void manager
+        .listTools()
+        .catch(() => undefined)
+        .then(() => this.broadcastMcpConfig());
+    return withStatus;
+  }
+
+  private broadcastMcpConfig(): void {
+    const channel = eventChannel("claude.settings.MCP", "mcpConfigChange");
+    if (channel) this.context.broadcast(channel, this.mcpServersWithStatus());
+  }
+
   private mcp(method: string, args: unknown[]): unknown | Promise<unknown> {
     if (method === "isLocalDevMcpEnabled") return true;
     if (method === "getMcpServersConfig")
       return this.context.state.get("appConfig").mcpServers;
-    if (method === "getMcpServersConfigWithStatus") return null;
+    if (method === "getMcpServersConfigWithStatus")
+      return this.mcpServersWithStatus();
     if (
       method === "setMcpServerConfigs" &&
       args[0] &&
       typeof args[0] === "object"
     ) {
+      // The settings page round-trips the status-augmented map on edits and
+      // deletes; the display-only fields must not be persisted.
+      const sanitized = Object.fromEntries(
+        Object.entries(args[0] as Record<string, unknown>).map(
+          ([name, config]) => {
+            if (!config || typeof config !== "object") return [name, config];
+            const { status: _status, error: _error, ...rest } = config as Record<
+              string,
+              unknown
+            >;
+            return [name, rest];
+          },
+        ),
+      );
       return this.context.state
         .update((draft) => {
-          draft.appConfig.mcpServers = args[0] as Record<string, unknown>;
+          draft.appConfig.mcpServers = sanitized;
         })
-        .then((state) => {
-          const channel = eventChannel(
-            "claude.settings.MCP",
-            "mcpConfigChange",
-          );
-          if (channel)
-            this.context.broadcast(channel, state.appConfig.mcpServers);
-        });
+        .then(() => this.broadcastMcpConfig());
     }
     if (method === "revealConfig")
       return shell.showItemInFolder(this.context.state.filePath);

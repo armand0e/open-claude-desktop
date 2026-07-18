@@ -924,10 +924,17 @@ if (!gotLock) {
         );
         // The user's configured MCP servers (Settings > Developer) become
         // chat tools through a local stdio JSON-RPC client.
+        const backendForMcp = localBackend;
         localMcpManager = new LocalMcpManager(
           () => state.get("appConfig").mcpServers as Record<string, unknown>,
+          () => backendForMcp.remoteMcpServers(),
         );
         localBackend.setMcpSource(localMcpManager);
+        const mcpManagerForHooks = localMcpManager;
+        localBackend.setRemoteMcpHooks({
+          status: (name) => mcpManagerForHooks.statusFor(name),
+          changed: () => mcpManagerForHooks.remoteServersChanged(),
+        });
       }
       const dispatcher = new ServiceDispatcher(context);
       disposeIpc = registerGeneratedIpc(dispatcher);

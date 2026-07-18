@@ -215,17 +215,212 @@ class McpConnection {
   }
 }
 
+// Remote MCP over streamable HTTP: JSON-RPC requests POSTed to the server
+// URL, responses arriving as plain JSON or a single SSE stream. Covers
+// unauthenticated servers; OAuth-protected connectors fail with a clear
+// error instead of hanging.
+class RemoteMcpConnection {
+  readonly serverName: string;
+  readonly configSignature: string;
+  readonly #url: string;
+  #sessionId: string | null = null;
+  #nextId = 1;
+  #initialized: Promise<void> | null = null;
+  #toolsCache: { tools: McpToolDefinition[]; at: number } | null = null;
+
+  constructor(serverName: string, url: string, configSignature: string) {
+    this.serverName = serverName;
+    this.#url = url;
+    this.configSignature = configSignature;
+  }
+
+  async #post(payload: JsonObject): Promise<JsonObject | null> {
+    const response = await fetch(this.#url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+        ...(this.#sessionId ? { "Mcp-Session-Id": this.#sessionId } : {}),
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    const session = response.headers.get("mcp-session-id");
+    if (session) this.#sessionId = session;
+    if (response.status === 202) return null;
+    if (response.status === 401 || response.status === 403) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(
+        `MCP server "${this.serverName}" requires authentication, which local connectors do not support yet`,
+      );
+    }
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      throw new Error(
+        `MCP server "${this.serverName}" returned HTTP ${response.status}`,
+      );
+    }
+    const type = (response.headers.get("content-type") ?? "").toLowerCase();
+    if (type.includes("text/event-stream")) {
+      const text = await response.text();
+      for (const frame of text.split(/\n\n/)) {
+        const data = frame
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .join("");
+        if (!data) continue;
+        try {
+          const message: unknown = JSON.parse(data);
+          if (isObject(message) && "id" in message) return message;
+        } catch {
+          // Keep scanning frames.
+        }
+      }
+      throw new Error(
+        `MCP server "${this.serverName}" streamed no JSON-RPC response`,
+      );
+    }
+    const body: unknown = await response.json();
+    return isObject(body) ? body : {};
+  }
+
+  async #request(method: string, params: JsonObject): Promise<JsonObject> {
+    const message = await this.#post({
+      jsonrpc: "2.0",
+      id: this.#nextId++,
+      method,
+      params,
+    });
+    if (!message)
+      throw new Error(
+        `MCP server "${this.serverName}" accepted ${method} without replying`,
+      );
+    if (isObject(message.error))
+      throw new Error(String(message.error.message ?? "MCP request failed"));
+    return isObject(message.result) ? message.result : {};
+  }
+
+  #ensureStarted(): Promise<void> {
+    if (this.#initialized) return this.#initialized;
+    this.#initialized = (async () => {
+      await this.#request("initialize", {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "open-claude", version: "0.0.1" },
+      });
+      await this.#post({
+        jsonrpc: "2.0",
+        method: "notifications/initialized",
+        params: {},
+      }).catch(() => undefined);
+    })();
+    this.#initialized.catch(() => {
+      this.#initialized = null;
+    });
+    return this.#initialized;
+  }
+
+  async listTools(): Promise<McpToolDefinition[]> {
+    if (this.#toolsCache && Date.now() - this.#toolsCache.at < TOOLS_CACHE_MS)
+      return this.#toolsCache.tools;
+    await this.#ensureStarted();
+    const result = await this.#request("tools/list", {});
+    const tools = (Array.isArray(result.tools) ? result.tools : [])
+      .filter(isObject)
+      .flatMap((tool) => {
+        const name = typeof tool.name === "string" ? tool.name : "";
+        if (!name) return [];
+        return [
+          {
+            server: this.serverName,
+            name,
+            qualifiedName: qualifiedToolName(this.serverName, name),
+            description:
+              typeof tool.description === "string" ? tool.description : "",
+            inputSchema: isObject(tool.inputSchema)
+              ? tool.inputSchema
+              : { type: "object", properties: {} },
+          },
+        ];
+      });
+    this.#toolsCache = { tools, at: Date.now() };
+    return tools;
+  }
+
+  async callTool(name: string, args: JsonObject): Promise<string> {
+    await this.#ensureStarted();
+    const result = await this.#request("tools/call", {
+      name,
+      arguments: args,
+    });
+    const parts = (Array.isArray(result.content) ? result.content : [])
+      .filter(isObject)
+      .map((entry) =>
+        typeof entry.text === "string" ? entry.text : JSON.stringify(entry),
+      );
+    const text = parts.join("\n") || JSON.stringify(result);
+    if (result.isError === true)
+      throw new Error(text.slice(0, 2_000) || "MCP tool reported an error");
+    return text;
+  }
+
+  dispose(): void {
+    this.#sessionId = null;
+    this.#initialized = null;
+    this.#toolsCache = null;
+  }
+}
+
+type AnyMcpConnection = McpConnection | RemoteMcpConnection;
+
 export class LocalMcpManager {
-  #connections = new Map<string, McpConnection>();
+  #connections = new Map<string, AnyMcpConnection>();
+  readonly #status = new Map<string, "connected" | "error">();
 
-  constructor(private readonly readConfigs: () => Record<string, unknown>) {}
+  constructor(
+    private readonly readConfigs: () => Record<string, unknown>,
+    private readonly readRemoteServers: () => Array<{
+      name: string;
+      url: string;
+    }> = () => [],
+  ) {}
 
-  #sync(): McpConnection[] {
+  // The Connectors page's per-server connection state; null until a listing
+  // has been attempted.
+  statusFor(name: string): "connected" | "error" | null {
+    return this.#status.get(name) ?? null;
+  }
+
+  // A changed connector list warms connections so status is fresh soon.
+  remoteServersChanged(): void {
+    void this.listTools().catch(() => undefined);
+  }
+
+  #sync(): AnyMcpConnection[] {
     const configs = this.readConfigs();
-    const active: McpConnection[] = [];
+    const active: AnyMcpConnection[] = [];
     const seen = new Set<string>();
+    for (const remote of this.readRemoteServers()) {
+      if (!remote.name || !remote.url || seen.has(remote.name)) continue;
+      const signature = JSON.stringify(["remote", remote.url]);
+      seen.add(remote.name);
+      const existing = this.#connections.get(remote.name);
+      if (existing && existing.configSignature === signature) {
+        active.push(existing);
+        continue;
+      }
+      existing?.dispose();
+      const connection = new RemoteMcpConnection(
+        remote.name,
+        remote.url,
+        signature,
+      );
+      this.#connections.set(remote.name, connection);
+      active.push(connection);
+    }
     for (const [name, raw] of Object.entries(configs ?? {})) {
-      if (!isObject(raw)) continue;
+      if (!isObject(raw) || seen.has(name)) continue;
       const command = typeof raw.command === "string" ? raw.command : "";
       if (!command) continue;
       if (raw.disabled === true || raw.enabled === false) continue;
@@ -266,6 +461,12 @@ export class LocalMcpManager {
     const results = await Promise.allSettled(
       connections.map((connection) => connection.listTools()),
     );
+    results.forEach((result, index) => {
+      this.#status.set(
+        connections[index].serverName,
+        result.status === "fulfilled" ? "connected" : "error",
+      );
+    });
     return results.flatMap((result) =>
       result.status === "fulfilled" ? result.value : [],
     );

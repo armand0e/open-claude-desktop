@@ -238,6 +238,16 @@ interface LocalProject {
   files: LocalProjectFile[];
 }
 
+// A custom connector added through the native Connectors page: a remote
+// MCP server the local MCP client dials over streamable HTTP.
+interface LocalRemoteMcpServer {
+  uuid: string;
+  name: string;
+  url: string;
+  created_at: string;
+  updated_at: string;
+}
+
 interface LocalData {
   version: 3;
   provider: LocalProviderConfig;
@@ -248,6 +258,7 @@ interface LocalData {
   files: LocalStoredFile[];
   memory: LocalMemoryState;
   projects: LocalProject[];
+  mcpRemoteServers: LocalRemoteMcpServer[];
 }
 
 const DEFAULT_MEMORY_STATE: LocalMemoryState = {
@@ -1604,6 +1615,9 @@ export class LocalBackend {
         conversations,
         artifacts,
         files,
+        mcpRemoteServers: Array.isArray(input.mcpRemoteServers)
+          ? (input.mcpRemoteServers as LocalRemoteMcpServer[])
+          : [],
         projects: Array.isArray(input.projects)
           ? (input.projects as LocalProject[]).map((project) => ({
               ...project,
@@ -2175,6 +2189,51 @@ export class LocalBackend {
 
   setComputerSource(source: LocalComputerSource): void {
     this.#computerSource = source;
+  }
+
+  // Custom connectors (remote MCP servers) for the MCP client.
+  remoteMcpServers(): Array<{ name: string; url: string }> {
+    return this.#data.mcpRemoteServers.map((server) => ({
+      name: server.name,
+      url: server.url,
+    }));
+  }
+
+  #remoteMcpStatus?: (name: string) => "connected" | "error" | null;
+  #onRemoteMcpServersChanged?: () => void;
+
+  setRemoteMcpHooks(hooks: {
+    status: (name: string) => "connected" | "error" | null;
+    changed: () => void;
+  }): void {
+    this.#remoteMcpStatus = hooks.status;
+    this.#onRemoteMcpServersChanged = hooks.changed;
+  }
+
+  #remoteMcpRecord(
+    server: LocalRemoteMcpServer,
+    withConnection: boolean,
+  ): JsonObject {
+    return {
+      uuid: server.uuid,
+      name: server.name,
+      url: server.url,
+      created_at: server.created_at,
+      updated_at: server.updated_at,
+      custom_oauth_client_id: null,
+      custom_oauth_client_secret_mask: null,
+      is_authenticated: false,
+      id_jag_config: null,
+      install_summary: null,
+      install_inputs: null,
+      ...(withConnection
+        ? {
+            connection_state:
+              this.#remoteMcpStatus?.(server.name) ?? "initiated",
+            connection_auth_type: null,
+          }
+        : {}),
+    };
   }
 
   #computerUseEnabled(): boolean {
@@ -4063,6 +4122,86 @@ export class LocalBackend {
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "Content-Type": "application/json" },
       });
+    }
+
+    // Custom connectors: the native Connectors page manages remote MCP
+    // servers through these endpoints; the local MCP client dials them.
+    const mcpRemote = pathname.match(
+      /^\/api\/organizations\/[^/]+\/mcp\/remote_servers(_with_connection)?(?:\/([^/]+))?(?:\/(id_jag_config|clear_cache|admin_scopes|admin_tools))?$/,
+    );
+    if (mcpRemote) {
+      const json = (payload: unknown, status = 200) =>
+        new Response(JSON.stringify(payload), {
+          status,
+          headers: { "Content-Type": "application/json" },
+        });
+      const withConnection = mcpRemote[1] === "_with_connection";
+      const serverUuid = mcpRemote[2]
+        ? decodeURIComponent(mcpRemote[2])
+        : undefined;
+      const sub = mcpRemote[3];
+      const server = serverUuid
+        ? this.#data.mcpRemoteServers.find((entry) => entry.uuid === serverUuid)
+        : undefined;
+      if (sub === "admin_scopes" || sub === "admin_tools") return json([]);
+      if (sub === "clear_cache") return json({ ok: true });
+      if (sub === "id_jag_config") {
+        if (!server) return errorResponse("Connector not found", 404);
+        return json(this.#remoteMcpRecord(server, false));
+      }
+      if (!serverUuid && request.method === "GET")
+        return json(
+          this.#data.mcpRemoteServers.map((entry) =>
+            this.#remoteMcpRecord(entry, withConnection),
+          ),
+        );
+      if (!serverUuid && request.method === "POST") {
+        const body = await jsonBody(request);
+        const name = stringValue(body.name);
+        const serverUrl = stringValue(body.url);
+        if (!name || !serverUrl)
+          return errorResponse("A connector needs a name and URL");
+        try {
+          const parsed = new URL(serverUrl);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
+            throw new Error("bad protocol");
+        } catch {
+          return errorResponse("The connector URL must be http(s)");
+        }
+        const now = new Date().toISOString();
+        const created: LocalRemoteMcpServer = {
+          uuid: randomUUID(),
+          name,
+          url: serverUrl,
+          created_at: now,
+          updated_at: now,
+        };
+        this.#data.mcpRemoteServers.push(created);
+        await this.#persist();
+        this.#onRemoteMcpServersChanged?.();
+        return json(this.#remoteMcpRecord(created, false));
+      }
+      if (!server) return errorResponse("Connector not found", 404);
+      if (request.method === "GET")
+        return json(this.#remoteMcpRecord(server, false));
+      if (request.method === "PUT") {
+        const body = await jsonBody(request);
+        if (stringValue(body.name)) server.name = stringValue(body.name)!;
+        if (stringValue(body.url)) server.url = stringValue(body.url)!;
+        server.updated_at = new Date().toISOString();
+        await this.#persist();
+        this.#onRemoteMcpServersChanged?.();
+        return json(this.#remoteMcpRecord(server, false));
+      }
+      if (request.method === "DELETE") {
+        this.#data.mcpRemoteServers = this.#data.mcpRemoteServers.filter(
+          (entry) => entry.uuid !== server.uuid,
+        );
+        await this.#persist();
+        this.#onRemoteMcpServersChanged?.();
+        return new Response(null, { status: 204 });
+      }
+      return new Response(null, { status: 405 });
     }
 
     // Browser-use and computer-use screenshots render inline as markdown

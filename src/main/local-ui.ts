@@ -469,6 +469,36 @@ const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       "X(`/api/organizations/${s}/published_artifacts?${a.toString()}`,{custom3pCompatible:!0,staleTime:0,queryKey:[sb,{orgUuid:s,includeDeletedArtifacts:t?.includeDeletedArtifacts,noToast:t?.noToast}],enabled:!!s&&(t?.enabled??!0),meta:{noToast:t?.noToast}})",
   },
   {
+    id: "enable-local-mcp-connectors-feature",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    // The whole Connectors surface hangs off the papi_mcp statsig gate,
+    // which the empty local statsig payload leaves false — hence the
+    // "add connector" bounce to the skills page.
+    find: 'const nqe=()=>av("papi_mcp"),rqe=()=>!av("papi_disable_mcp_ui")',
+    replace: 'const nqe=()=>!0,rqe=()=>!av("papi_disable_mcp_ui")',
+  },
+  {
+    id: "enable-local-mcp-connectors-list-query",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    find: "return IM(`/api/organizations/${e}/mcp/remote_servers`,{queryKey:[VA,e],enabled:!r&&n&&!!e,",
+    replace:
+      "return IM(`/api/organizations/${e}/mcp/remote_servers`,{custom3pCompatible:!0,queryKey:[VA,e],enabled:!r&&n&&!!e,",
+  },
+  {
+    id: "enable-local-mcp-connectors-connection-query",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    find: "return IM(`/api/organizations/${e}/mcp/remote_servers_with_connection`,{queryKey:[VA,e,\"with-connection\"],",
+    replace:
+      "return IM(`/api/organizations/${e}/mcp/remote_servers_with_connection`,{custom3pCompatible:!0,queryKey:[VA,e,\"with-connection\"],",
+  },
+  {
+    id: "enable-local-mcp-connector-item-query",
+    assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
+    find: "return IM(`/api/organizations/${e}/mcp/remote_servers/${t}`,{queryKey:[KA,e,t],",
+    replace:
+      "return IM(`/api/organizations/${e}/mcp/remote_servers/${t}`,{custom3pCompatible:!0,queryKey:[KA,e,t],",
+  },
+  {
     id: "enable-local-code-plugins-access",
     assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
     // The plugins section on the Code surface needs this statsig-backed

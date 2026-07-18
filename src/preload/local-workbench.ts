@@ -1649,33 +1649,6 @@ export function installLocalWorkbench(): void {
         .querySelector('[data-testid="local-artifacts-sidebar-button"]')
         ?.remove();
 
-      if (
-        /^\/customize\/(connectors|plugins)(?:\/|$)/.test(location.pathname)
-      ) {
-        location.replace("app://localhost/customize/skills");
-        return;
-      }
-      if (location.pathname.startsWith("/customize")) {
-        const cloudOnlyLabels = new Set([
-          "Connectors",
-          "Personal plugins",
-          "Browse plugins",
-          "Connect your apps",
-        ]);
-        for (const candidate of document.querySelectorAll<HTMLElement>(
-          "a,button,div,span",
-        )) {
-          const label =
-            candidate.getAttribute("aria-label")?.trim() ??
-            candidate.getAttribute("title")?.trim() ??
-            candidate.textContent?.trim() ??
-            "";
-          if (!cloudOnlyLabels.has(label)) continue;
-          const control = candidate.closest<HTMLElement>("a,button");
-          (control ?? candidate).dataset.localCloudOnly = "true";
-        }
-      }
-
       for (const candidate of document.querySelectorAll<HTMLElement>(
         "div,aside,section",
       )) {
@@ -1970,8 +1943,9 @@ export function installLocalWorkbench(): void {
     // The Customize landing lists only its native sections; add a Memory row
     // that opens the (fully wired) /customize/memory page.
     const wireCustomizeMemoryEntry = () => {
-      // Connectors joins this list once the local connectors surface is
-      // fully backed; its page still bounces to /customize/skills.
+      // Connectors needs no injected row: the native Customize navigation
+      // renders its own Connectors entry, backed by the local MCP remote
+      // server endpoints.
       const entries = [
         {
           testid: "local-customize-memory-row",
@@ -2061,9 +2035,7 @@ export function installLocalWorkbench(): void {
         const existingButtons = [
           ...navigation.querySelectorAll<HTMLButtonElement>("button"),
         ];
-        // Connectors stays hidden until the local connectors surface is
-        // fully backed; MCP servers already work through the MCP settings.
-        const cloudOnlySettings = new Set(["Privacy", "Connectors", "Cowork"]);
+        const cloudOnlySettings = new Set(["Privacy", "Cowork"]);
         for (const button of existingButtons) {
           const label =
             button

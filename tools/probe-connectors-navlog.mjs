@@ -120,6 +120,20 @@ const navlogScript = `(() => {
   window.addEventListener("beforeunload", () =>
     push({ kind: "doc-unload", url: location.pathname + location.hash }),
   );
+  window.addEventListener("error", (event) =>
+    push({ kind: "error", message: String(event.message).slice(0, 400) }),
+  );
+  window.addEventListener("unhandledrejection", (event) =>
+    push({ kind: "rejection", message: String(event.reason?.stack ?? event.reason).slice(0, 400) }),
+  );
+  const originalError = console.error.bind(console);
+  console.error = (...args) => {
+    push({
+      kind: "console.error",
+      message: args.map((arg) => String(arg?.stack ?? arg)).join(" ").slice(0, 400),
+    });
+    return originalError(...args);
+  };
 })();`;
 
 try {

@@ -403,7 +403,10 @@ export class ServiceDispatcher {
           this.context.plugins?.invoke(parsed.method, args) ??
           genericDefault(parsed)
         );
+      // The Cowork surface and the Code (CCD) surface each reach scheduled
+      // tasks through their own service name; both share one local manager.
       case "claude.web.CoworkScheduledTasks":
+      case "claude.web.CCDScheduledTasks":
         return (
           this.context.scheduledTasks?.invoke(parsed.method, args) ??
           genericDefault(parsed)

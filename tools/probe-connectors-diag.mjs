@@ -153,7 +153,13 @@ try {
       ])
         gates[name] = mod.v9(name);
       const text = (document.body?.innerText || "").replace(/\\s+/g, " ");
-      return { path: location.pathname, gates, snippet: text.slice(0, 300) };
+      const dom = {
+        epitaxyRoot: !!document.querySelector(".epitaxy-root"),
+        remoteAgentsRoot: !!document.querySelector(".remote-agents-root"),
+        bodyNodes: document.body.querySelectorAll("*").length,
+        mainHtml: (document.querySelector(".epitaxy-root")?.innerHTML || "").slice(0, 600),
+      };
+      return { path: location.pathname, gates, dom, snippet: text.slice(0, 1400) };
     })()`,
   );
   console.log("landed:", JSON.stringify(landed, null, 2));

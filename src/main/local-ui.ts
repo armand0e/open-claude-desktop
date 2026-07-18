@@ -1045,9 +1045,24 @@ function modelSelectorState(
   }));
 }
 
+// The client hashes growthbook feature names before lookup (Java-style
+// string hash — `Mf` in the shared chunk), so the bootstrap payload must be
+// keyed by hash. Seed new gates through this helper to keep them readable.
+function growthbookFeatureKey(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash << 5) - hash + name.charCodeAt(i);
+    hash &= hash;
+  }
+  return ((4294967295 & hash) >>> 0).toString();
+}
+
 function growthbookFeatures(configuredModel?: string): Record<string, unknown> {
   const enabled = (defaultValue: unknown) => ({ defaultValue });
   return {
+    // Scheduled tasks on the Code surface (/epitaxy/scheduled) — backed by
+    // the local claude.web.CCDScheduledTasks service.
+    [growthbookFeatureKey("chilling_sloth_clocks")]: enabled(true),
     "574905726": enabled(true),
     "1101873029": enabled(false),
     "3150971238": enabled(false),

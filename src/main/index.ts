@@ -787,11 +787,15 @@ if (!gotLock) {
         app.getPath("userData"),
         codeSessions,
         (taskEvent) => {
-          const channel = eventChannel(
+          // Both scheduled-task surfaces (Cowork and Code/CCD) subscribe on
+          // their own service channel.
+          for (const service of [
             "claude.web.CoworkScheduledTasks",
-            "onOnScheduledTaskEvent",
-          );
-          if (channel) broadcast(channel, taskEvent);
+            "claude.web.CCDScheduledTasks",
+          ]) {
+            const channel = eventChannel(service, "onOnScheduledTaskEvent");
+            if (channel) broadcast(channel, taskEvent);
+          }
         },
       );
       const context: ServiceContext = {

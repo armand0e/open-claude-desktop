@@ -526,6 +526,10 @@ export function installLocalWorkbench(): void {
         [data-testid="user-menu-button"] { display: none !important; }
         button[data-mode="cowork"], button[aria-label="Cowork"] { display: none !important; }
         [data-local-cloud-only="true"] { display: none !important; }
+        /* The desktop top bar already carries the incognito ghost; the
+           floating in-content duplicate is hidden in the official shell by a
+           top-bar presence check our frame does not satisfy. */
+        button[aria-label="Use incognito"], button[aria-label="Exit incognito"] { display: none !important; }
         button[aria-label="Menu"],
         button[aria-label="Collapse sidebar"],
         button[aria-label="Expand sidebar"],
@@ -1198,6 +1202,16 @@ export function installLocalWorkbench(): void {
         location.replace("app://localhost/new?mode=chat&surface=chat");
         return;
       }
+      // The home-surface scheduled route rides the cloud Cowork stack and
+      // spins forever locally; the Code-surface routines page is the working
+      // scheduled-tasks surface.
+      if (location.pathname === "/scheduled") {
+        history.replaceState(history.state, "", "/epitaxy/scheduled");
+        window.dispatchEvent(
+          new PopStateEvent("popstate", { state: history.state }),
+        );
+        return;
+      }
       const pills = document.querySelector<HTMLElement>(
         ".df-pills[data-segmented='true']",
       );
@@ -1406,6 +1420,58 @@ export function installLocalWorkbench(): void {
         event.preventDefault();
         event.stopImmediatePropagation();
         history.pushState(history.state, "", "/projects");
+        window.dispatchEvent(
+          new PopStateEvent("popstate", { state: history.state }),
+        );
+      });
+      template.parentElement.insertBefore(button, template.nextSibling);
+    };
+
+    // The home sidebar's native Scheduled entry is Cowork-gated, so the local
+    // build injects one (mirroring the Projects injection) that routes to the
+    // working Code-surface routines page.
+    const wireSidebarScheduled = () => {
+      const stripped = (element: Element) =>
+        (element.textContent ?? "").replace(/[-]/gu, "").trim();
+      const rows = [
+        ...document.querySelectorAll<HTMLElement>("a,button"),
+      ].filter((row) => row.getClientRects().length > 0);
+      const isChatSidebar = rows.some((row) =>
+        /New ?chat/u.test(stripped(row)),
+      );
+      const injected = document.querySelector<HTMLElement>(
+        '[data-testid="local-scheduled-button"]',
+      );
+      if (!isChatSidebar) {
+        injected?.remove();
+        return;
+      }
+      if (injected) return;
+      const template = document.querySelector<HTMLElement>(
+        '[data-testid="local-projects-button"]',
+      );
+      if (!template?.parentElement) return;
+      const button = template.cloneNode(true) as HTMLElement;
+      button.dataset.testid = "local-scheduled-button";
+      button.setAttribute("aria-label", "Scheduled");
+      button.removeAttribute("id");
+      for (const element of [button, ...button.querySelectorAll("*")])
+        if (
+          element.childElementCount === 0 &&
+          stripped(element) === "Projects"
+        )
+          element.textContent = "Scheduled";
+      const iconHost = [...button.querySelectorAll<HTMLElement>("*")].find(
+        (element) =>
+          element.childElementCount === 0 &&
+          /^[-]$/u.test(element.textContent ?? ""),
+      );
+      // Anthropicons "Clock" glyph — the icon the native Scheduled tab uses.
+      if (iconHost) iconHost.textContent = "";
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        history.pushState(history.state, "", "/epitaxy/scheduled");
         window.dispatchEvent(
           new PopStateEvent("popstate", { state: history.state }),
         );
@@ -2332,6 +2398,7 @@ export function installLocalWorkbench(): void {
       wireCustomizeSkillSelection();
       wireDictationButton();
       wireSidebarProjects();
+      wireSidebarScheduled();
       wireCustomizeMemoryEntry();
       wireMemorySaveRows();
       wireCodeSidebarGroups();

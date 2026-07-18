@@ -522,6 +522,9 @@ export interface LocalWorkbenchServices {
   startCoworkSession?: (
     input: unknown,
   ) => Promise<{ sessionId?: string } | null | undefined>;
+  // FileSystem.browseFolder — opens the native folder picker and grants the
+  // chosen root, returning its path.
+  pickCoworkFolder?: () => Promise<string | null | undefined>;
 }
 
 export function installLocalWorkbench(
@@ -2329,6 +2332,7 @@ export function installLocalWorkbench(
     // the model against a working folder) via LocalAgentModeSessions.start.
     let composerMode: "chat" | "cowork" = "chat";
     let coworkSubmitting = false;
+    let coworkFolder: string | null = null;
     const isHomeComposerRoute = () =>
       location.pathname === "/new" ||
       location.pathname === "/chat/new" ||
@@ -2357,6 +2361,7 @@ export function installLocalWorkbench(
         const result = await services.startCoworkSession({
           message: prompt,
           sessionType: "cowork",
+          ...(coworkFolder ? { userSelectedFolders: [coworkFolder] } : {}),
         });
         clearComposerPrompt();
         const sessionId = result?.sessionId;
@@ -2468,7 +2473,8 @@ export function installLocalWorkbench(
             ? "0 1px 2px rgba(0,0,0,.25)"
             : "none";
         }
-        // The Cowork folder affordance mirrors the reference composer.
+        // The Cowork folder affordance mirrors the reference composer: it
+        // only shows in Cowork mode.
         const folderRow = document.querySelector<HTMLElement>(
           '[data-testid="local-cowork-folder-row"]',
         );
@@ -2476,7 +2482,74 @@ export function installLocalWorkbench(
       };
       toggle.append(chatPill, coworkPill);
       anchor.parentElement.insertBefore(toggle, anchor.nextSibling);
+      wireCoworkFolderRow();
       setMode(composerMode);
+    };
+    const folderBasename = (folder: string): string =>
+      folder.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || folder;
+    const wireCoworkFolderRow = () => {
+      if (!services.pickCoworkFolder) return;
+      // The composer box is the chat input's nearest rounded container; the
+      // folder row sits just beneath it, like the reference "Project or
+      // folder" row.
+      const input = currentChatInput();
+      const box = input?.closest<HTMLElement>(
+        'fieldset, form, [class*="rounded"]',
+      );
+      const host = box?.parentElement;
+      if (!host) return;
+      if (host.querySelector('[data-testid="local-cowork-folder-row"]')) return;
+      const row = document.createElement("button");
+      row.type = "button";
+      row.dataset.testid = "local-cowork-folder-row";
+      row.style.cssText =
+        "display:flex;align-items:center;gap:8px;width:100%;margin-top:6px;padding:10px 14px;border:0;border-radius:12px;background:var(--cds-bg-200,rgba(255,255,255,.04));color:var(--cds-text-secondary,#b3b0a8);font:inherit;font-size:14px;cursor:pointer;text-align:left";
+      const render = () => {
+        row.innerHTML = "";
+        const icon = document.createElement("span");
+        icon.setAttribute("aria-hidden", "true");
+        icon.style.cssText =
+          "display:inline-flex;width:16px;height:16px;flex-shrink:0";
+        icon.innerHTML =
+          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7.9a1 1 0 0 1-.8-.4l-.9-1.2a1 1 0 0 0-.8-.4H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1Z"/></svg>';
+        const label = document.createElement("span");
+        label.style.cssText = "flex:1;min-width:0";
+        label.textContent = coworkFolder
+          ? folderBasename(coworkFolder)
+          : "Work in a project or folder";
+        if (coworkFolder) {
+          label.style.color = "var(--cds-text-primary,#f5f4ef)";
+          row.title = coworkFolder;
+        }
+        row.append(icon, label);
+        if (coworkFolder) {
+          const clear = document.createElement("span");
+          clear.textContent = "Clear";
+          clear.style.cssText =
+            "font-size:12px;color:var(--cds-text-secondary,#8a8781);padding:2px 6px";
+          clear.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            coworkFolder = null;
+            render();
+          });
+          row.append(clear);
+        }
+      };
+      row.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void (async () => {
+          const picked = await services.pickCoworkFolder?.();
+          if (picked) {
+            coworkFolder = picked;
+            render();
+          }
+        })();
+      });
+      render();
+      host.insertBefore(row, box.nextSibling);
+      row.style.display = composerMode === "cowork" ? "" : "none";
     };
     // A Skill row in the Code chain links to /customize/skills?skill=<name>.
     // The native Customize page has no deep-link support, so select the

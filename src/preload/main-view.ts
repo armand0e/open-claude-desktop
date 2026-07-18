@@ -43,11 +43,14 @@ if (telemetryConfig !== undefined)
   contextBridge.exposeInMainWorld("desktopTelemetryConfig", telemetryConfig);
 if (localBackend) {
   contextBridge.exposeInMainWorld("localClaude", localClaudeApi);
-  const sessionService = (
-    namespaces["claude.web"] as
-      | { LocalAgentModeSessions?: { start?: (input: unknown) => unknown } }
-      | undefined
-  )?.LocalAgentModeSessions;
+  const webNs = namespaces["claude.web"] as
+    | {
+        LocalAgentModeSessions?: { start?: (input: unknown) => unknown };
+        FileSystem?: { browseFolder?: (path?: string) => unknown };
+      }
+    | undefined;
+  const sessionService = webNs?.LocalAgentModeSessions;
+  const fileSystem = webNs?.FileSystem;
   installLocalWorkbench({
     startCoworkSession:
       typeof sessionService?.start === "function"
@@ -55,6 +58,13 @@ if (localBackend) {
             Promise.resolve(
               sessionService.start!(input),
             ) as Promise<{ sessionId?: string } | null | undefined>
+        : undefined,
+    pickCoworkFolder:
+      typeof fileSystem?.browseFolder === "function"
+        ? () =>
+            Promise.resolve(fileSystem.browseFolder!()) as Promise<
+              string | null | undefined
+            >
         : undefined,
   });
 }

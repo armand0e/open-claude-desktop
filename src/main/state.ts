@@ -16,6 +16,11 @@ export interface PersistentState {
   locale: string;
   stores: Record<string, unknown>;
   localSessionEnvironment: unknown;
+  // Root folder for Cowork task files (settings > Cowork files).
+  // undefined means the ~/Claude default.
+  coworkFilesRoot?: string;
+  // Global instructions applied to every Cowork session (settings > Cowork).
+  coworkGlobalInstructions?: string;
 }
 
 const DEFAULT_STATE: PersistentState = {
@@ -47,7 +52,13 @@ const DEFAULT_STATE: PersistentState = {
       suppliedValues: {},
       bootstrapRefetchRevision: 0,
     },
-    connectedFilesState: [],
+    // 1.22209 shape: the Office add-in bridge applies this state object
+    // verbatim (`_setFiles(state.files)`), so `files` must be an array.
+    connectedFilesState: {
+      files: [],
+      selectedFileId: null,
+      isFeatureEnabled: false,
+    },
     grandPrixStatus: { status: "disconnected" },
     interactiveAuth: { status: "idle" },
     sessionsBridgeStatus: { status: "disconnected" },
@@ -103,6 +114,12 @@ function normalizeState(value: unknown): PersistentState {
         typeof supportBundleState.stage === "string"
           ? supportBundleState
           : structuredClone(DEFAULT_STATE.stores.supportBundleState),
+      // Migrate the pre-1.22209 array shape; the renderer now reads
+      // `state.files` off this store and crashes on an array.
+      connectedFilesState: Array.isArray(inputStores.connectedFilesState)
+        ? structuredClone(DEFAULT_STATE.stores.connectedFilesState)
+        : (inputStores.connectedFilesState ??
+          structuredClone(DEFAULT_STATE.stores.connectedFilesState)),
     },
   } as PersistentState;
 }

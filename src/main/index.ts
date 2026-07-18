@@ -38,7 +38,7 @@ import {
 } from "./ipc";
 import { installLocalUiProtocol, registerAppScheme } from "./local-ui";
 import { LocalBackend } from "./local-backend";
-import { LocalCodeSessionManager } from "./local-code";
+import { LocalCodeSessionManager, setCoworkFilesRoot } from "./local-code";
 import { LocalFilePreview } from "./local-file-preview";
 import { LocalLaunchPreview } from "./local-launch-preview";
 import { LocalMcpManager } from "./local-mcp";
@@ -704,6 +704,7 @@ if (!gotLock) {
     .whenReady()
     .then(async () => {
       state = new StateStore(app.getPath("userData"));
+      setCoworkFilesRoot(state.get("coworkFilesRoot"));
       localWebTools = new LocalWebTools(
         app.getPath("userData"),
         app.getAppPath(),
@@ -749,15 +750,25 @@ if (!gotLock) {
         app.getPath("userData"),
         () => localBackend?.provider() ?? null,
         (codeEvent) => {
-          const channel = eventChannel("claude.web.LocalSessions", "onEvent");
-          if (channel) broadcast(channel, codeEvent);
+          // The Code surface listens on LocalSessions; the Cowork task
+          // surface listens on LocalAgentModeSessions. Same session
+          // manager, so mirror every event on both channels.
+          for (const service of [
+            "claude.web.LocalSessions",
+            "claude.web.LocalAgentModeSessions",
+          ]) {
+            const channel = eventChannel(service, "onEvent");
+            if (channel) broadcast(channel, codeEvent);
+          }
         },
         (request) => {
-          const channel = eventChannel(
+          for (const service of [
             "claude.web.LocalSessions",
-            "onToolPermissionRequest",
-          );
-          if (channel) broadcast(channel, request);
+            "claude.web.LocalAgentModeSessions",
+          ]) {
+            const channel = eventChannel(service, "onToolPermissionRequest");
+            if (channel) broadcast(channel, request);
+          }
         },
         localWebTools,
       );

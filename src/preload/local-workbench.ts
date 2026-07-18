@@ -524,7 +524,9 @@ export function installLocalWorkbench(): void {
         /* The retained client requires an internal identity object to build
            conversation queries, but local mode has no user account. */
         [data-testid="user-menu-button"] { display: none !important; }
-        button[data-mode="cowork"], button[aria-label="Cowork"] { display: none !important; }
+        /* The reference top switcher shows Home | Code only; Cowork lives in
+           the composer's Chat | Cowork mode pills, which must stay visible. */
+        .df-pills[data-segmented="true"] > button[data-mode="cowork"] { display: none !important; }
         [data-local-cloud-only="true"] { display: none !important; }
         /* The desktop top bar already carries the incognito ghost; the
            floating in-content duplicate is hidden in the official shell by a
@@ -1198,15 +1200,10 @@ export function installLocalWorkbench(): void {
     const wiredButtons = new WeakSet<HTMLButtonElement>();
 
     const wireLocalNavigation = () => {
-      if (/cowork/i.test(location.pathname + location.search)) {
-        location.replace("app://localhost/new?mode=chat&surface=chat");
-        return;
-      }
-      // This renderer snapshot has no home-level scheduled route (the only
-      // scheduled surface is the Code one), so a bare /scheduled would 404.
-      // Route it to the working page until the snapshot upgrade lands.
+      // The home-level scheduled surface lives at /scheduled-task in this
+      // snapshot; a bare /scheduled still 404s.
       if (location.pathname === "/scheduled") {
-        history.replaceState(history.state, "", "/epitaxy/scheduled");
+        history.replaceState(history.state, "", "/scheduled-task");
         window.dispatchEvent(
           new PopStateEvent("popstate", { state: history.state }),
         );
@@ -1323,19 +1320,39 @@ export function installLocalWorkbench(): void {
           break;
         }
       }
+      // The sandbox-setup notice (toast in older snapshots, inline card on
+      // /task/new in 1.22209) is cloud-runner guidance that local sessions
+      // never need. Mark the smallest container that holds just the notice:
+      // matching the FIRST element containing the text would select the app
+      // root (textContent includes descendants) and hide the whole page.
+      const secureWorkspaceText =
+        "A Windows feature needs to be enabled to give Claude a secure workspace.";
       const secureWorkspaceMessage = [
         ...document.querySelectorAll<HTMLElement>("div,p,span"),
-      ].find((candidate) =>
-        candidate.textContent?.includes(
-          "A Windows feature needs to be enabled to give Claude a secure workspace.",
-        ),
+      ].find(
+        (candidate) =>
+          candidate.textContent?.includes(secureWorkspaceText) &&
+          ![...candidate.children].some((child) =>
+            child.textContent?.includes(secureWorkspaceText),
+          ),
       );
       if (secureWorkspaceMessage) {
-        const cloudToast =
-          secureWorkspaceMessage.closest<HTMLElement>(
-            '[role="alert"],[role="status"]',
-          ) ?? secureWorkspaceMessage.parentElement;
-        if (cloudToast) cloudToast.dataset.localCloudOnly = "true";
+        let cloudNotice = secureWorkspaceMessage.closest<HTMLElement>(
+          '[role="alert"],[role="status"]',
+        );
+        if (!cloudNotice) {
+          cloudNotice = secureWorkspaceMessage;
+          const limit =
+            (secureWorkspaceMessage.textContent?.length ?? 0) + 60;
+          while (
+            cloudNotice.parentElement &&
+            cloudNotice.parentElement !== document.body &&
+            (cloudNotice.parentElement.textContent?.length ?? Infinity) <=
+              limit
+          )
+            cloudNotice = cloudNotice.parentElement;
+        }
+        cloudNotice.dataset.localCloudOnly = "true";
       }
     };
 
@@ -1503,7 +1520,7 @@ export function installLocalWorkbench(): void {
             button.querySelector(".truncate")?.textContent?.trim() ??
             button.textContent?.trim() ??
             "";
-          if (["Privacy", "Cowork"].includes(label))
+          if (label === "Privacy")
             (button.closest("li") ?? button).dataset.localCloudOnly = "true";
         }
         if (nav.querySelector("[data-local-capabilities-settings]")) continue;
@@ -1584,7 +1601,7 @@ export function installLocalWorkbench(): void {
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopImmediatePropagation();
-        history.pushState(history.state, "", "/epitaxy/scheduled");
+        history.pushState(history.state, "", "/scheduled-task");
         window.dispatchEvent(
           new PopStateEvent("popstate", { state: history.state }),
         );
@@ -1801,7 +1818,8 @@ export function installLocalWorkbench(): void {
         const existingButtons = [
           ...navigation.querySelectorAll<HTMLButtonElement>("button"),
         ];
-        const cloudOnlySettings = new Set(["Privacy", "Cowork"]);
+        // Cowork is locally backed now; only Privacy stays cloud-only.
+        const cloudOnlySettings = new Set(["Privacy"]);
         for (const button of existingButtons) {
           const label =
             button

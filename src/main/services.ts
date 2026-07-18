@@ -1,6 +1,15 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import {
+  access,
+  cp,
+  mkdir,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
@@ -28,6 +37,7 @@ import { originOf, TRUSTED_REMOTE_ORIGINS } from "../shared/security";
 import { StateStore } from "./state";
 import { FileAccessPolicy } from "./file-access";
 import type { LocalCodeSessionManager } from "./local-code";
+import { coworkFilesDir, setCoworkFilesRoot } from "./local-code";
 import type { LocalBackend } from "./local-backend";
 import type { LocalFilePreview } from "./local-file-preview";
 import type { LocalPluginManager } from "./local-plugins";
@@ -102,7 +112,7 @@ export function featureMatrix(): Record<
     chillingSlothEnterprise: supported,
     chillingSlothLocal: supported,
     chillingSlothPool: unavailable,
-    yukonSilver: unavailable,
+    yukonSilver: supported,
     yukonSilverGems: unavailable,
     yukonSilverGemsCache: unavailable,
     wakeScheduler: supported,
@@ -405,6 +415,34 @@ export class ServiceDispatcher {
           this.context.plugins?.invoke(parsed.method, args) ??
           genericDefault(parsed)
         );
+      // Settings > Cowork files: where folderless Cowork tasks keep their
+      // output (default ~/Claude, persisted in coworkFilesRoot).
+      case "claude.web.CoworkUserFiles":
+        return this.coworkUserFiles(parsed, args, event);
+      // Global Cowork instructions (settings > Cowork). The renderer also
+      // mirrors these into account settings (cowork_global_instructions);
+      // this desktop store must round-trip or the save path throws.
+      case "claude.web.CoworkMemory":
+        return this.coworkMemory(parsed, args);
+      // Cowork sessions run directly through the local session runner
+      // ("host loop" mode); there is no Anthropic VM to download or boot.
+      // Reporting host-loop mode makes the composer skip the VM-readiness
+      // wait that otherwise stalls task submission forever.
+      case "claude.web.ClaudeVM":
+        switch (parsed.method) {
+          case "isHostLoopModeEnabled":
+            return true;
+          case "isHostLoopDevOverrideActive":
+            return false;
+          case "checkVirtualMachinePlatform":
+            return { enabled: true, requiresRestart: false };
+          case "getDownloadStatus":
+            return "ready";
+          case "getRunningStatus":
+            return "ready";
+          default:
+            return genericDefault(parsed);
+        }
       // The Cowork surface and the Code (CCD) surface each reach scheduled
       // tasks through their own service name; both share one local manager.
       case "claude.web.CoworkScheduledTasks":
@@ -1228,7 +1266,52 @@ export class ServiceDispatcher {
     }
     if (method === "showSessionFilePreview")
       return this.context.filePreview.show(args[0], args[1], args[2], args[3]);
+    // Trusted Cowork folders (settings > Cowork): stored in app
+    // preferences under localAgentModeTrustedFolders; the picker reads the
+    // list straight off AppPreferences.getPreferences.
+    if (
+      method === "getTrustedFolders" ||
+      method === "addTrustedFolder" ||
+      method === "removeTrustedFolder" ||
+      method === "isFolderTrusted"
+    )
+      return this.trustedFolders(method, args);
     return this.context.codeSessions.invoke(method, args);
+  }
+
+  private async trustedFolders(
+    method: string,
+    args: unknown[],
+  ): Promise<unknown> {
+    const current = (): string[] => {
+      const stored =
+        this.context.state.get("appConfig").preferences
+          .localAgentModeTrustedFolders;
+      return Array.isArray(stored)
+        ? stored.filter((entry): entry is string => typeof entry === "string")
+        : [];
+    };
+    if (method === "getTrustedFolders") return current();
+    const target = typeof args[0] === "string" ? path.resolve(args[0]) : "";
+    if (method === "isFolderTrusted") return current().includes(target);
+    if (!target) return method === "addTrustedFolder" ? false : undefined;
+    const next =
+      method === "addTrustedFolder"
+        ? [...new Set([...current(), target])]
+        : current().filter((entry) => entry !== target);
+    await this.context.state.update((draft) => {
+      draft.appConfig.preferences.localAgentModeTrustedFolders = next;
+    });
+    const channel = eventChannel(
+      "claude.settings.AppPreferences",
+      "preferencesChanged",
+    );
+    if (channel)
+      this.context.broadcast(
+        channel,
+        this.context.state.get("appConfig").preferences,
+      );
+    return method === "addTrustedFolder" ? true : undefined;
   }
 
   private filePreview(method: string, args: unknown[]): unknown {
@@ -1242,6 +1325,84 @@ export class ServiceDispatcher {
     if (method === "parkAndCapture")
       return this.context.filePreview.parkAndCapture(args[0], args[1]);
     return undefined;
+  }
+
+  private coworkMemory(
+    parsed: ParsedChannel,
+    args: unknown[],
+  ): unknown | Promise<unknown> {
+    if (parsed.method === "readGlobalMemory")
+      return this.context.state.get("coworkGlobalInstructions") ?? "";
+    if (parsed.method === "writeGlobalMemory")
+      return this.context.state
+        .update((draft) => {
+          draft.coworkGlobalInstructions =
+            typeof args[0] === "string" ? args[0] : "";
+        })
+        .then(() => true);
+    return genericDefault(parsed);
+  }
+
+  private async coworkUserFiles(
+    parsed: ParsedChannel,
+    args: unknown[],
+    event?: IpcMainInvokeEvent,
+  ): Promise<unknown> {
+    const method = parsed.method;
+    if (method === "getInfo") {
+      const currentRoot = coworkFilesDir();
+      await mkdir(currentRoot, { recursive: true }).catch(() => undefined);
+      return { currentRoot, isLegacyDocumentsRoot: false };
+    }
+    if (method === "reveal") {
+      const error = await shell.openPath(coworkFilesDir());
+      return !error;
+    }
+    if (method === "pickTarget") {
+      const selected =
+        (await pickPaths(this.context, event, true, false))?.[0] ?? null;
+      return selected ? { path: selected } : null;
+    }
+    if (method === "migrate") {
+      const target = typeof args[0] === "string" ? args[0].trim() : "";
+      if (!target) return { ok: false, errorCode: "target-invalid" };
+      if (target.startsWith("\\\\"))
+        return { ok: false, errorCode: "target-unc" };
+      const current = coworkFilesDir();
+      const resolved = path.resolve(target);
+      if (
+        resolved === path.resolve(current) ||
+        resolved.startsWith(path.resolve(current) + path.sep)
+      )
+        return { ok: false, errorCode: "target-inside-current" };
+      try {
+        await mkdir(resolved, { recursive: true });
+        await access(resolved, fsConstants.W_OK);
+      } catch {
+        return { ok: false, errorCode: "target-not-writable" };
+      }
+      try {
+        const existing = await stat(current).catch(() => null);
+        if (existing?.isDirectory())
+          await cp(current, resolved, {
+            recursive: true,
+            force: false,
+            errorOnExist: false,
+          });
+      } catch {
+        return { ok: false, errorCode: "copy-failed" };
+      }
+      try {
+        await this.context.state.update((draft) => {
+          draft.coworkFilesRoot = resolved;
+        });
+        setCoworkFilesRoot(resolved);
+      } catch {
+        return { ok: false, errorCode: "state-write-failed" };
+      }
+      return { ok: true };
+    }
+    return genericDefault(parsed);
   }
 
   private coworkArtifacts(

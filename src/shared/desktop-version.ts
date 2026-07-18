@@ -4,4 +4,4 @@
 // Local MCP servers) needs >= 0.12.0 — so it must be the version of the
 // Claude Desktop release the ion-dist snapshot was taken from, not
 // Open-Claude's own package version.
-export const RETAINED_DESKTOP_VERSION = "1.21459.1";
+export const RETAINED_DESKTOP_VERSION = "1.22209.0";

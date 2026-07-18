@@ -260,7 +260,9 @@ try {
   );
   await new Promise((resolve) => setTimeout(resolve, 8000));
   // The fullscreen /customize surface is retired: navigating there bounces
-  // to /new and opens the settings dialog at Customize > Connectors.
+  // to the home surface and opens the settings dialog at Customize >
+  // Connectors. With Cowork enabled the home resolves to the task landing
+  // (/task/new), so accept either home route.
   const page = await evaluateEventually(
     debuggerPort,
     `(() => {
@@ -278,7 +280,7 @@ try {
   console.log("page:", JSON.stringify(page, null, 2));
   assert(created?.uuid, "Connector create failed");
   assert(
-    page.path === "/new",
+    page.path === "/new" || page.path === "/task/new",
     `Retired customize route did not bounce home: ${page.path}`,
   );
   assert(

@@ -327,8 +327,10 @@ try {
     settings.localModelLabel?.endsWith("Model"),
     `Unexpected Settings item: ${JSON.stringify(settings)}`,
   );
+  // Connectors moved off this list when the local remote-MCP backend landed
+  // (82d72d1) — the section is now expected to be visible.
   assert(
-    ["Privacy", "Connectors", "Cowork"].every(
+    ["Privacy", "Cowork"].every(
       (label) => !settings.visibleLabels.includes(label),
     ),
     `Cloud-only Settings sections are still visible: ${JSON.stringify(settings.visibleLabels)}`,

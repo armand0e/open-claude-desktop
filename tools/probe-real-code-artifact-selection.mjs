@@ -497,8 +497,12 @@ try {
         const folderDeadline = Date.now() + 10000;
         let folderChoice;
         while (!folderChoice && Date.now() < folderDeadline) {
+          // The preload's directory-grouped sidebar renders a header with the
+          // same basename text, so keep the search out of that tree.
           const label = [...document.querySelectorAll("*")].find(element =>
-            element !== folderButton && visible(element) &&
+            element !== folderButton &&
+            !element.closest('[data-testid="local-code-dir-groups"]') &&
+            visible(element) &&
             (element.textContent || "").trim() === ${JSON.stringify(path.basename(workspace))}
           );
           folderChoice = label?.closest('button,[role="option"],[role="menuitem"]') || label;

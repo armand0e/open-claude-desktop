@@ -535,6 +535,12 @@ const child = spawn(
     stdio: ["ignore", "pipe", "pipe"],
     env: {
       ...process.env,
+      // Pin the PTY shell: the terminal proof command is PowerShell syntax,
+      // and a SHELL variable leaking in from a Git Bash parent would
+      // otherwise switch the spawned shell out from under it.
+      ...(process.platform === "win32"
+        ? { CLAUDE_CODE_SHELL: "powershell.exe" }
+        : {}),
       OPEN_CLAUDE_USER_DATA_DIR: profile,
       CLAUDE_LOCAL_USER_DATA_DIR: profile,
       CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
@@ -600,8 +606,11 @@ try {
         const folderDeadline = Date.now() + 10000;
         let folderChoice;
         while (!folderChoice && Date.now() < folderDeadline) {
+          // The preload's directory-grouped sidebar renders a header with the
+          // same basename text, so keep the search out of that tree.
           const label = [...document.querySelectorAll("*")].find(element =>
             element !== folderButton &&
+            !element.closest('[data-testid="local-code-dir-groups"]') &&
             visible(element) &&
             (element.textContent || "").trim() === ${JSON.stringify(path.basename(workspace))}
           );

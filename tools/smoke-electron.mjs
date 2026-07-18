@@ -7,9 +7,11 @@ import process from "node:process";
 import electron from "electron";
 
 const mode = process.argv[2] === "local" ? "local" : "hosted";
-const packageVersion = JSON.parse(
-  await readFile("package.json", "utf8"),
-).version;
+// The local shell advertises the retained desktop version (spoofed so the
+// renderer's desktop-semver gates pass), not the package version.
+const retainedDesktopVersion = (
+  await readFile("src/shared/desktop-version.ts", "utf8")
+).match(/RETAINED_DESKTOP_VERSION\s*=\s*"([^"]+)"/)?.[1];
 
 async function unusedPort() {
   const server = createServer();
@@ -234,7 +236,7 @@ try {
     "Shell did not load the exact local renderer",
   );
   assert(
-    shellResult.appVersion === packageVersion,
+    shellResult.appVersion === retainedDesktopVersion,
     `Unexpected desktop version ${shellResult.appVersion}`,
   );
   assert(

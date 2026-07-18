@@ -6,6 +6,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { app, dialog, net, protocol, shell } from "electron";
 import { resolveInside } from "../shared/security";
+import { growthbookFeatureKey } from "../shared/growthbook";
 import { LocalBackend } from "./local-backend";
 import { LocalCodeSessionManager } from "./local-code";
 import {
@@ -1043,18 +1044,6 @@ function modelSelectorState(
     thinking,
     thinking_by_model: [{ id: model, thinking }],
   }));
-}
-
-// The client hashes growthbook feature names before lookup (Java-style
-// string hash — `Mf` in the shared chunk), so the bootstrap payload must be
-// keyed by hash. Seed new gates through this helper to keep them readable.
-function growthbookFeatureKey(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash << 5) - hash + name.charCodeAt(i);
-    hash &= hash;
-  }
-  return ((4294967295 & hash) >>> 0).toString();
 }
 
 function growthbookFeatures(configuredModel?: string): Record<string, unknown> {

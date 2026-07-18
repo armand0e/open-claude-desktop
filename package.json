@@ -46,6 +46,7 @@
     "probe:dictation-stream": "node tools/probe-dictation-stream.mjs",
     "probe:project-page": "node tools/probe-project-page.mjs",
     "probe:publish-artifact": "node tools/probe-publish-artifact.mjs",
+    "probe:artifact-interactivity": "node tools/probe-artifact-interactivity.mjs",
     "probe:code-sidebar": "node tools/probe-code-sidebar.mjs",
     "probe:plugins": "node tools/probe-plugins.mjs",
     "probe:device-use": "node tools/probe-device-use.mjs",

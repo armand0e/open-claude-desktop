@@ -266,6 +266,10 @@ function currentUserAccess(): Record<string, unknown> {
       "skills",
       "cobalt_plinth",
       "web_search",
+      // Cowork: "cowork" is the surface itself, "dramatic_shrimp" is the
+      // local-execution capability every cowork/scheduled hook checks first.
+      "cowork",
+      "dramatic_shrimp",
     ].map((feature) => ({
       feature,
       status: "available",
@@ -481,6 +485,16 @@ function growthbookFeatures(configuredModel?: string): Record<string, unknown> {
     // sections hosting the native customize pages (the legacy Connectors
     // section is a hard-coded "moved to Customize" stub in this build).
     [growthbookFeatureKey("claude_ai_tupelo")]: enabled(true),
+    // Cowork ("yukon silver") + the home /scheduled-task surface. The list
+    // page needs both the base gate and the scheduled ("clocks") gate on
+    // top of the desktop yukonSilver capability + the dramatic_shrimp
+    // feature in current_user_access.
+    [growthbookFeatureKey("yukon_silver")]: enabled(true),
+    [growthbookFeatureKey("yukon_silver_clocks")]: enabled(true),
+    // Forces Cowork sessions onto the local runner; with
+    // yukon_silver_dramatic_shrimp left off, the cloud-backend toggle
+    // stays hidden (canChooseBackend false).
+    [growthbookFeatureKey("dramatic_shrimp_force_local")]: enabled(true),
     "574905726": enabled(true),
     "1101873029": enabled(false),
     "3150971238": enabled(false),
@@ -983,6 +997,16 @@ async function localApiResponse(
         backend.accountSettings(),
       ),
     );
+  }
+  if (
+    request.method === "GET" &&
+    /^\/api\/organizations\/[^/]+\/cowork\/scheduled_tasks$/.test(normalized)
+  ) {
+    // Cloud-side scheduled tasks: none exist locally. The client merges
+    // this list with the desktop CoworkScheduledTasks service, and a
+    // rejected fetch here would surface as "Failed to load scheduled
+    // tasks" whenever the local list is empty.
+    return jsonResponse({ data: [] });
   }
   if (
     request.method === "GET" &&

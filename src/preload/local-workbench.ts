@@ -1202,11 +1202,10 @@ export function installLocalWorkbench(): void {
         location.replace("app://localhost/new?mode=chat&surface=chat");
         return;
       }
-      // This renderer snapshot has no home-level scheduled route (the only
-      // scheduled surface is the Code one), so a bare /scheduled would 404.
-      // Route it to the working page until the snapshot upgrade lands.
+      // The home-level scheduled surface lives at /scheduled-task in this
+      // snapshot; a bare /scheduled still 404s.
       if (location.pathname === "/scheduled") {
-        history.replaceState(history.state, "", "/epitaxy/scheduled");
+        history.replaceState(history.state, "", "/scheduled-task");
         window.dispatchEvent(
           new PopStateEvent("popstate", { state: history.state }),
         );
@@ -1584,7 +1583,7 @@ export function installLocalWorkbench(): void {
       button.addEventListener("click", (event) => {
         event.preventDefault();
         event.stopImmediatePropagation();
-        history.pushState(history.state, "", "/epitaxy/scheduled");
+        history.pushState(history.state, "", "/scheduled-task");
         window.dispatchEvent(
           new PopStateEvent("popstate", { state: history.state }),
         );

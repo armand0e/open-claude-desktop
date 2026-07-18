@@ -102,7 +102,7 @@ export function featureMatrix(): Record<
     chillingSlothEnterprise: supported,
     chillingSlothLocal: supported,
     chillingSlothPool: unavailable,
-    yukonSilver: unavailable,
+    yukonSilver: supported,
     yukonSilverGems: unavailable,
     yukonSilverGemsCache: unavailable,
     wakeScheduler: supported,

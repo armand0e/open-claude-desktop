@@ -1153,6 +1153,12 @@ export class LocalCodeSessionManager {
         return this.cancelQueued(args[0], args[1]);
       case "getAll":
         return this.getAll();
+      // The Cowork scheduled-task detail page maps over this result
+      // unconditionally, so it must always be an array.
+      case "getSessionsForScheduledTask":
+        return this.getAll().filter(
+          (session) => session.scheduledTaskId === args[0],
+        );
       case "getSession":
         return this.getSession(args[0]);
       case "getTranscript":

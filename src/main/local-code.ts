@@ -69,6 +69,9 @@ export interface CodeSession {
   rootDetected: boolean;
   additionalDirectories: string[];
   initialMessage?: string;
+  // Set when a scheduled task started this session; the sidebar groups
+  // runs under their task by this id.
+  scheduledTaskId?: string;
   error?: string;
   errorCategory?: string;
 }
@@ -133,6 +136,7 @@ interface StartInfo {
   permissionMode?: PermissionMode;
   effort?: string;
   additionalDirectories?: string[];
+  scheduledTaskId?: string;
 }
 
 interface ToolCall {
@@ -1633,6 +1637,9 @@ export class LocalCodeSessionManager {
         path.resolve(entry),
       ),
       initialMessage: info.message,
+      ...(typeof info.scheduledTaskId === "string"
+        ? { scheduledTaskId: info.scheduledTaskId }
+        : {}),
       transcript: [],
       artifacts: [],
     };

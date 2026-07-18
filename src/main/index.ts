@@ -44,6 +44,7 @@ import { LocalMcpManager } from "./local-mcp";
 import { LocalBrowserUse } from "./local-browser";
 import { LocalComputerUse } from "./local-computer";
 import { LocalPluginManager } from "./local-plugins";
+import { LocalScheduledTasks } from "./local-scheduled-tasks";
 import { LocalSandbox } from "./local-sandbox";
 import { LocalArtifactTunnel } from "./local-tunnel";
 import { LocalWebTools } from "./local-web-tools";
@@ -98,6 +99,7 @@ let localLaunchPreview: LocalLaunchPreview | null = null;
 let localMcpManager: LocalMcpManager | null = null;
 let localSandbox: LocalSandbox | null = null;
 let localBrowserUse: LocalBrowserUse | null = null;
+let localScheduledTasks: LocalScheduledTasks | null = null;
 let localArtifactTunnel: LocalArtifactTunnel | null = null;
 let targetUrl = "https://claude.ai";
 
@@ -781,11 +783,23 @@ if (!gotLock) {
         await session.defaultSession.clearCache().catch(() => undefined);
       }
       const localPlugins = new LocalPluginManager(app.getPath("userData"));
+      localScheduledTasks = new LocalScheduledTasks(
+        app.getPath("userData"),
+        codeSessions,
+        (taskEvent) => {
+          const channel = eventChannel(
+            "claude.web.CoworkScheduledTasks",
+            "onOnScheduledTaskEvent",
+          );
+          if (channel) broadcast(channel, taskEvent);
+        },
+      );
       const context: ServiceContext = {
         state,
         codeSessions,
         localBackend,
         plugins: localPlugins,
+        scheduledTasks: localScheduledTasks,
         filePreview: localFilePreview,
         launchPreview: localLaunchPreview,
         mainWindow: () => mainWindow,
@@ -942,6 +956,8 @@ app.on("before-quit", () => {
   localSandbox = null;
   localBrowserUse?.dispose();
   localBrowserUse = null;
+  localScheduledTasks?.dispose();
+  localScheduledTasks = null;
   localLaunchPreview?.dispose();
   localLaunchPreview = null;
   localFilePreview?.dispose();

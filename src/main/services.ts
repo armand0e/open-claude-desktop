@@ -31,6 +31,7 @@ import type { LocalCodeSessionManager } from "./local-code";
 import type { LocalBackend } from "./local-backend";
 import type { LocalFilePreview } from "./local-file-preview";
 import type { LocalPluginManager } from "./local-plugins";
+import type { LocalScheduledTasks } from "./local-scheduled-tasks";
 import type { LocalLaunchPreview } from "./local-launch-preview";
 
 const execFileAsync = promisify(execFile);
@@ -40,6 +41,7 @@ export interface ServiceContext {
   readonly codeSessions: LocalCodeSessionManager;
   readonly localBackend?: LocalBackend | null;
   readonly plugins?: LocalPluginManager;
+  readonly scheduledTasks?: LocalScheduledTasks;
   readonly filePreview: LocalFilePreview;
   readonly launchPreview: LocalLaunchPreview;
   mainWindow(): BrowserWindow | null;
@@ -101,7 +103,7 @@ export function featureMatrix(): Record<
     yukonSilver: unavailable,
     yukonSilverGems: unavailable,
     yukonSilverGemsCache: unavailable,
-    wakeScheduler: unavailable,
+    wakeScheduler: supported,
     desktopTopBar: supported,
     ccdPlugins: supported,
     computerUse: unavailable,
@@ -399,6 +401,11 @@ export class ServiceDispatcher {
       case "claude.web.LocalPlugins":
         return (
           this.context.plugins?.invoke(parsed.method, args) ??
+          genericDefault(parsed)
+        );
+      case "claude.web.CoworkScheduledTasks":
+        return (
+          this.context.scheduledTasks?.invoke(parsed.method, args) ??
           genericDefault(parsed)
         );
       case "claude.web.PluginBridgeMcp":

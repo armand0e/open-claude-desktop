@@ -19,3 +19,5 @@ reference/**/*.dll
 reference/**/*.exe
 
 assets/whisper/
+tmp-*.png
+tmp-*.mjs

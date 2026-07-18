@@ -1220,6 +1220,21 @@ export function installLocalWorkbench(
         );
         return;
       }
+      // The standalone Cowork task landing (/task/new) is retired: Cowork is
+      // a mode on the home composer now (the injected Chat|Cowork toggle),
+      // and Cowork sessions live at /cowork/<id>. Any navigation to the old
+      // landing (e.g. the cowork-surface "New task" button) lands on /new.
+      if (
+        location.pathname === "/task" ||
+        location.pathname === "/task/new" ||
+        location.pathname.startsWith("/task/")
+      ) {
+        history.replaceState(history.state, "", "/new");
+        window.dispatchEvent(
+          new PopStateEvent("popstate", { state: history.state }),
+        );
+        return;
+      }
       // Every settings surface lives in the modal: the fullscreen
       // /customize/* and /settings/* pages are retired. Navigating to either
       // bounces to /new and opens the dialog at the matching section (the

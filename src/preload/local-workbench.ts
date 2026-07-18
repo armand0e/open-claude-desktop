@@ -515,7 +515,18 @@ function wireInlineMermaidDiagrams(): void {
   }
 }
 
-export function installLocalWorkbench(): void {
+export interface LocalWorkbenchServices {
+  // LocalAgentModeSessions.start, resolved in the preload world where the
+  // claude.web namespace lives (the workbench runs isolated from the page's
+  // window["claude.web"]).
+  startCoworkSession?: (
+    input: unknown,
+  ) => Promise<{ sessionId?: string } | null | undefined>;
+}
+
+export function installLocalWorkbench(
+  services: LocalWorkbenchServices = {},
+): void {
   const install = () => {
     if (!document.getElementById("local-claude-chrome-style")) {
       const style = document.createElement("style");
@@ -2308,6 +2319,163 @@ export function installLocalWorkbench(): void {
       });
       anchor.parentElement.insertBefore(button, anchor.nextSibling);
     };
+    // Chat | Cowork composer toggle. The desktop CIC composer that carries
+    // this natively is bypassed locally (we serve the web-chat renderer for
+    // its artifacts/publish/web-search/tree). So the pill is injected into
+    // the web composer instead: "Chat" is the ordinary web conversation;
+    // "Cowork" hands the prompt to the local task runner (a session that runs
+    // the model against a working folder) via LocalAgentModeSessions.start.
+    let composerMode: "chat" | "cowork" = "chat";
+    let coworkSubmitting = false;
+    const isHomeComposerRoute = () =>
+      location.pathname === "/new" ||
+      location.pathname === "/chat/new" ||
+      location.pathname === "/";
+    const currentChatInput = (): HTMLElement | null =>
+      [
+        ...document.querySelectorAll<HTMLElement>('[data-testid="chat-input"]'),
+      ].find((node) => node.getClientRects().length > 0) ?? null;
+    const readComposerPrompt = (): string =>
+      (currentChatInput()?.textContent ?? "").trim();
+    const clearComposerPrompt = () => {
+      const input = currentChatInput();
+      if (!input) return;
+      input.focus();
+      const selection = window.getSelection();
+      selection?.selectAllChildren(input);
+      document.execCommand("delete");
+    };
+    const submitCoworkTask = async () => {
+      if (coworkSubmitting) return;
+      const prompt = readComposerPrompt();
+      if (!prompt) return;
+      if (!services.startCoworkSession) return;
+      coworkSubmitting = true;
+      try {
+        const result = await services.startCoworkSession({
+          message: prompt,
+          sessionType: "cowork",
+        });
+        clearComposerPrompt();
+        const sessionId = result?.sessionId;
+        if (typeof sessionId === "string") {
+          history.pushState(history.state, "", `/cowork/${sessionId}`);
+          window.dispatchEvent(
+            new PopStateEvent("popstate", { state: history.state }),
+          );
+        }
+      } catch {
+        // Leave the prompt in place so the user can retry.
+      } finally {
+        coworkSubmitting = false;
+      }
+    };
+    // One-time capture-phase interception: in Cowork mode, the composer's
+    // Enter and Send drive a local task instead of a web conversation.
+    const composerWindow = window as unknown as {
+      __localComposerModeWired?: boolean;
+    };
+    if (!composerWindow.__localComposerModeWired) {
+      composerWindow.__localComposerModeWired = true;
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          if (composerMode !== "cowork") return;
+          if (event.key !== "Enter" || event.shiftKey || event.isComposing)
+            return;
+          const target = event.target;
+          if (
+            !(target instanceof HTMLElement) ||
+            target.getAttribute("data-testid") !== "chat-input"
+          )
+            return;
+          if (!readComposerPrompt()) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          void submitCoworkTask();
+        },
+        true,
+      );
+      document.addEventListener(
+        "click",
+        (event) => {
+          if (composerMode !== "cowork") return;
+          const target = event.target;
+          if (!(target instanceof Element)) return;
+          const send = target.closest<HTMLButtonElement>(
+            'button[aria-label="Send"], button[aria-label="Send message"]',
+          );
+          if (!send || !readComposerPrompt()) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          void submitCoworkTask();
+        },
+        true,
+      );
+    }
+    const wireComposerModeToggle = () => {
+      if (!isHomeComposerRoute()) return;
+      const anchor = [
+        ...document.querySelectorAll<HTMLButtonElement>("button"),
+      ].find(
+        (candidate) =>
+          candidate.getClientRects().length > 0 &&
+          candidate.getAttribute("aria-label") ===
+            "Add files, connectors, and more",
+      );
+      if (!anchor?.parentElement) return;
+      if (
+        anchor.parentElement.querySelector('[data-testid="local-mode-toggle"]')
+      )
+        return;
+      const toggle = document.createElement("div");
+      toggle.dataset.testid = "local-mode-toggle";
+      toggle.style.cssText =
+        "display:inline-flex;align-items:center;gap:2px;margin-left:6px;padding:2px;border-radius:9px;background:var(--cds-bg-200,rgba(255,255,255,.05))";
+      const makePill = (mode: "chat" | "cowork", label: string) => {
+        const pill = document.createElement("button");
+        pill.type = "button";
+        pill.dataset.mode = mode;
+        pill.textContent = label;
+        pill.style.cssText =
+          "border:0;border-radius:7px;padding:3px 12px;font:inherit;font-size:13px;font-weight:500;cursor:pointer;background:transparent;color:var(--cds-text-secondary,#8a8781);transition:background .12s,color .12s";
+        pill.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setMode(mode);
+          currentChatInput()?.focus();
+        });
+        return pill;
+      };
+      const chatPill = makePill("chat", "Chat");
+      const coworkPill = makePill("cowork", "Cowork");
+      const setMode = (mode: "chat" | "cowork") => {
+        composerMode = mode;
+        for (const [pill, pillMode] of [
+          [chatPill, "chat"],
+          [coworkPill, "cowork"],
+        ] as const) {
+          const active = pillMode === mode;
+          pill.style.background = active
+            ? "var(--cds-bg-000,rgba(0,0,0,.35))"
+            : "transparent";
+          pill.style.color = active
+            ? "var(--cds-text-primary,#f5f4ef)"
+            : "var(--cds-text-secondary,#8a8781)";
+          pill.style.boxShadow = active
+            ? "0 1px 2px rgba(0,0,0,.25)"
+            : "none";
+        }
+        // The Cowork folder affordance mirrors the reference composer.
+        const folderRow = document.querySelector<HTMLElement>(
+          '[data-testid="local-cowork-folder-row"]',
+        );
+        if (folderRow) folderRow.style.display = mode === "cowork" ? "" : "none";
+      };
+      toggle.append(chatPill, coworkPill);
+      anchor.parentElement.insertBefore(toggle, anchor.nextSibling);
+      setMode(composerMode);
+    };
     // A Skill row in the Code chain links to /customize/skills?skill=<name>.
     // The native Customize page has no deep-link support, so select the
     // matching row once it renders.
@@ -2557,6 +2725,7 @@ export function installLocalWorkbench(): void {
       wireCodeArtifactRoute();
       wireCustomizeSkillSelection();
       wireDictationButton();
+      wireComposerModeToggle();
       wireSidebarProjects();
       wireSidebarScheduled();
       wireCapabilitiesNavigation();

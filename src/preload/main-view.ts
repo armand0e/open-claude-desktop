@@ -43,7 +43,20 @@ if (telemetryConfig !== undefined)
   contextBridge.exposeInMainWorld("desktopTelemetryConfig", telemetryConfig);
 if (localBackend) {
   contextBridge.exposeInMainWorld("localClaude", localClaudeApi);
-  installLocalWorkbench();
+  const sessionService = (
+    namespaces["claude.web"] as
+      | { LocalAgentModeSessions?: { start?: (input: unknown) => unknown } }
+      | undefined
+  )?.LocalAgentModeSessions;
+  installLocalWorkbench({
+    startCoworkSession:
+      typeof sessionService?.start === "function"
+        ? (input) =>
+            Promise.resolve(
+              sessionService.start!(input),
+            ) as Promise<{ sessionId?: string } | null | undefined>
+        : undefined,
+  });
 }
 
 const bindings = new Set(["cmdK", "googleAuthCode"]);

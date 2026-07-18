@@ -40,28 +40,34 @@ Settings > Cowork (gate `yukon_silver_settings`) is backed by
 app preference, and global instructions via `claude.web.CoworkMemory`
 read/writeGlobalMemory (`coworkGlobalInstructions` in state).
 
-## Code "Routines" variant (reference 12) — deliberately not built
+## Routines (reference 12) — local subset implemented
 
-The reference "Routines" page (title "Routines", "What do you want
-automated?" composer, "Or start from a template" gallery with Briefing /
-Email triage / System health check / etc.) is a **remote, org-backed**
-surface, not a local gate flip:
+Local Routines work: the native **local** routine create flow
+(`c0243d234` `EpitaxyLocalRoutineCreatePage`, reached from
+`/epitaxy/scheduled` → New task → `/epitaxy/scheduled/new-local`) renders
+as "Routines / New local routine" with name, description, instructions,
+optional folder, and a full schedule picker (Manual / Hourly / Daily /
+Weekdays / Weekly / Custom). It creates a routine through the local
+scheduler (`createScheduledTask`), which schedules, lists, runs, and
+deletes it. `createScheduledTask` used to hard-require a `cwd`; a routine
+created without picking a folder now runs in the Cowork files dir
+(`~/Claude`). The scheduled surfaces (home `/scheduled-task`, Code
+`/epitaxy/scheduled`) list and manage these.
 
-- The local Code scheduled page renders through `da(...)` in `ca82bcec9`,
-  which uses `ta.title` ("Scheduled tasks") unconditionally. The
-  `titleRoutines` / `subtitleRoutines` / `templateGalleryHeading` strings
-  are defined on the same descriptor but are **never** rendered by any
-  local-reachable component (a single definition-site occurrence, zero
-  `ta.titleRoutines` usages).
-- The full Routines page with the automation composer lives in
-  `c1c5fa449` (`EpitaxyRoutineCreatePage`), lazy-loaded and marked
-  `remote` throughout; the local counterpart is `c0243d234`
-  (`EpitaxyLocalRoutineCreatePage`), a plain create form with no gallery.
-- The templates bind to cloud connectors (Gmail, Slack, PagerDuty,
-  Sentry, Linear) and routines are "kicked off on schedule, by API, or
-  webhook" — cloud infrastructure with no local equivalent.
+What is **not** reproduced is the **remote** Routines gallery experience:
 
-This matches the standing rule that red-X reference annotations mark cloud
-items to exclude. The local scheduled surfaces (home `/scheduled-task` and
-Code `/epitaxy/scheduled`) both correctly render the "Scheduled tasks"
-variant, which is the local-appropriate experience.
+- The full remote page (`c1c5fa449` `EpitaxyRoutineCreatePage`, marked
+  `remote` throughout) has the "What do you want automated?" composer and
+  the "Or start from a template" gallery (Briefing / Email triage / System
+  health check / PR review digest / …). Its templates bind to cloud
+  connectors (Gmail, Slack, GitHub, PagerDuty, Sentry, Linear) and its
+  routines are triggered by API or webhook — cloud infrastructure with no
+  local equivalent.
+- The Code scheduled *list* page renders through `da(...)` in
+  `ca82bcec9`, which uses `ta.title` ("Scheduled tasks") unconditionally;
+  the `titleRoutines` / `templateGalleryHeading` strings on that
+  descriptor are never rendered by a local-reachable component.
+
+So the local automation primitive (create + schedule + run a recurring
+task) is fully functional; only the connector-bound template gallery,
+which cannot work locally, is absent.

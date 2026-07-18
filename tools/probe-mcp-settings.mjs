@@ -355,34 +355,37 @@ try {
     `Connector row is not marked connected: ${connectors.text}`,
   );
 
-  // The injected Capabilities nav item routes to the natively-rendered
-  // /settings/capabilities page (unlock-capabilities-settings-page patch).
+  // Capabilities is a native settings-nav entry now
+  // (add-capabilities-settings-nav-entry patch): it opens inside the
+  // settings modal like every other section — no fullscreen page.
   const capabilities = await eventually(debuggerPort, async (activeTarget) => {
     const state = await evaluate(
       activeTarget,
       `(async () => {
-        const button = document.querySelector('[data-local-capabilities-settings] button');
+        const strip = s => (s || "").replace(/[\\uE000-\\uF8FF]/gu, "").trim();
+        const button = [...document.querySelectorAll('[role=dialog] button, [role=dialog] a')]
+          .find(el => el.getClientRects().length > 0 && strip(el.textContent) === "Capabilities");
         if (!button) return { missing: true };
         button.click();
-        const deadline = Date.now() + 10000;
-        while (location.pathname !== "/settings/capabilities" && Date.now() < deadline)
-          await new Promise(resolve => setTimeout(resolve, 150));
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 1800));
+        const dialog = document.querySelector('[role="dialog"]');
         return {
           url: location.pathname,
-          text: document.body.innerText.replace(/\\s+/g, " ").slice(0, 900),
+          inDialog: !!dialog,
+          text: (dialog ? dialog.innerText : document.body.innerText).replace(/\\s+/g, " ").slice(0, 900),
         };
       })()`,
     );
     if (state.missing)
-      throw new Error("Capabilities nav item was not injected");
+      throw new Error("Capabilities nav item was not found in the settings modal");
     return state;
   });
   assert(
-    capabilities.url === "/settings/capabilities" &&
+    capabilities.inDialog &&
+      capabilities.url !== "/settings/capabilities" &&
       /Visuals/.test(capabilities.text) &&
       /Artifacts/.test(capabilities.text),
-    `Capabilities page did not render: ${JSON.stringify(capabilities)}`,
+    `Capabilities did not render inside the settings modal: ${JSON.stringify(capabilities)}`,
   );
 
   console.log(

@@ -98,7 +98,21 @@ to unlock.
 
 ---
 
-## 3. Computer use & Browser use
+## 3. Computer use & Browser use — DONE (2026-07-17)
+
+Shipped. Browser use: headed persistent Chrome (playwright-core, external
+in the electron build) with browser_navigate/read_page/click/type/
+screenshot chat tools, one tab per conversation, screenshots served via
+`/api/local/browser/shots/...`. Computer use (Windows): desktopCapturer
+screenshots in physical pixels + user32 PowerShell input helper
+(click/type/key), native per-conversation consent dialog before the first
+action, `CLAUDE_LOCAL_COMPUTER_AUTOCONSENT=1` for probes (which never
+send input). Both behind off-by-default Capabilities toggles
+(`enabled_browser_use` / `enabled_computer_use`), fail closed when off.
+Probe: `probe:device-use`. Linux computer-use input remains unimplemented
+(clear error).
+
+### Original plan (for reference)
 
 **Goal:** enable the native "Computer use" and "Browser use" capability
 toggles and back them locally.

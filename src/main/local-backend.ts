@@ -337,6 +337,14 @@ const WEB_SEARCH_ENABLED_PROMPT = `Web search is enabled for this conversation.
 
 const WEB_SEARCH_DISABLED_PROMPT = `Web search is disabled for this conversation. The web_search and visit_website tools are unavailable: do not emit calls to them, claim to have browsed, or imply that current information was verified. Answer from existing knowledge with an appropriate freshness caveat, or tell the user to enable Web search in Search and tools when live verification is required.`;
 
+const BROWSER_USE_PROMPT = `Browser use is enabled for this conversation.
+- The browser_* tools drive a real, visible Chrome window on the user's machine (persistent profile, one tab per conversation). browser_navigate opens a URL; browser_read_page returns the current page text; browser_click clicks by visible text or CSS selector; browser_type types (optionally pressing Enter); browser_screenshot captures the viewport and returns a markdown image link — include that link in your answer when the user should see the page.
+- Read the page before clicking or typing so your targets come from actual page content. Never claim an action succeeded unless its tool result confirms it. The user can see the window; narrate significant steps briefly.`;
+
+const COMPUTER_USE_PROMPT = `Computer use is enabled for this conversation.
+- The computer_* tools control the user's actual machine: computer_screenshot captures the primary display (returns a markdown image link and the screen size), computer_click clicks at pixel coordinates, computer_type types at the current focus, computer_key presses a key or chord.
+- ALWAYS take a fresh screenshot before clicking and derive coordinates from it. Prefer small, verifiable steps and re-screenshot after actions to confirm effects. Stop and ask the user rather than guessing when the screen state is unclear. Never claim an action succeeded unless a later screenshot confirms it.`;
+
 const CODE_EXECUTION_PROMPT = `Code execution is enabled for this conversation.
 - bash_code_execution runs one bash command in a persistent sandboxed Linux container. The working directory is /workspace; files written there persist across calls within this conversation.
 - Preinstalled: python3 with uv/pip (pandas, numpy, openpyxl, pillow, matplotlib, requests), node 22 with npm, ffmpeg, git, zip, jq. Files the user uploaded to this chat are copied to /workspace/uploads; skill support files load under /workspace/skills/<name>.
@@ -347,6 +355,8 @@ function chatSystemPrompt(
   functionToolsSupported: boolean,
   webSearchEnabled: boolean,
   codeExecutionEnabled = false,
+  browserUseEnabled = false,
+  computerUseEnabled = false,
 ): string {
   return [
     CHAT_SYSTEM_PROMPT,
@@ -354,6 +364,12 @@ function chatSystemPrompt(
     webSearchEnabled ? WEB_SEARCH_ENABLED_PROMPT : WEB_SEARCH_DISABLED_PROMPT,
     ...(codeExecutionEnabled && functionToolsSupported
       ? [CODE_EXECUTION_PROMPT]
+      : []),
+    ...(browserUseEnabled && functionToolsSupported
+      ? [BROWSER_USE_PROMPT]
+      : []),
+    ...(computerUseEnabled && functionToolsSupported
+      ? [COMPUTER_USE_PROMPT]
       : []),
     ...(functionToolsSupported
       ? []
@@ -547,6 +563,35 @@ export interface LocalSandboxSource {
   removeWorkspace?(conversationUuid: string): Promise<void>;
 }
 
+// Headed Playwright browser the chat can drive (src/main/local-browser.ts).
+export interface LocalBrowserSource {
+  run(
+    conversationUuid: string,
+    name: string,
+    input: JsonObject,
+    signal: AbortSignal,
+  ): Promise<{ output: string }>;
+  shotFile(
+    conversationUuid: string,
+    fileName: string,
+  ): Promise<{ absolutePath: string; size_bytes: number } | null>;
+}
+
+// OS-level computer control (src/main/local-computer.ts); every session's
+// first action passes through an explicit native consent dialog.
+export interface LocalComputerSource {
+  run(
+    conversationUuid: string,
+    name: string,
+    input: JsonObject,
+    signal: AbortSignal,
+  ): Promise<{ output: string }>;
+  shotFile(
+    conversationUuid: string,
+    fileName: string,
+  ): Promise<{ absolutePath: string; size_bytes: number } | null>;
+}
+
 const CODE_EXECUTION_TOOL = {
   type: "function",
   function: {
@@ -566,6 +611,147 @@ const CODE_EXECUTION_TOOL = {
     },
   },
 };
+
+const BROWSER_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "browser_navigate",
+      description:
+        "Open an http(s) URL in the visible local browser window this conversation controls.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["url"],
+        properties: { url: { type: "string" } },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_read_page",
+      description:
+        "Read the current page's visible text (title, URL, body text).",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_click",
+      description:
+        "Click an element on the current page by its visible text, or by CSS selector when text matching fails.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["target"],
+        properties: {
+          target: {
+            type: "string",
+            description: "Visible text of the element, or a CSS selector",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_type",
+      description:
+        "Type text into the page — into the element matching selector when given, otherwise at the current focus. Optionally press Enter afterwards.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["text"],
+        properties: {
+          text: { type: "string" },
+          selector: { type: "string" },
+          press_enter: { type: "boolean" },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_screenshot",
+      description:
+        "Capture the current browser viewport; the result includes a markdown image link to show the user.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+  },
+];
+
+const COMPUTER_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "computer_screenshot",
+      description:
+        "Capture the user's primary screen; the result includes a markdown image link and the screen size for coordinate math.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "computer_click",
+      description:
+        "Click at screen coordinates (pixels, origin top-left of the primary display). Take a fresh screenshot first to locate targets.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["x", "y"],
+        properties: {
+          x: { type: "integer" },
+          y: { type: "integer" },
+          button: { enum: ["left", "right", "double"] },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "computer_type",
+      description: "Type text at the current OS focus.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["text"],
+        properties: { text: { type: "string" } },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "computer_key",
+      description:
+        'Press a key or chord at the current OS focus, e.g. "enter", "ctrl+s", "alt+tab".',
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["combo"],
+        properties: { combo: { type: "string" } },
+      },
+    },
+  },
+];
 
 const CHAT_TOOLS = [ARTIFACT_TOOL, SKILL_TOOL, SAVE_MEMORY_TOOL, ...WEB_TOOLS];
 
@@ -1868,6 +2054,8 @@ export class LocalBackend {
       withTools,
       webSearchEnabled,
       this.#codeExecutionEnabled(),
+      this.#browserUseEnabled(),
+      this.#computerUseEnabled(),
     );
     const sections = [base];
     const project = conversation?.project_uuid
@@ -1968,6 +2156,32 @@ export class LocalBackend {
 
   #sandboxEgressEnabled(): boolean {
     return this.#data.accountSettings.enabled_wiggle_egress === true;
+  }
+
+  #browserSource?: LocalBrowserSource;
+
+  setBrowserSource(source: LocalBrowserSource): void {
+    this.#browserSource = source;
+  }
+
+  #browserUseEnabled(): boolean {
+    return (
+      this.#browserSource !== undefined &&
+      this.#data.accountSettings.enabled_browser_use === true
+    );
+  }
+
+  #computerSource?: LocalComputerSource;
+
+  setComputerSource(source: LocalComputerSource): void {
+    this.#computerSource = source;
+  }
+
+  #computerUseEnabled(): boolean {
+    return (
+      this.#computerSource !== undefined &&
+      this.#data.accountSettings.enabled_computer_use === true
+    );
   }
 
   // Copy the branch's uploaded chat files into the conversation's sandbox
@@ -2117,6 +2331,8 @@ export class LocalBackend {
         ? CHAT_TOOLS
         : [ARTIFACT_TOOL, SKILL_TOOL, SAVE_MEMORY_TOOL]),
       ...(this.#codeExecutionEnabled() ? [CODE_EXECUTION_TOOL] : []),
+      ...(this.#browserUseEnabled() ? BROWSER_TOOLS : []),
+      ...(this.#computerUseEnabled() ? COMPUTER_TOOLS : []),
       ...(await this.#mcpToolFunctions()),
     ];
     // Both variants are prepared up front: the fallback variant documents the
@@ -2320,6 +2536,8 @@ export class LocalBackend {
 
     const branch = messageBranch(conversation, human.uuid);
     const codeExecutionEnabled = this.#codeExecutionEnabled();
+    const browserUseEnabled = this.#browserUseEnabled();
+    const computerUseEnabled = this.#computerUseEnabled();
     if (codeExecutionEnabled) {
       // An incognito chat's workspace must not outlive the session.
       if (conversation.is_temporary)
@@ -2512,9 +2730,13 @@ export class LocalBackend {
           let prefetchedProviderResponse: Response | undefined =
             firstProviderResponse;
           let terminalTurn = false;
-          // Code execution legitimately iterates (write → run → fix → run),
-          // so it gets a far larger turn budget than the web-tool loop.
-          const maxProviderTurns = codeExecutionEnabled ? 24 : 8;
+          // Code execution and device control legitimately iterate (act →
+          // observe → act), so they get a far larger turn budget than the
+          // web-tool loop.
+          const maxProviderTurns =
+            codeExecutionEnabled || browserUseEnabled || computerUseEnabled
+              ? 24
+              : 8;
           for (
             let providerTurn = 0;
             providerTurn < maxProviderTurns;
@@ -2703,6 +2925,16 @@ export class LocalBackend {
               (toolCall) => toolCall.name === "bash_code_execution",
             );
             const codeCalls = codeExecutionEnabled ? requestedCodeCalls : [];
+            const requestedDeviceCalls = [...toolCalls.values()].filter(
+              (toolCall) =>
+                toolCall.name.startsWith("browser_") ||
+                toolCall.name.startsWith("computer_"),
+            );
+            const deviceCalls = requestedDeviceCalls.filter((toolCall) =>
+              toolCall.name.startsWith("browser_")
+                ? browserUseEnabled
+                : computerUseEnabled,
+            );
             if (
               webCalls.length === 0 &&
               ![...toolCalls.values()].some(
@@ -2774,12 +3006,43 @@ export class LocalBackend {
                 });
               continue;
             }
+            // Same fail-closed handling for browser/computer calls while
+            // their capabilities are off.
+            const refusedDeviceCalls = requestedDeviceCalls.filter(
+              (toolCall) => !deviceCalls.includes(toolCall),
+            );
+            if (refusedDeviceCalls.length > 0) {
+              closeTextBlock();
+              continuation.push({
+                role: "assistant",
+                content: assistantText.slice(turnTextStart) || null,
+                tool_calls: refusedDeviceCalls.map((toolCall) => ({
+                  id: toolCall.id,
+                  type: "function",
+                  function: {
+                    name: toolCall.name,
+                    arguments: toolCall.arguments || "{}",
+                  },
+                })),
+              });
+              for (const toolCall of refusedDeviceCalls)
+                continuation.push({
+                  role: "tool",
+                  tool_call_id: toolCall.id,
+                  name: toolCall.name,
+                  content: toolCall.name.startsWith("browser_")
+                    ? "Browser use is disabled. Answer without browsing or ask the user to enable Browser use in settings."
+                    : "Computer use is disabled. Ask the user to enable Computer use in settings before controlling the computer.",
+                });
+              continue;
+            }
             if (
               webCalls.length === 0 &&
               skillCalls.length === 0 &&
               mcpCalls.length === 0 &&
               memorySaveCalls.length === 0 &&
-              codeCalls.length === 0
+              codeCalls.length === 0 &&
+              deviceCalls.length === 0
             ) {
               terminalTurn = true;
               break;
@@ -2794,6 +3057,7 @@ export class LocalBackend {
                 ...mcpCalls,
                 ...memorySaveCalls,
                 ...codeCalls,
+                ...deviceCalls,
               ].map((toolCall) => ({
                 id: toolCall.id,
                 type: "function",
@@ -3336,6 +3600,114 @@ export class LocalBackend {
                 content: output.slice(0, 50_000),
               });
             }
+            for (const toolCall of deviceCalls) {
+              let input: JsonObject = {};
+              try {
+                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
+                if (isObject(parsed)) input = parsed;
+              } catch {
+                // The tool reports the invalid arguments.
+              }
+              const isBrowser = toolCall.name.startsWith("browser_");
+              const action = toolCall.name.split("_").slice(1).join(" ");
+              const detail =
+                stringValue(input.url) ??
+                stringValue(input.target) ??
+                stringValue(input.combo) ??
+                (typeof input.x === "number" && typeof input.y === "number"
+                  ? `${input.x},${input.y}`
+                  : "");
+              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+              const callBlock: LocalWebToolUseBlock = {
+                type: "tool_use",
+                id: displayId,
+                name: "mcp_tool",
+                input: {
+                  ...input,
+                  description: `${isBrowser ? "Browser" : "Computer"} · ${action}${detail ? ` · ${detail.slice(0, 60)}` : ""}`,
+                },
+              };
+              assistantBlocks.push(callBlock);
+              const callBlockIndex = nextBlockIndex++;
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: callBlockIndex,
+                  content_block: {
+                    type: callBlock.type,
+                    id: callBlock.id,
+                    name: callBlock.name,
+                    input: callBlock.input,
+                  },
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_delta", {
+                  type: "content_block_delta",
+                  index: callBlockIndex,
+                  delta: {
+                    type: "input_json_delta",
+                    partial_json: JSON.stringify(callBlock.input),
+                  },
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: callBlockIndex,
+                }),
+              );
+              let output: string;
+              let failed = false;
+              try {
+                const source = isBrowser
+                  ? backend.#browserSource
+                  : backend.#computerSource;
+                if (!source)
+                  throw new Error(
+                    `${isBrowser ? "Browser" : "Computer"} use is not available`,
+                  );
+                output = (
+                  await source.run(
+                    conversation.uuid,
+                    toolCall.name,
+                    input,
+                    completionSignal,
+                  )
+                ).output;
+              } catch (error) {
+                failed = true;
+                output = `${isBrowser ? "Browser" : "Computer"} tool error: ${error instanceof Error ? error.message : String(error)}`;
+              }
+              const resultBlock: LocalWebToolResultBlock = {
+                type: "tool_result",
+                tool_use_id: displayId,
+                name: "mcp_tool",
+                content: [{ type: "text", text: output.slice(0, 8_000) }],
+                ...(failed ? { is_error: true } : {}),
+              };
+              assistantBlocks.push(resultBlock);
+              const resultBlockIndex = nextBlockIndex++;
+              controller.enqueue(
+                sse("content_block_start", {
+                  type: "content_block_start",
+                  index: resultBlockIndex,
+                  content_block: resultBlock,
+                }),
+              );
+              controller.enqueue(
+                sse("content_block_stop", {
+                  type: "content_block_stop",
+                  index: resultBlockIndex,
+                }),
+              );
+              continuation.push({
+                role: "tool",
+                tool_call_id: toolCall.id,
+                name: toolCall.name,
+                content: output.slice(0, 50_000),
+              });
+            }
           }
           if (!terminalTurn)
             throw new Error(
@@ -3690,6 +4062,30 @@ export class LocalBackend {
       this.#sandbox?.startImageBuild();
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Browser-use and computer-use screenshots render inline as markdown
+    // images, so they are served as image/png rather than attachments.
+    const shotRoute = pathname.match(
+      /^\/api\/local\/(browser|computer)\/shots\/([^/]+)\/([^/]+)$/,
+    );
+    if (shotRoute && request.method === "GET") {
+      const source =
+        shotRoute[1] === "browser" ? this.#browserSource : this.#computerSource;
+      if (!source) return new Response(null, { status: 404 });
+      const found = await source
+        .shotFile(
+          decodeURIComponent(shotRoute[2]),
+          decodeURIComponent(shotRoute[3]),
+        )
+        .catch(() => null);
+      if (!found) return new Response(null, { status: 404 });
+      return new Response(await readFile(found.absolutePath), {
+        headers: {
+          "Content-Type": "image/png",
+          "Cache-Control": "no-store",
+        },
       });
     }
 

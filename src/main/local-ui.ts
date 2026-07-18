@@ -956,10 +956,12 @@ function localAccount(
       // Memory ("saffron") defaults on; the native Settings/Customize
       // toggles persist overrides through the account-settings endpoint.
       enabled_saffron: true,
-      // Code execution ("wiggle") defaults off until the user turns on the
-      // Docker-backed sandbox in the local settings panel.
+      // Code execution ("wiggle"), browser use, and computer use default
+      // off until enabled in the local Capabilities settings panel.
       enabled_wiggle: false,
       enabled_wiggle_egress: false,
+      enabled_browser_use: false,
+      enabled_computer_use: false,
       ...accountSettings,
       ...profileSettings,
     },

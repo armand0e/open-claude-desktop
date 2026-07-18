@@ -678,6 +678,10 @@ export function installLocalWorkbench(): void {
           <div class="row"><span class="copy"><span class="label">Sandbox internet access</span><span class="hint">Off keeps sandbox containers fully offline. Applies to containers started after the change.</span></span>
             <span class="checks"><input id="sandbox-egress" type="checkbox" aria-label="Sandbox internet access"></span></div>
           <p id="sandbox-status" role="status"></p>
+          <div class="row"><span class="copy"><span class="label">Browser use</span><span class="hint">Lets chat drive a visible Chrome window: open pages, read them, click, type, and take screenshots.</span></span>
+            <span class="checks"><input id="browser-use-enabled" type="checkbox" aria-label="Browser use"></span></div>
+          <div class="row"><span class="copy"><span class="label">Computer use</span><span class="hint">Lets chat see your screen and send real clicks and keystrokes. Off by default; each conversation also asks for confirmation before its first action.</span></span>
+            <span class="checks"><input id="computer-use-enabled" type="checkbox" aria-label="Computer use"></span></div>
         </div>
       </section>
       <section id="memory-panel" aria-label="Memory" hidden>
@@ -827,13 +831,52 @@ export function installLocalWorkbench(): void {
         sandboxEgress.checked = !sandboxEgress.checked;
       }
     });
+    const wireCapabilityToggle = (id: string, settingKey: string) => {
+      const toggle = element<HTMLInputElement>(id);
+      toggle.addEventListener("change", async () => {
+        try {
+          await fetch("/api/account/settings", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ [settingKey]: toggle.checked }),
+          });
+        } catch {
+          toggle.checked = !toggle.checked;
+        }
+      });
+      return toggle;
+    };
+    const browserUseToggle = wireCapabilityToggle(
+      "#browser-use-enabled",
+      "enabled_browser_use",
+    );
+    const computerUseToggle = wireCapabilityToggle(
+      "#computer-use-enabled",
+      "enabled_computer_use",
+    );
+    const loadCapabilityToggles = async () => {
+      try {
+        const profile = (await (
+          await fetch("/api/account_profile")
+        ).json()) as { settings?: Record<string, unknown> };
+        browserUseToggle.checked =
+          profile.settings?.enabled_browser_use === true;
+        computerUseToggle.checked =
+          profile.settings?.enabled_computer_use === true;
+      } catch {
+        // Leave whatever is shown; the next open retries.
+      }
+    };
     let activeLocalPanel: "model" | "export" | "memory" = "model";
     const showLocalPanel = (panel: "model" | "export" | "memory") => {
       activeLocalPanel = panel;
       modelPanel.hidden = panel !== "model";
       exportPanel.hidden = panel !== "export";
       memoryPanel.hidden = panel !== "memory";
-      if (panel === "model") void refreshSandboxStatus();
+      if (panel === "model") {
+        void refreshSandboxStatus();
+        void loadCapabilityToggles();
+      }
     };
     // Keep the three-state Docker/image indicator live while the panel is
     // open (missing/stopped → building → ready).

@@ -28,7 +28,9 @@ for (const [index, [name, input]] of entries.entries()) {
       sourcemap: true,
       rollupOptions: {
         input: path.resolve(input),
-        external: ["electron", "node-pty", /^node:/],
+        // playwright-core loads from the packaged node_modules at runtime
+        // (bundling it breaks its __dirname-relative asset lookups).
+        external: ["electron", "node-pty", "playwright-core", /^node:/],
         output: {
           format: "cjs",
           inlineDynamicImports: true,

@@ -41,6 +41,8 @@ import { LocalCodeSessionManager } from "./local-code";
 import { LocalFilePreview } from "./local-file-preview";
 import { LocalLaunchPreview } from "./local-launch-preview";
 import { LocalMcpManager } from "./local-mcp";
+import { LocalBrowserUse } from "./local-browser";
+import { LocalComputerUse } from "./local-computer";
 import { LocalPluginManager } from "./local-plugins";
 import { LocalSandbox } from "./local-sandbox";
 import { LocalArtifactTunnel } from "./local-tunnel";
@@ -95,6 +97,7 @@ let localFilePreview: LocalFilePreview | null = null;
 let localLaunchPreview: LocalLaunchPreview | null = null;
 let localMcpManager: LocalMcpManager | null = null;
 let localSandbox: LocalSandbox | null = null;
+let localBrowserUse: LocalBrowserUse | null = null;
 let localArtifactTunnel: LocalArtifactTunnel | null = null;
 let targetUrl = "https://claude.ai";
 
@@ -879,6 +882,32 @@ if (!gotLock) {
         localBackend.setSandboxSource(localSandbox);
         if (localBackend.accountSettings().enabled_wiggle === true)
           localSandbox.startImageBuild();
+        localBrowserUse = new LocalBrowserUse(app.getPath("userData"));
+        localBackend.setBrowserSource(localBrowserUse);
+        // Computer control asks the user once per conversation through a
+        // native modal before the first action executes.
+        localBackend.setComputerSource(
+          new LocalComputerUse(app.getPath("userData"), async () => {
+            // Probe harnesses cannot answer native modals.
+            if (process.env.CLAUDE_LOCAL_COMPUTER_AUTOCONSENT === "1")
+              return true;
+            const window = mainWindow;
+            if (!window || window.isDestroyed()) return false;
+            window.show();
+            const { response } = await dialog.showMessageBox(window, {
+              type: "warning",
+              buttons: ["Allow for this conversation", "Don't allow"],
+              defaultId: 1,
+              cancelId: 1,
+              title: "Allow computer control?",
+              message:
+                "Claude is asking to control this computer for the current conversation.",
+              detail:
+                "It will be able to see your screen and send real mouse clicks and keystrokes until the conversation ends. You can stop it anytime with the Stop button.",
+            });
+            return response === 0;
+          }),
+        );
         // The user's configured MCP servers (Settings > Developer) become
         // chat tools through a local stdio JSON-RPC client.
         localMcpManager = new LocalMcpManager(
@@ -911,6 +940,8 @@ app.on("before-quit", () => {
   localMcpManager = null;
   localSandbox?.dispose();
   localSandbox = null;
+  localBrowserUse?.dispose();
+  localBrowserUse = null;
   localLaunchPreview?.dispose();
   localLaunchPreview = null;
   localFilePreview?.dispose();

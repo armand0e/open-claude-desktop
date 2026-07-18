@@ -328,12 +328,18 @@ try {
     `Unexpected Settings item: ${JSON.stringify(settings)}`,
   );
   // Connectors moved off this list when the local remote-MCP backend landed
-  // (82d72d1) — the section is now expected to be visible.
+  // (82d72d1); Cowork became a real local section (files / trusted folders /
+  // global instructions) and Capabilities now lives in the modal. Only
+  // Privacy stays cloud-only and hidden.
   assert(
-    ["Privacy", "Cowork"].every(
-      (label) => !settings.visibleLabels.includes(label),
-    ),
+    ["Privacy"].every((label) => !settings.visibleLabels.includes(label)),
     `Cloud-only Settings sections are still visible: ${JSON.stringify(settings.visibleLabels)}`,
+  );
+  assert(
+    ["Cowork", "Capabilities"].every((label) =>
+      settings.visibleLabels.includes(label),
+    ),
+    `Expected local Settings sections missing: ${JSON.stringify(settings.visibleLabels)}`,
   );
 
   const codeSettingsTab = await eventually(

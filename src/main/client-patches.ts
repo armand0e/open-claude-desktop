@@ -95,6 +95,17 @@ export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       '}(n.personalized_greeting,"chat",s)||t.formatMessage({defaultMessage:"How can I help you today?",id:"XLcM6WHfQR"}):(()=>{const e=a?.display_name||a?.full_name||"",t=s.getHours(),n=s.getDay(),r=["How’s it going?","Coffee and Claude time?","Ready for another session?"];e&&r.push("Back at it, "+e,"Hey there, "+e,e+" returns!");r.push("Happy "+["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][n]+(6===n?"!":""));5===n&&r.push("That Friday feeling");if(t>=22||t<5)r.push("Good evening, night owl","Hello, night owl","Moonlit chat?","What’s on your mind tonight?");else if(t<12)r.push(e?"Good morning, "+e:"Good morning");else if(t<17)r.push(e?"What are we working on today, "+e+"?":"Good afternoon");else r.push(e?"Good evening, "+e:"Good evening");return r[Math.floor(Math.random()*r.length)]})()}',
   },
   {
+    // Add Capabilities to the settings nav so it lives in the modal like
+    // every other section (the modal's content registry already maps
+    // "capabilities" to its component; it was just missing from the nav, so
+    // links fell through to the fullscreen /settings page). Placed right
+    // after Claude Code, reusing an in-scope icon.
+    id: "add-capabilities-settings-nav-entry",
+    find: 'icon:zvt,testId:"claude-code-settings"}),',
+    replace:
+      'icon:zvt,testId:"claude-code-settings"}),n.push({id:"capabilities",href:"/settings/capabilities",label:r.jsx(Q,{defaultMessage:"Capabilities",id:"localCapabilitiesNav"}),name:t.formatMessage({defaultMessage:"Capabilities",id:"localCapabilitiesNav"}),icon:ryt,testId:"capabilities-settings"}),',
+  },
+  {
     // This build ships the Capabilities settings page fully assembled but
     // dead: in the dialog it renders null, and as a page it throws a
     // redirect to /settings before reaching its content. Drop the guard so

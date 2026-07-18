@@ -1220,24 +1220,42 @@ export function installLocalWorkbench(
         );
         return;
       }
-      // The fullscreen /customize surface is retired: Skills / Connectors /
-      // Plugins / Memory are managed in the settings dialog's Customize
-      // group. Any navigation there (sidebar rows, in-app links) bounces
-      // back and opens the dialog at the matching section. The dialog's own
-      // section switching never changes the pathname, so this cannot loop.
-      if (
+      // Every settings surface lives in the modal: the fullscreen
+      // /customize/* and /settings/* pages are retired. Navigating to either
+      // bounces to /new and opens the dialog at the matching section (the
+      // dialog's own section switching never changes the pathname, so this
+      // cannot loop).
+      const settingsLabelForSection = (section: string): string | null => {
+        const customize: Record<string, string> = {
+          skills: "Skills",
+          connectors: "Connectors",
+          plugins: "Plugins",
+          memory: "Memory",
+        };
+        const settings: Record<string, string> = {
+          general: "General",
+          capabilities: "Capabilities",
+          "claude-code": "Claude Code",
+          cowork: "Cowork",
+          model: "Model",
+          "data-export": "Data export",
+          extensions: "Extensions",
+          developer: "Developer",
+        };
+        return customize[section] ?? settings[section] ?? null;
+      };
+      const isCustomize =
         location.pathname === "/customize" ||
-        location.pathname.startsWith("/customize/")
-      ) {
-        const section = location.pathname.split("/")[2] ?? "skills";
+        location.pathname.startsWith("/customize/");
+      const isFullscreenSettings =
+        location.pathname === "/settings" ||
+        location.pathname.startsWith("/settings/");
+      if (isCustomize || isFullscreenSettings) {
+        const rawSection =
+          location.pathname.split("/")[2] ?? (isCustomize ? "skills" : "");
         const label =
-          section === "connectors"
-            ? "Connectors"
-            : section === "plugins"
-              ? "Plugins"
-              : section === "memory"
-                ? "Memory"
-                : "Skills";
+          settingsLabelForSection(rawSection) ??
+          (isCustomize ? "Skills" : null);
         history.replaceState(history.state, "", "/new");
         window.dispatchEvent(
           new PopStateEvent("popstate", { state: history.state }),
@@ -1251,6 +1269,7 @@ export function installLocalWorkbench(
             ...document.querySelectorAll<HTMLElement>('[role="dialog"]'),
           ].find((candidate) => candidate.getBoundingClientRect().width > 0);
           if (dialog) {
+            if (!label) return;
             const target = [
               ...dialog.querySelectorAll<HTMLButtonElement>(
                 'nav[aria-label="Settings"] button',
@@ -1515,15 +1534,14 @@ export function installLocalWorkbench(
       template.parentElement.insertBefore(button, template.nextSibling);
     };
 
-    // The Capabilities settings section ships assembled but has no nav entry
-    // in this build (see the unlock-capabilities-settings-page client patch).
-    // Inject one into every settings nav, routed to the full-page section.
+    // Capabilities is now a native settings-nav entry (see the
+    // add-capabilities-settings-nav-entry client patch), so it opens inside
+    // the settings modal like every other section. This only marks the
+    // cloud-only Privacy row.
     const wireCapabilitiesNavigation = () => {
       for (const nav of document.querySelectorAll<HTMLElement>(
         'nav[aria-label="Settings"]',
       )) {
-        // The full-page settings nav renders outside the dialog wiring that
-        // normally marks cloud-only sections; mark them here too.
         for (const button of nav.querySelectorAll<HTMLButtonElement>(
           "button, a",
         )) {
@@ -1534,37 +1552,6 @@ export function installLocalWorkbench(
           if (label === "Privacy")
             (button.closest("li") ?? button).dataset.localCloudOnly = "true";
         }
-        if (nav.querySelector("[data-local-capabilities-settings]")) continue;
-        const buttons = [...nav.querySelectorAll<HTMLButtonElement>("button")];
-        const claudeCode = buttons.find(
-          (button) =>
-            (button.querySelector(".truncate")?.textContent?.trim() ??
-              button.textContent?.trim()) === "Claude Code",
-        );
-        const host = claudeCode?.closest("li") ?? claudeCode;
-        if (!claudeCode || !host?.parentElement) continue;
-        const item = document.createElement("li");
-        item.dataset.localCapabilitiesSettings = "";
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = claudeCode.className;
-        button.innerHTML = `<span aria-hidden="true" style="width:1em;height:1em;display:flex;align-items:center;justify-content:center;font-size:15px">&#9707;</span><span class="min-w-0 flex-1 truncate">Capabilities</span>`;
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          const dialog = button.closest<HTMLElement>('[role="dialog"]');
-          dialog
-            ?.querySelector<HTMLButtonElement>(
-              'button[aria-label="Close"], button[aria-label="Close settings"]',
-            )
-            ?.click();
-          history.pushState(history.state, "", "/settings/capabilities");
-          window.dispatchEvent(
-            new PopStateEvent("popstate", { state: history.state }),
-          );
-        });
-        item.append(button);
-        host.before(item);
       }
     };
 

@@ -2056,12 +2056,20 @@ export function installLocalWorkbench(): void {
     // the final pass on stop commits everything.
     let dictationRecorder: MediaRecorder | null = null;
     let dictationChunks: Blob[] = [];
-    let dictationCommitted: string[] = [];
+    // The exact text this dictation has written into the composer, and the
+    // editor node it wrote into. Every pass REPLACES this run rather than
+    // appending: whisper re-transcribes the whole growing buffer each pass
+    // and freely revises earlier words, so an append-by-count strategy
+    // duplicates and loops. Replacing our own run in place is idempotent and
+    // self-correcting, and tracking the specific editor node stops a prior
+    // session's text from leaking into a freshly mounted composer.
+    let dictationRendered = "";
+    let dictationEditor: HTMLElement | null = null;
     let dictationTimer: ReturnType<typeof setInterval> | null = null;
     let dictationBusy = false;
     let dictationGeneration = 0;
-    const dictationInsert = (text: string) => {
-      const editor = [
+    const findDictationEditor = (): HTMLElement | null =>
+      [
         ...document.querySelectorAll<HTMLElement>('[contenteditable="true"]'),
       ].find((candidate) => {
         const label = candidate.getAttribute("aria-label") ?? "";
@@ -2069,10 +2077,32 @@ export function installLocalWorkbench(): void {
           candidate.getClientRects().length > 0 &&
           (label === "Write your prompt to Claude" || label === "Prompt")
         );
-      });
+      }) ?? null;
+    // Render the full dictated text, replacing whatever this dictation wrote
+    // last. Selects our previous run (verifying it still matches, so a user
+    // edit mid-dictation is left alone) and overwrites it.
+    const renderDictation = (text: string) => {
+      const editor = findDictationEditor();
       if (!editor) return;
+      if (editor !== dictationEditor) {
+        dictationEditor = editor;
+        dictationRendered = "";
+      }
       editor.focus();
+      const selection = window.getSelection();
+      if (dictationRendered.length > 0 && selection) {
+        selection.collapseToEnd();
+        for (let index = 0; index < dictationRendered.length; index += 1)
+          selection.modify("extend", "backward", "character");
+        // If the selection no longer equals our run the user edited in the
+        // middle of it; leave their text and start a fresh run at the cursor.
+        if (selection.toString() !== dictationRendered) {
+          selection.collapseToEnd();
+          dictationRendered = "";
+        }
+      }
       document.execCommand("insertText", false, text);
+      dictationRendered = text;
     };
     // whisper.cpp consumes 16 kHz mono PCM16 WAV; decode and resample the
     // recording with the Web Audio API so the backend needs no ffmpeg.
@@ -2150,19 +2180,14 @@ export function installLocalWorkbench(): void {
         new CustomEvent("local-dictation-pass", { detail: { phase } }),
       );
     };
-    // Append the transcript's words beyond what was already committed.
-    // Partial passes drop the trailing two words: whisper keeps revising
-    // the end of a still-growing recording, and the composer text must
-    // only ever grow — never rewrite what the user already sees.
+    // Render the transcript, replacing our previous run. Partial passes drop
+    // the trailing two words because whisper keeps revising the end of a
+    // still-growing recording; the final pass renders everything.
     const dictationAppend = (transcript: string, finalPass: boolean) => {
       const words = transcript.split(/\s+/).filter(Boolean);
       const usable = finalPass ? words : words.slice(0, -2);
-      if (usable.length <= dictationCommitted.length) return;
-      const fresh = usable.slice(dictationCommitted.length);
-      dictationInsert(
-        (dictationCommitted.length > 0 ? " " : "") + fresh.join(" "),
-      );
-      dictationCommitted = usable;
+      if (usable.length === 0) return;
+      renderDictation(usable.join(" "));
     };
     const dictationTick = async () => {
       const recorder = dictationRecorder;
@@ -2218,7 +2243,10 @@ export function installLocalWorkbench(): void {
         button.title =
           error instanceof Error ? error.message : "Transcription failed";
       } finally {
-        dictationCommitted = [];
+        // The dictated run is now the user's text; a new dictation starts a
+        // fresh run rather than reselecting this one.
+        dictationRendered = "";
+        dictationEditor = null;
         delete button.dataset.state;
       }
     };
@@ -2228,7 +2256,8 @@ export function installLocalWorkbench(): void {
           audio: true,
         });
         dictationChunks = [];
-        dictationCommitted = [];
+        dictationRendered = "";
+        dictationEditor = null;
         const recorder = new MediaRecorder(stream);
         recorder.addEventListener("dataavailable", (event) => {
           if (event.data.size > 0) dictationChunks.push(event.data);

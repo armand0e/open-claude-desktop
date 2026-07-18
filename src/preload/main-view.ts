@@ -65,6 +65,25 @@ contextBridge.exposeInMainWorld("claudeAppBindings", {
     ipcRenderer.invoke("request-open-mcp-settings", server),
 });
 
+// The main process answers connect-to-mcp-server with a transferred
+// MessagePort speaking raw JSON-RPC message objects; the page's MCP client
+// picks it up from a window message, exactly like the official preload.
+ipcRenderer.on("mcp-server-connected", (event, payload: unknown) => {
+  const detail =
+    payload && typeof payload === "object"
+      ? (payload as { serverName?: unknown; uuid?: unknown })
+      : {};
+  window.postMessage(
+    {
+      type: "mcp-server-connected",
+      serverName: detail.serverName,
+      uuid: detail.uuid,
+    },
+    "*",
+    event.ports,
+  );
+});
+
 contextBridge.exposeInMainWorld("claudeAppSettings", {
   filePickers: {
     getPathForFile: (file: File) => webUtils.getPathForFile(file),

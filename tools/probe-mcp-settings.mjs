@@ -311,6 +311,80 @@ try {
   );
   assert(page.listed && page.status === "running", "MCP server did not run");
 
+  // The Customize > Connectors section lists the same stdio server as a
+  // connected "Desktop · Local dev" row (the renderer's own MCP client over
+  // the MessagePort bridge).
+  const connectors = await eventually(
+    debuggerPort,
+    async (activeTarget) => {
+      const state = await evaluate(
+        activeTarget,
+        `(async () => {
+          const dialog = [...document.querySelectorAll('[role="dialog"]')]
+            .find(candidate => candidate.getBoundingClientRect().width > 0);
+          if (!dialog) return null;
+          const buttons = [...dialog.querySelectorAll('nav[aria-label="Settings"] button')]
+            .filter(button => button.getClientRects().length > 0);
+          const target = buttons.filter(button =>
+            (button.querySelector('.truncate')?.textContent?.trim() || button.textContent?.trim()) === "Connectors").pop();
+          if (!target) return { missingNav: true };
+          target.click();
+          await new Promise(resolve => setTimeout(resolve, 1200));
+          const text = dialog.innerText.replace(/\\s+/g, " ");
+          return {
+            hasRow: /local-echo/.test(text),
+            hasLocalDev: /Local dev/.test(text),
+            hasConnected: /Connected/.test(text),
+            text: text.slice(0, 900),
+          };
+        })()`,
+      );
+      if (!state) throw new Error("Settings dialog disappeared");
+      if (state.missingNav)
+        throw new Error("Customize > Connectors nav item is missing");
+      if (!state.hasRow || !state.hasLocalDev)
+        throw new Error(
+          `Stdio server is not a Local dev connector row: ${state.text}`,
+        );
+      return state;
+    },
+    30_000,
+  );
+  assert(
+    connectors.hasConnected,
+    `Connector row is not marked connected: ${connectors.text}`,
+  );
+
+  // The injected Capabilities nav item routes to the natively-rendered
+  // /settings/capabilities page (unlock-capabilities-settings-page patch).
+  const capabilities = await eventually(debuggerPort, async (activeTarget) => {
+    const state = await evaluate(
+      activeTarget,
+      `(async () => {
+        const button = document.querySelector('[data-local-capabilities-settings] button');
+        if (!button) return { missing: true };
+        button.click();
+        const deadline = Date.now() + 10000;
+        while (location.pathname !== "/settings/capabilities" && Date.now() < deadline)
+          await new Promise(resolve => setTimeout(resolve, 150));
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        return {
+          url: location.pathname,
+          text: document.body.innerText.replace(/\\s+/g, " ").slice(0, 900),
+        };
+      })()`,
+    );
+    if (state.missing)
+      throw new Error("Capabilities nav item was not injected");
+    return state;
+  });
+  assert(
+    capabilities.url === "/settings/capabilities" &&
+      /Visuals/.test(capabilities.text) &&
+      /Artifacts/.test(capabilities.text),
+    `Capabilities page did not render: ${JSON.stringify(capabilities)}`,
+  );
+
   console.log(
     JSON.stringify(
       {

@@ -42,6 +42,7 @@ import { LocalCodeSessionManager } from "./local-code";
 import { LocalFilePreview } from "./local-file-preview";
 import { LocalLaunchPreview } from "./local-launch-preview";
 import { LocalMcpManager } from "./local-mcp";
+import { LocalMcpPortBridge } from "./local-mcp-bridge";
 import { LocalBrowserUse } from "./local-browser";
 import { LocalComputerUse } from "./local-computer";
 import { LocalPluginManager } from "./local-plugins";
@@ -98,6 +99,7 @@ let localWebTools: LocalWebTools | null = null;
 let localFilePreview: LocalFilePreview | null = null;
 let localLaunchPreview: LocalLaunchPreview | null = null;
 let localMcpManager: LocalMcpManager | null = null;
+let localMcpPortBridge: LocalMcpPortBridge | null = null;
 let localSandbox: LocalSandbox | null = null;
 let localBrowserUse: LocalBrowserUse | null = null;
 let localScheduledTasks: LocalScheduledTasks | null = null;
@@ -575,14 +577,15 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
   ipcMain.removeHandler("local-code-artifact-details");
   ipcMain.handle("list-mcp-servers", (event) => {
     assertTrustedIpcSender(event);
-    return dispatcher.listMcpServers();
+    // The retained client expects an array of server names and connects to
+    // each by name.
+    return dispatcher.listMcpServers().map((server) => server.name);
   });
   ipcMain.handle("connect-to-mcp-server", (event, server) => {
     assertTrustedIpcSender(event);
-    return {
-      connected: false,
-      server,
-    };
+    if (typeof server !== "string")
+      throw new Error("connect-to-mcp-server expects a server name");
+    localMcpPortBridge?.connect(event.sender, server);
   });
   ipcMain.handle("request-open-mcp-settings", (event) => {
     assertTrustedIpcSender(event);
@@ -943,6 +946,11 @@ if (!gotLock) {
           () => state.get("appConfig").mcpServers as Record<string, unknown>,
           () => backendForMcp.remoteMcpServers(),
         );
+        // The Connectors surface's own MCP clients ride MessagePorts bridged
+        // to stdio children, one per configured server.
+        localMcpPortBridge = new LocalMcpPortBridge(
+          () => state.get("appConfig").mcpServers as Record<string, unknown>,
+        );
         localBackend.setMcpSource(localMcpManager);
         const mcpManagerForHooks = localMcpManager;
         localBackend.setRemoteMcpHooks({
@@ -973,6 +981,8 @@ app.on("before-quit", () => {
   localArtifactTunnel = null;
   localMcpManager?.disposeAll();
   localMcpManager = null;
+  localMcpPortBridge?.disposeAll();
+  localMcpPortBridge = null;
   localSandbox?.dispose();
   localSandbox = null;
   localBrowserUse?.dispose();

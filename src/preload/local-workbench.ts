@@ -1427,6 +1427,59 @@ export function installLocalWorkbench(): void {
       template.parentElement.insertBefore(button, template.nextSibling);
     };
 
+    // The Capabilities settings section ships assembled but has no nav entry
+    // in this build (see the unlock-capabilities-settings-page client patch).
+    // Inject one into every settings nav, routed to the full-page section.
+    const wireCapabilitiesNavigation = () => {
+      for (const nav of document.querySelectorAll<HTMLElement>(
+        'nav[aria-label="Settings"]',
+      )) {
+        // The full-page settings nav renders outside the dialog wiring that
+        // normally marks cloud-only sections; mark them here too.
+        for (const button of nav.querySelectorAll<HTMLButtonElement>(
+          "button, a",
+        )) {
+          const label =
+            button.querySelector(".truncate")?.textContent?.trim() ??
+            button.textContent?.trim() ??
+            "";
+          if (["Privacy", "Cowork"].includes(label))
+            (button.closest("li") ?? button).dataset.localCloudOnly = "true";
+        }
+        if (nav.querySelector("[data-local-capabilities-settings]")) continue;
+        const buttons = [...nav.querySelectorAll<HTMLButtonElement>("button")];
+        const claudeCode = buttons.find(
+          (button) =>
+            (button.querySelector(".truncate")?.textContent?.trim() ??
+              button.textContent?.trim()) === "Claude Code",
+        );
+        const host = claudeCode?.closest("li") ?? claudeCode;
+        if (!claudeCode || !host?.parentElement) continue;
+        const item = document.createElement("li");
+        item.dataset.localCapabilitiesSettings = "";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = claudeCode.className;
+        button.innerHTML = `<span aria-hidden="true" style="width:1em;height:1em;display:flex;align-items:center;justify-content:center;font-size:15px">&#9707;</span><span class="min-w-0 flex-1 truncate">Capabilities</span>`;
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          const dialog = button.closest<HTMLElement>('[role="dialog"]');
+          dialog
+            ?.querySelector<HTMLButtonElement>(
+              'button[aria-label="Close"], button[aria-label="Close settings"]',
+            )
+            ?.click();
+          history.pushState(history.state, "", "/settings/capabilities");
+          window.dispatchEvent(
+            new PopStateEvent("popstate", { state: history.state }),
+          );
+        });
+        item.append(button);
+        host.before(item);
+      }
+    };
+
     // The home sidebar's native Scheduled entry is Cowork-gated, so the local
     // build injects one (mirroring the Projects injection) that routes to the
     // working Code-surface routines page.
@@ -2399,6 +2452,7 @@ export function installLocalWorkbench(): void {
       wireDictationButton();
       wireSidebarProjects();
       wireSidebarScheduled();
+      wireCapabilitiesNavigation();
       wireCustomizeMemoryEntry();
       wireMemorySaveRows();
       wireCodeSidebarGroups();

@@ -1289,13 +1289,40 @@ export function installLocalWorkbench(): void {
             contents.type === "text/html" ||
             contents.type === "image/svg+xml"
           ) {
+            // A srcdoc frame would inherit the app document's strict CSP and
+            // block the artifact's inline scripts ("buttons do nothing"), so
+            // render through the artifacts.local document, which ships its
+            // own permissive CSP — same as the chat artifact pane.
             const frame = document.createElement("iframe");
             frame.title = `${contents.title} preview`;
             frame.setAttribute(
               "sandbox",
               "allow-scripts allow-forms allow-modals",
             );
-            frame.srcdoc = contents.content;
+            frame.src = "app://artifacts.local/";
+            frame.addEventListener(
+              "load",
+              () => {
+                const channel = new MessageChannel();
+                frame.contentWindow?.postMessage(
+                  { type: "__sandbox_handshake__" },
+                  "*",
+                  [channel.port2],
+                );
+                channel.port1.postMessage({
+                  channel: "request",
+                  requestId: `local-gallery-${Date.now()}`,
+                  method: "anthropic.claude.usercontent.sandbox.SetContent",
+                  payload: {
+                    "@type":
+                      "type.googleapis.com/anthropic.claude.usercontent.sandbox.SetContentRequest",
+                    content: contents.content,
+                    type: contents.type,
+                  },
+                });
+              },
+              { once: true },
+            );
             previewBody.append(frame);
           } else {
             const pre = document.createElement("pre");

@@ -259,12 +259,17 @@ try {
     90_000,
   );
   await new Promise((resolve) => setTimeout(resolve, 8000));
+  // The fullscreen /customize surface is retired: navigating there bounces
+  // to /new and opens the settings dialog at Customize > Connectors.
   const page = await evaluateEventually(
     debuggerPort,
     `(() => {
-      const text = (document.body?.innerText || "").replace(/\\s+/g, " ");
+      const dialog = [...document.querySelectorAll('[role="dialog"]')]
+        .find(candidate => candidate.getBoundingClientRect().width > 0);
+      const text = (dialog?.innerText || "").replace(/\\s+/g, " ");
       return {
         path: location.pathname,
+        dialogOpen: Boolean(dialog),
         listsConnector: text.includes("probe-connector"),
         snippet: text.slice(0, 700),
       };
@@ -273,10 +278,27 @@ try {
   console.log("page:", JSON.stringify(page, null, 2));
   assert(created?.uuid, "Connector create failed");
   assert(
-    page.path === "/customize/connectors",
-    `Connectors page bounced to ${page.path}`,
+    page.path === "/new",
+    `Retired customize route did not bounce home: ${page.path}`,
   );
-  assert(page.listsConnector, "Created connector missing from the page");
+  assert(
+    page.dialogOpen,
+    "Settings dialog did not open for the customize redirect",
+  );
+  assert(page.listsConnector, "Created connector missing from the dialog");
+  // Close the dialog before the chat round trip.
+  await evaluateEventually(
+    debuggerPort,
+    `(() => {
+      const dialog = [...document.querySelectorAll('[role="dialog"]')]
+        .find(candidate => candidate.getBoundingClientRect().width > 0);
+      const close = dialog?.querySelector('button[aria-label="Close"], button[aria-label="Close settings"]');
+      if (close) close.click();
+      else document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      return true;
+    })()`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 1200));
 
   // The connector's tool must reach chat and execute.
   await evaluateEventually(

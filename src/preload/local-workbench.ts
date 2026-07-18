@@ -1212,6 +1212,66 @@ export function installLocalWorkbench(): void {
         );
         return;
       }
+      // The fullscreen /customize surface is retired: Skills / Connectors /
+      // Plugins / Memory are managed in the settings dialog's Customize
+      // group. Any navigation there (sidebar rows, in-app links) bounces
+      // back and opens the dialog at the matching section. The dialog's own
+      // section switching never changes the pathname, so this cannot loop.
+      if (
+        location.pathname === "/customize" ||
+        location.pathname.startsWith("/customize/")
+      ) {
+        const section = location.pathname.split("/")[2] ?? "skills";
+        const label =
+          section === "connectors"
+            ? "Connectors"
+            : section === "plugins"
+              ? "Plugins"
+              : section === "memory"
+                ? "Memory"
+                : "Skills";
+        history.replaceState(history.state, "", "/new");
+        window.dispatchEvent(
+          new PopStateEvent("popstate", { state: history.state }),
+        );
+        // On a cold load the settings button itself is injected later, so
+        // retry the whole open sequence until the section is reached.
+        const deadline = Date.now() + 15000;
+        let openedDialog = false;
+        const openSection = () => {
+          const dialog = [
+            ...document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+          ].find((candidate) => candidate.getBoundingClientRect().width > 0);
+          if (dialog) {
+            const target = [
+              ...dialog.querySelectorAll<HTMLButtonElement>(
+                'nav[aria-label="Settings"] button',
+              ),
+            ]
+              .filter(
+                (button) =>
+                  (button.querySelector(".truncate")?.textContent?.trim() ??
+                    button.textContent?.trim()) === label,
+              )
+              .pop();
+            if (target) {
+              target.click();
+              return;
+            }
+          } else if (!openedDialog) {
+            const settings = document.querySelector<HTMLButtonElement>(
+              '[data-testid="local-settings-sidebar-button"]',
+            );
+            if (settings) {
+              settings.click();
+              openedDialog = true;
+            }
+          }
+          if (Date.now() < deadline) setTimeout(openSection, 150);
+        };
+        openSection();
+        return;
+      }
       const pills = document.querySelector<HTMLElement>(
         ".df-pills[data-segmented='true']",
       );

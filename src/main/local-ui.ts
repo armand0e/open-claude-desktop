@@ -511,6 +511,11 @@ function growthbookFeatures(configuredModel?: string): Record<string, unknown> {
     "3615229285": enabled(true),
     // Home scheduled-tasks surface (/scheduled-task).
     [growthbookFeatureKey("yukon_silver_clocks")]: enabled(true),
+    // The reference starter-template gallery (Inbox triage / Meeting prep /
+    // Daily briefing / …) is cloud email+calendar automation with no local
+    // backend, and its "Set up" flow can't create a working local routine.
+    // Left "off" so the surface only shows routines that actually run; the
+    // local create form (New task) covers local automations.
     "700397605": enabled(true),
     [growthbookFeatureKey("yukon_silver_config")]: enabled({
       showGsuiteConnectors: false,

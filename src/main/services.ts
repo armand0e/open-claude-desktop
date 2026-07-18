@@ -419,6 +419,11 @@ export class ServiceDispatcher {
       // output (default ~/Claude, persisted in coworkFilesRoot).
       case "claude.web.CoworkUserFiles":
         return this.coworkUserFiles(parsed, args, event);
+      // Global Cowork instructions (settings > Cowork). The renderer also
+      // mirrors these into account settings (cowork_global_instructions);
+      // this desktop store must round-trip or the save path throws.
+      case "claude.web.CoworkMemory":
+        return this.coworkMemory(parsed, args);
       // Cowork sessions run directly through the local session runner
       // ("host loop" mode); there is no Anthropic VM to download or boot.
       // Reporting host-loop mode makes the composer skip the VM-readiness
@@ -1261,7 +1266,52 @@ export class ServiceDispatcher {
     }
     if (method === "showSessionFilePreview")
       return this.context.filePreview.show(args[0], args[1], args[2], args[3]);
+    // Trusted Cowork folders (settings > Cowork): stored in app
+    // preferences under localAgentModeTrustedFolders; the picker reads the
+    // list straight off AppPreferences.getPreferences.
+    if (
+      method === "getTrustedFolders" ||
+      method === "addTrustedFolder" ||
+      method === "removeTrustedFolder" ||
+      method === "isFolderTrusted"
+    )
+      return this.trustedFolders(method, args);
     return this.context.codeSessions.invoke(method, args);
+  }
+
+  private async trustedFolders(
+    method: string,
+    args: unknown[],
+  ): Promise<unknown> {
+    const current = (): string[] => {
+      const stored =
+        this.context.state.get("appConfig").preferences
+          .localAgentModeTrustedFolders;
+      return Array.isArray(stored)
+        ? stored.filter((entry): entry is string => typeof entry === "string")
+        : [];
+    };
+    if (method === "getTrustedFolders") return current();
+    const target = typeof args[0] === "string" ? path.resolve(args[0]) : "";
+    if (method === "isFolderTrusted") return current().includes(target);
+    if (!target) return method === "addTrustedFolder" ? false : undefined;
+    const next =
+      method === "addTrustedFolder"
+        ? [...new Set([...current(), target])]
+        : current().filter((entry) => entry !== target);
+    await this.context.state.update((draft) => {
+      draft.appConfig.preferences.localAgentModeTrustedFolders = next;
+    });
+    const channel = eventChannel(
+      "claude.settings.AppPreferences",
+      "preferencesChanged",
+    );
+    if (channel)
+      this.context.broadcast(
+        channel,
+        this.context.state.get("appConfig").preferences,
+      );
+    return method === "addTrustedFolder" ? true : undefined;
   }
 
   private filePreview(method: string, args: unknown[]): unknown {
@@ -1275,6 +1325,22 @@ export class ServiceDispatcher {
     if (method === "parkAndCapture")
       return this.context.filePreview.parkAndCapture(args[0], args[1]);
     return undefined;
+  }
+
+  private coworkMemory(
+    parsed: ParsedChannel,
+    args: unknown[],
+  ): unknown | Promise<unknown> {
+    if (parsed.method === "readGlobalMemory")
+      return this.context.state.get("coworkGlobalInstructions") ?? "";
+    if (parsed.method === "writeGlobalMemory")
+      return this.context.state
+        .update((draft) => {
+          draft.coworkGlobalInstructions =
+            typeof args[0] === "string" ? args[0] : "";
+        })
+        .then(() => true);
+    return genericDefault(parsed);
   }
 
   private async coworkUserFiles(

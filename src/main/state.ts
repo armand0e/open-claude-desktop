@@ -19,6 +19,8 @@ export interface PersistentState {
   // Root folder for Cowork task files (settings > Cowork files).
   // undefined means the ~/Claude default.
   coworkFilesRoot?: string;
+  // Global instructions applied to every Cowork session (settings > Cowork).
+  coworkGlobalInstructions?: string;
 }
 
 const DEFAULT_STATE: PersistentState = {

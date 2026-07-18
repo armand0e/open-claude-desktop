@@ -3,7 +3,8 @@ set -euo pipefail
 
 SOURCE_DIR="$(readlink -f "$(dirname "$0")/..")"
 SMOKE_DIR="${TMPDIR:-/tmp}/open-claude-appimage-smoke"
-ARTIFACT="$SOURCE_DIR/release/Open-Claude-0.0.1-x86_64.AppImage"
+VERSION="$(node -p "require('$SOURCE_DIR/package.json').version")"
+ARTIFACT="$SOURCE_DIR/release/Open-Claude-${VERSION}-x86_64.AppImage"
 
 case "$SMOKE_DIR" in
   /tmp/open-claude-*) ;;

@@ -40,6 +40,9 @@ cd "$BUILD_DIR"
 npm ci
 OPEN_CLAUDE_ION_DIST="$UI_DIR" npm run dist:linux
 
-ARTIFACT="Open-Claude-0.0.1-x86_64.AppImage"
+# Derive the artifact name from package.json so a version bump doesn't
+# strand the copy step.
+VERSION="$(node -p "require('$SOURCE_DIR/package.json').version")"
+ARTIFACT="Open-Claude-${VERSION}-x86_64.AppImage"
 cp -f "$BUILD_DIR/release/$ARTIFACT" "$SOURCE_DIR/release/$ARTIFACT"
 sha256sum "$SOURCE_DIR/release/$ARTIFACT"

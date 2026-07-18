@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { coworkFilesDir } from "./local-code";
 
 type JsonObject = Record<string, unknown>;
 
@@ -251,8 +252,11 @@ export class LocalScheduledTasks {
         const params = isObject(args[0]) ? args[0] : {};
         const prompt = text(params.prompt);
         const cronExpression = text(params.cronExpression);
-        const cwd = text(params.cwd);
-        if (!prompt || !cwd) return null;
+        // Routines created without an explicit folder run in the Cowork
+        // files dir (the reference form's folder is optional).
+        const cwd = text(params.cwd) || coworkFilesDir();
+        if (!prompt) return null;
+        await mkdir(cwd, { recursive: true }).catch(() => undefined);
         if (cronExpression && nextCronRun(cronExpression, Date.now()) === null)
           return null;
         const name = text(params.name) || `task-${randomUUID().slice(0, 8)}`;

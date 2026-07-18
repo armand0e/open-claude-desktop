@@ -1202,9 +1202,9 @@ export function installLocalWorkbench(): void {
         location.replace("app://localhost/new?mode=chat&surface=chat");
         return;
       }
-      // The home-surface scheduled route rides the cloud Cowork stack and
-      // spins forever locally; the Code-surface routines page is the working
-      // scheduled-tasks surface.
+      // This renderer snapshot has no home-level scheduled route (the only
+      // scheduled surface is the Code one), so a bare /scheduled would 404.
+      // Route it to the working page until the snapshot upgrade lands.
       if (location.pathname === "/scheduled") {
         history.replaceState(history.state, "", "/epitaxy/scheduled");
         window.dispatchEvent(

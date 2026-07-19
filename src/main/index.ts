@@ -114,6 +114,23 @@ function rendererPath(): string {
   return path.join(app.getAppPath(), "dist", "index.html");
 }
 
+// The Open-Claude window icon. electron-builder sets the .exe icon, but the
+// running window (and any dev/unpacked run) needs it set explicitly or it
+// falls back to the default Electron icon. Bundled to resources/icon.png in
+// packaged builds; the source asset is used in development.
+function appIconPath(): string | undefined {
+  const candidates = [
+    process.resourcesPath
+      ? path.join(process.resourcesPath, "icon.png")
+      : null,
+    path.join(app.getAppPath(), ".package-assets", "icon.png"),
+    path.join(process.cwd(), ".package-assets", "icon.png"),
+  ];
+  return candidates.find(
+    (candidate): candidate is string => !!candidate && existsSync(candidate),
+  );
+}
+
 function isShellNavigation(rawUrl: string): boolean {
   try {
     return new URL(rawUrl).href === pathToFileURL(rendererPath()).href;
@@ -321,6 +338,7 @@ function showMainWindow(): void {
 }
 
 function createMainWindow(): BrowserWindow {
+  const iconPath = appIconPath();
   const window = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -328,6 +346,7 @@ function createMainWindow(): BrowserWindow {
     minHeight: 400,
     show: false,
     backgroundColor: "#f5f4ef",
+    ...(iconPath ? { icon: iconPath } : {}),
     titleBarStyle: "hidden",
     titleBarOverlay: {
       color: "#00000000",

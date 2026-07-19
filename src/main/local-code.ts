@@ -451,6 +451,23 @@ Current information and web tools:
 
 Use Artifact to publish an existing Markdown or HTML file, or mcp__desktop__present_artifact to create substantial visual or document output directly in the desktop workspace. Do not expose private chain-of-thought; provide concise progress, conclusions, and useful reasoning summaries.`;
 
+// Cowork tasks and scheduled routines are general "take this off my plate"
+// work, not coding. The coding-agent framing above makes the model treat
+// every request as a repo change and call file/search tools indefinitely,
+// which reads as an endless stream of tool calls with no answer. This prompt
+// keeps it task-completion oriented and, crucially, requires a substantive
+// final message so a run always ends instead of looping on tool calls.
+const COWORK_SYSTEM_PROMPT = `You are Open-Claude working on a task the user handed to you on their own computer. Complete it end to end and finish with a clear, useful result.
+
+How to work:
+- Decide what the task actually needs, then use your tools purposefully to do it — read and write files, run commands, or search the web only as required. Do not call a tool you do not need, and never repeat a tool call that already gave you the answer.
+- As soon as you have what you need, STOP calling tools and write the result: a direct answer, a summary, or a note of the files you produced. Every turn must progress toward a final assistant message — never end a run on a dangling tool call with no explanation.
+- Work inside the provided working folder (shown in the workspace context). Do not read or write outside it unless the user explicitly named a path.
+- Never invent file contents, command output, tool results, or successful actions. If a tool fails or the information is not available, say so plainly and do the best you can with what you have.
+- Keep the user informed with brief natural-language progress between actions, not silent tool calls.
+
+For scheduled or recurring runs there is nobody to answer questions: make reasonable assumptions, complete the task, and end with a concise report of what you did and found. Use the runtime date and time below as authoritative. Do not expose private chain-of-thought; give concise progress and a clear final result.`;
+
 function isObject(value: unknown): value is JsonObject {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
@@ -695,10 +712,12 @@ export function setCoworkFilesRoot(root: string | undefined): void {
 }
 
 export function coworkFilesDir(): string {
+  // NOT ~/Claude — that is the real Claude desktop app's Cowork directory,
+  // and Open-Claude must not run tasks inside the user's actual Claude data.
   return (
     process.env.CLAUDE_LOCAL_COWORK_FILES_DIR?.trim() ||
     configuredCoworkFilesRoot ||
-    path.join(os.homedir(), "Claude")
+    path.join(os.homedir(), "Open-Claude")
   );
 }
 
@@ -2412,10 +2431,16 @@ export class LocalCodeSessionManager {
     localCustomization?: string,
   ): { messages: JsonObject[]; coverage: number[] } {
     const workspaceContext = this.workspaceContextPrompt(session);
+    // Cowork tasks and scheduled routines get the task-completion prompt;
+    // Code sessions get the coding-agent prompt.
+    const basePrompt =
+      session.sessionType === "cowork" || session.scheduledTaskId
+        ? COWORK_SYSTEM_PROMPT
+        : CODE_SYSTEM_PROMPT;
     const system: JsonObject = {
       role: "system",
       content: [
-        CODE_SYSTEM_PROMPT,
+        basePrompt,
         runtimePromptContext(),
         workspaceContext,
         localCustomization,

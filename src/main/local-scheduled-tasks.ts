@@ -193,9 +193,10 @@ export class LocalScheduledTasks {
           title: `${task.displayName} · ${new Date().toLocaleString()}`,
           scheduledTaskId: task.id,
           ...(task.model ? { model: task.model } : {}),
-          ...(task.permissionMode
-            ? { permissionMode: task.permissionMode }
-            : {}),
+          // Scheduled runs are unattended: there is no one to approve tool
+          // permission prompts, so a task that runs Bash would stall forever.
+          // Auto-approve unless the task pins a stricter mode.
+          permissionMode: task.permissionMode ?? "bypassPermissions",
         },
       ])) as { sessionId?: string };
       task.lastRunAt = Date.now();

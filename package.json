@@ -111,6 +111,10 @@
       {
         "from": "assets/whisper/ggml-base-q5_1.bin",
         "to": "whisper/ggml-base-q5_1.bin"
+      },
+      {
+        "from": ".package-assets/icon.png",
+        "to": "icon.png"
       }
     ],
     "protocols": [

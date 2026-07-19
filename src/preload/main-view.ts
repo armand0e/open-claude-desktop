@@ -46,7 +46,9 @@ if (localBackend) {
   const webNs = namespaces["claude.web"] as
     | {
         LocalAgentModeSessions?: { start?: (input: unknown) => unknown };
-        FileSystem?: { browseFolder?: (path?: string) => unknown };
+        FileSystem?: {
+          browseFolder?: (title: string, ...rest: unknown[]) => unknown;
+        };
       }
     | undefined;
   const sessionService = webNs?.LocalAgentModeSessions;
@@ -62,9 +64,12 @@ if (localBackend) {
     pickCoworkFolder:
       typeof fileSystem?.browseFolder === "function"
         ? () =>
-            Promise.resolve(fileSystem.browseFolder!()) as Promise<
-              string | null | undefined
-            >
+            // The channel's first argument (title) is a REQUIRED string —
+            // calling with no args fails contract validation and the IPC
+            // rejects silently, so the picker never opens.
+            Promise.resolve(
+              fileSystem.browseFolder!("Choose a folder for Cowork"),
+            ) as Promise<string | null | undefined>
         : undefined,
   });
 }

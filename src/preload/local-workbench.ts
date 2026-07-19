@@ -2382,12 +2382,20 @@ export function installLocalWorkbench(
     const composerWindow = window as unknown as {
       __localComposerModeWired?: boolean;
     };
+    // Only hijack the composer's submit for Cowork when the toggle is
+    // actually present on the home composer. Without this guard the global
+    // composerMode would leak into real chats (/chat/<uuid>), turning a
+    // normal chat send into a Cowork task.
+    const coworkInterceptActive = () =>
+      composerMode === "cowork" &&
+      isHomeComposerRoute() &&
+      Boolean(document.querySelector('[data-testid="local-mode-toggle"]'));
     if (!composerWindow.__localComposerModeWired) {
       composerWindow.__localComposerModeWired = true;
       document.addEventListener(
         "keydown",
         (event) => {
-          if (composerMode !== "cowork") return;
+          if (!coworkInterceptActive()) return;
           if (event.key !== "Enter" || event.shiftKey || event.isComposing)
             return;
           const target = event.target;
@@ -2406,7 +2414,7 @@ export function installLocalWorkbench(
       document.addEventListener(
         "click",
         (event) => {
-          if (composerMode !== "cowork") return;
+          if (!coworkInterceptActive()) return;
           const target = event.target;
           if (!(target instanceof Element)) return;
           const send = target.closest<HTMLButtonElement>(
@@ -2421,7 +2429,13 @@ export function installLocalWorkbench(
       );
     }
     const wireComposerModeToggle = () => {
-      if (!isHomeComposerRoute()) return;
+      // Off the home composer there is no toggle; reset the mode so its
+      // state can't leak into a real chat's submit handling.
+      if (!isHomeComposerRoute()) {
+        composerMode = "chat";
+        coworkFolder = null;
+        return;
+      }
       const anchor = [
         ...document.querySelectorAll<HTMLButtonElement>("button"),
       ].find(
@@ -2503,17 +2517,20 @@ export function installLocalWorkbench(
       row.type = "button";
       row.dataset.testid = "local-cowork-folder-row";
       row.style.cssText =
-        "display:flex;align-items:center;gap:8px;width:100%;margin-top:6px;padding:10px 14px;border:0;border-radius:12px;background:var(--cds-bg-200,rgba(255,255,255,.04));color:var(--cds-text-secondary,#b3b0a8);font:inherit;font-size:14px;cursor:pointer;text-align:left";
+        "display:flex;align-items:center;gap:10px;width:100%;margin-top:6px;padding:11px 16px;border:0;border-radius:12px;background:var(--cds-bg-200,rgba(255,255,255,.04));color:var(--cds-text-secondary,#b3b0a8);font:inherit;font-size:14px;cursor:pointer;text-align:left";
       const render = () => {
         row.innerHTML = "";
         const icon = document.createElement("span");
         icon.setAttribute("aria-hidden", "true");
         icon.style.cssText =
-          "display:inline-flex;width:16px;height:16px;flex-shrink:0";
+          "display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex-shrink:0";
+        // A vertically-centered folder glyph (the previous path sat low in
+        // its viewBox, so the icon looked misaligned against the text).
         icon.innerHTML =
-          '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7.9a1 1 0 0 1-.8-.4l-.9-1.2a1 1 0 0 0-.8-.4H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1Z"/></svg>';
+          '<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l1.7 1.7a1 1 0 0 0 .7.3h8.1A1.5 1.5 0 0 1 20.5 9.5v7A1.5 1.5 0 0 1 19 18H4.5A1.5 1.5 0 0 1 3 16.5v-9Z"/></svg>';
         const label = document.createElement("span");
-        label.style.cssText = "flex:1;min-width:0";
+        label.style.cssText =
+          "flex:1;min-width:0;line-height:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis";
         label.textContent = coworkFolder
           ? folderBasename(coworkFolder)
           : "Work in a project or folder";
@@ -2540,10 +2557,16 @@ export function installLocalWorkbench(
         event.preventDefault();
         event.stopPropagation();
         void (async () => {
-          const picked = await services.pickCoworkFolder?.();
-          if (picked) {
-            coworkFolder = picked;
-            render();
+          try {
+            const picked = await services.pickCoworkFolder?.();
+            if (picked) {
+              coworkFolder = picked;
+              render();
+            }
+          } catch (error) {
+            row.title = `Couldn't open the folder picker: ${
+              error instanceof Error ? error.message : String(error)
+            }`;
           }
         })();
       });

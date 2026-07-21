@@ -8,6 +8,10 @@ import os from "node:os";
 import path from "node:path";
 import electron from "electron";
 
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
 async function unusedPort() {
   const server = createNetServer();
   await new Promise((resolve, reject) =>
@@ -126,7 +130,10 @@ try {
       const originalFetch = window.fetch.bind(window);
       window.fetch = (input, init) => {
         const url = typeof input === "string" ? input : input?.url || "";
-        if (url.includes("/projects")) window.__projectRequests.push(url.slice(0, 140));
+        if (url.includes("/projects")) window.__projectRequests.push({
+          method: init?.method || (typeof input === "object" && input?.method) || "GET",
+          url: url.slice(0, 140),
+        });
         return originalFetch(input, init);
       };
       const project = await fetch("/api/organizations/local/projects", {
@@ -136,7 +143,12 @@ try {
       }).then(r => r.json());
       const form = new FormData();
       form.append("file", new File(["kb file body"], "kb-note.txt", { type: "text/plain" }));
-      await fetch(\`/api/organizations/local/projects/\${project.uuid}/upload\`, { method: "POST", body: form });
+      const initialUploadResponse = await fetch(\`/api/organizations/local/projects/\${project.uuid}/upload\`, { method: "POST", body: form });
+      const initialUpload = {
+        status: initialUploadResponse.status,
+        body: await initialUploadResponse.text(),
+      };
+      const initialDocs = await fetch(\`/api/organizations/local/projects/\${project.uuid}/docs\`).then(r => r.json());
       history.pushState(history.state, "", \`/project/\${project.uuid}\`);
       window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
       await new Promise(resolve => setTimeout(resolve, 4000));
@@ -155,20 +167,50 @@ try {
         uploadDrive = {
           requestsAfter: window.__projectRequests.slice(),
           listsNativeUpload: (document.body?.innerText || "").includes("native-upload"),
+          storedDocs: await fetch(\`/api/organizations/local/projects/\${project.uuid}/docs\`).then(r => r.json()),
         };
       }
       const text2 = document.body?.innerText || "";
       return {
         path: location.pathname,
+        initialUpload,
         pageTail: text2.slice(400, 2600),
         hasFileInput: inputs.length,
         kbInputFound: Boolean(kbInput),
+        initialDocs,
         uploadDrive,
         mentionsKbFile: text2.includes("kb-note.txt"),
       };
     })()`,
   );
   console.log(JSON.stringify(report, null, 2));
+  assert(
+    report.path.startsWith("/project/"),
+    "Project detail route did not open",
+  );
+  assert(report.initialUpload?.status === 200, "Direct project upload failed");
+  assert(
+    report.initialDocs?.some((entry) => entry.file_name === "kb-note.txt"),
+    "Uploaded project file was missing from the docs hydration contract",
+  );
+  assert(report.kbInputFound, "Project knowledge upload input is missing");
+  assert(
+    report.uploadDrive?.listsNativeUpload,
+    "Native project upload did not render",
+  );
+  assert(
+    report.mentionsKbFile,
+    "Persisted project upload disappeared from the page",
+  );
+  assert(
+    report.uploadDrive?.storedDocs?.some(
+      (entry) => entry.file_name === "native-upload.txt",
+    ),
+    "Native project upload was not persisted",
+  );
+  console.log(
+    "PROBE PASS: project uploads persist and hydrate through the native page",
+  );
 } catch (error) {
   console.error("PROBE FAIL:", error.message);
   console.error(output.join("").slice(-3000));

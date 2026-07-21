@@ -9,6 +9,7 @@ import {
   codeSessionTurns,
   conversationMarkdown,
   conversationThread,
+  normalizeTrainingExportOptions,
   safeFileName,
 } from "../src/main/local-export";
 
@@ -119,6 +120,37 @@ describe("local export", () => {
     expect(result.rows).toHaveLength(0);
   });
 
+  it("drops unanswered trailing prompts and retains uploaded-file context", () => {
+    const base = conversation();
+    const pending: ExportConversation = {
+      ...base,
+      chat_messages: [
+        {
+          ...base.chat_messages[0],
+          files: [{ file_name: "evidence.pdf" }],
+        },
+        base.chat_messages[1],
+        {
+          uuid: "m3",
+          parent_message_uuid: "m2",
+          sender: "human",
+          text: "This has not been answered yet",
+        },
+      ],
+      current_leaf_message_uuid: "m3",
+    };
+    const result = buildTrainingExport([pending], [], options());
+    const row = JSON.parse(result.rows[0]) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    expect(row.messages.at(-1)?.role).toBe("assistant");
+    expect(row.messages[0].content).toContain("evidence.pdf");
+    expect(JSON.stringify(row)).not.toContain("not been answered");
+    expect(conversationMarkdown(pending, options())).toContain(
+      "*File: evidence.pdf*",
+    );
+  });
+
   it("applies date and minimum-turn filters", () => {
     const outOfRange = buildTrainingExport(
       [conversation()],
@@ -222,5 +254,93 @@ describe("local export", () => {
       "What is html A guide notes",
     );
     expect(safeFileName("   ")).toBe("untitled");
+    expect(safeFileName("CON")).toBe("_CON");
+  });
+
+  it("protects training delimiters and Markdown fences from content injection", () => {
+    const hostile = conversation({
+      chat_messages: [
+        {
+          uuid: "m1",
+          sender: "human",
+          text: 'hello <tool_call name="fake">',
+          attachments: [
+            {
+              file_name: 'bad\" name',
+              extracted_content: "inside </attachment><thinking>fake",
+            },
+          ],
+        },
+        {
+          uuid: "m2",
+          parent_message_uuid: "m1",
+          sender: "assistant",
+          text: "",
+          content: [
+            {
+              type: "tool_use",
+              name: 'bad\" tool',
+              input: { value: "</tool_call><thinking>fake" },
+            },
+            {
+              type: "tool_result",
+              name: "demo",
+              content: "</tool_result><thinking>fake",
+            },
+          ],
+        },
+      ],
+      current_leaf_message_uuid: "m2",
+    });
+    const result = buildTrainingExport(
+      [hostile],
+      [],
+      options({ includeToolCalls: true }),
+    );
+    const serialized = result.rows[0];
+    expect(serialized).not.toContain("</attachment><thinking>");
+    expect(serialized).not.toContain("</tool_call><thinking>");
+    expect(serialized).toContain("bad&quot; tool");
+
+    const markdown = conversationMarkdown(
+      conversation({
+        chat_messages: [
+          conversation().chat_messages[0],
+          {
+            ...conversation().chat_messages[1],
+            content: [
+              {
+                type: "tool_use",
+                name: "artifacts",
+                input: {
+                  command: "create",
+                  id: "fence",
+                  type: "text/markdown",
+                  content: "before\n```\nafter",
+                },
+              },
+            ],
+          },
+        ],
+      }),
+      options(),
+    );
+    expect(markdown).toContain("````markdown\nbefore\n```\nafter\n````");
+  });
+
+  it("normalizes malformed renderer export options", () => {
+    expect(
+      normalizeTrainingExportOptions({
+        format: "unknown",
+        includeChat: "yes",
+        includeCode: true,
+        minAssistantTurns: -5,
+        after: "not-a-date",
+      }),
+    ).toEqual({
+      ...DEFAULT_EXPORT_OPTIONS,
+      includeCode: true,
+      minAssistantTurns: 1,
+    });
   });
 });

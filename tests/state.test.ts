@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,5 +36,71 @@ describe("persistent desktop state", () => {
     expect(persisted.locale).toBe("fr-FR");
     expect(persisted.menuBarEnabled).toBe(true);
     expect(persisted.appConfig.preferences.theme).toBe("dark");
+  });
+
+  it("normalizes malformed persisted fields instead of trusting type casts", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-state-"));
+    temporaryDirectories.push(root);
+    await writeFile(
+      path.join(root, "claude-local-desktop.json"),
+      JSON.stringify({
+        locale: { invalid: true },
+        coworkFilesRoot: "C:\\legacy-files",
+        coworkGlobalInstructions: "legacy instructions",
+        appConfig: {
+          features: { enabled: true, poisoned: "yes" },
+          isUsingBuiltInNodeForMcp: "yes",
+          isDxtAutoUpdatesEnabled: null,
+        },
+      }),
+    );
+    const state = new StateStore(root);
+    expect(state.get("locale")).toBe("en-US");
+    expect(
+      (state.snapshot() as unknown as Record<string, unknown>).coworkFilesRoot,
+    ).toBeUndefined();
+    expect(
+      (state.snapshot() as unknown as Record<string, unknown>)
+        .coworkGlobalInstructions,
+    ).toBeUndefined();
+    expect(state.get("appConfig").features).toEqual({ enabled: true });
+    expect(state.get("appConfig").isUsingBuiltInNodeForMcp).toBe(true);
+    expect(state.get("appConfig").isDxtAutoUpdatesEnabled).toBe(true);
+  });
+
+  it("quarantines invalid JSON instead of overwriting the only persisted copy", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-state-"));
+    temporaryDirectories.push(root);
+    const file = path.join(root, "claude-local-desktop.json");
+    await writeFile(file, "{broken");
+
+    const state = new StateStore(root);
+    expect(state.get("locale")).toBe("en-US");
+    const quarantined = (await readdir(root)).find((entry) =>
+      entry.startsWith("claude-local-desktop.json.corrupt-"),
+    );
+    expect(quarantined).toBeDefined();
+    await expect(readFile(path.join(root, quarantined!), "utf8")).resolves.toBe(
+      "{broken",
+    );
+  });
+
+  it("flushes queued writes and refuses updates after disposal", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-state-"));
+    temporaryDirectories.push(root);
+    const state = new StateStore(root);
+    const pending = state.update((draft) => {
+      draft.locale = "de-DE";
+    });
+    await state.dispose();
+    await expect(pending).resolves.toMatchObject({ locale: "de-DE" });
+    await expect(
+      state.update((draft) => {
+        draft.locale = "es-ES";
+      }),
+    ).rejects.toThrow("closed");
+    expect(JSON.parse(await readFile(state.filePath, "utf8")).locale).toBe(
+      "de-DE",
+    );
   });
 });

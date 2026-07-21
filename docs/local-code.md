@@ -14,20 +14,39 @@ No account bootstrap, OAuth token, or Anthropic credential is used.
 
 ## Agent and tools
 
-Code sends non-streaming OpenAI-compatible chat completions with function definitions. If an endpoint rejects function tools, the session retries with a documented `<tool_call>{...}</tool_call>` text contract. The loop can be interrupted at any time and is bounded only by a runaway-safety ceiling of 1,000 model turns (override with `CLAUDE_LOCAL_MAX_AGENT_TURNS`).
+Code sends streaming OpenAI-compatible chat completions with function definitions. If an endpoint rejects function tools, the session retries with a documented `<tool_call>{...}</tool_call>` text contract. The loop can be interrupted at any time and is bounded only by a runaway-safety ceiling of 1,000 model turns (override with `CLAUDE_LOCAL_MAX_AGENT_TURNS`).
 
-| Tool                             | Local behavior                                                                                                                  |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `Read`                           | UTF-8 workspace reads with offset/limit and a 10 MiB cap                                                                        |
-| `Write`                          | Creates or replaces workspace files and emits native file/diff events                                                           |
-| `Edit`                           | Exact-string replacement with ambiguity protection and structured patches                                                       |
-| `Glob`                           | File discovery through ripgrep with a filesystem fallback                                                                       |
-| `Grep`                           | Regex content search through ripgrep                                                                                            |
-| `Bash`                           | Bounded workspace command execution with stdout/stderr results                                                                  |
-| `Artifact`                       | Claude Code `2.1.210`-style publish/list for Markdown or HTML files                                                             |
-| `mcp__desktop__present_artifact` | Built-in desktop bridge that creates a durable file under `.claude-artifacts` and exposes it to the native preview/file surface |
+| Tool                             | Local behavior                                                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `Read`                           | UTF-8 workspace reads with offset/limit and a 10 MiB cap                                                                             |
+| `Write`                          | Creates or replaces workspace files and emits native file/diff events                                                                |
+| `Edit`                           | Exact-string replacement with ambiguity protection and structured patches                                                            |
+| `Glob`                           | File discovery through ripgrep with a filesystem fallback                                                                            |
+| `Grep`                           | Regex content search through ripgrep                                                                                                 |
+| `Bash`                           | Bounded workspace command execution with stdout/stderr results                                                                       |
+| `Skill`                          | Loads a local or plugin-provided skill on demand                                                                                     |
+| `Task`                           | Runs a bounded nested workflow when Dynamic workflows is enabled                                                                     |
+| `web_search` / `visit_website`   | Uses the same bounded local web-tool process as Chat                                                                                 |
+| `mcp__<server>__<tool>`          | Discovers and calls configured stdio/HTTP MCP tools; normal Code permission rules apply                                              |
+| `Artifact`                       | Claude Code `2.1.210`-style publish/list for Markdown or HTML files                                                                  |
+| `mcp__desktop__present_artifact` | Built-in desktop bridge that creates a durable file under `.open-claude/artifacts` and exposes it to the native preview/file surface |
+| `mcp__Claude_Browser__*`         | Opens the visible native multi-tab browser and supports navigation, page reads, clicks, typing, and PNG screenshots                  |
+| `preview_start`                  | Starts a service from `.open-claude/launch.json` and opens it in the visible Code browser                                            |
 
-File tools resolve real paths and reject lexical or symlink escapes outside the selected workspace and explicitly added directories. `Bash` is intentionally a more powerful boundary and is therefore controlled by the permission mode.
+File tools resolve real paths and reject lexical or symlink escapes outside the selected workspace and explicitly added directories. `Bash` is intentionally a more powerful boundary and is therefore controlled by the permission mode. Model file/search tools exclude `.claude`, and model shell calls that target it or invoke the external Claude Code CLI are rejected.
+
+## Open-Claude project state
+
+Open-Claude owns `.open-claude`; Anthropic Claude owns `.claude`. There is no automatic import, fallback, or migration from `.claude`, so launching Open-Claude never reads or changes a user's Anthropic configuration.
+
+Workspace-local state uses:
+
+- `.open-claude/launch.json` for dev-server and auto-verify settings;
+- `.open-claude/skills`, `.open-claude/commands`, and `.open-claude/agents` for workspace customizations;
+- `.open-claude/CLAUDE.md` for optional Open-Claude workspace instructions;
+- `.open-claude/artifacts` for generated Code artifacts.
+
+User-scoped skills, skill state, and optional instructions live under `.open-claude` inside Open-Claude's Electron user-data directory (for example `%APPDATA%\Open-Claude\.open-claude` on a default Windows install). Plugin archives retain the industry format name `.claude-plugin`; that manifest directory is part of the archive format and is not the user's `.claude` configuration directory.
 
 ## Permissions
 
@@ -46,6 +65,8 @@ The Terminal tile uses `node-pty` `1.2.0-beta.13`, matching the observed desktop
 - clean shutdown when a session is deleted or the app exits.
 
 The native file browser, media data URLs, atomic editor writes with hash conflicts, default-app/reveal actions, VS Code/editor launch, and git branch/status/diff/history calls are backed by the local workspace.
+
+The Code toolbar also exposes the upgraded desktop app's native **Browser** pane. It keeps cookies in Open-Claude's isolated local profile, supports multiple tabs plus address/history/refresh controls, and can be driven by the model through the `Claude_Browser` tools while remaining visible to the user. Loopback HTTP/HTTPS is allowed for local development; public browsing requires HTTPS, and credentials in URLs plus private-network destinations are rejected.
 
 ## Provider configuration
 
@@ -68,9 +89,10 @@ npm run build
 npm run smoke:local-code
 npm run smoke:local-code-permission
 npm run smoke:local-code-terminal
+npm run probe:real-code-browser
 ```
 
-The packaged smokes use isolated profiles and a deterministic mock model. They drive the native Code tab, folder selector, composer, Send button, permission card, tool cards, completion state, Terminal control, PTY event stream, and xterm mount. They also verify provider-visible tool results and files written on disk.
+The packaged smokes use isolated profiles and a deterministic mock model. They drive the native Code tab, folder selector, composer, Send button, permission card, tool cards, completion state, Terminal control, PTY event stream, xterm mount, and built-in Browser pane. They also verify provider-visible tool results, files written on disk, real Chromium navigation, and Browser screenshot capture.
 
 For a running OpenAI-compatible model, the real-provider matrix additionally verifies model-selected tools, native approval, executed PTY output, file conflict handling, media reads, session archive/search/settings, git status/diff/history, both artifact adapters, and restart hydration:
 
@@ -87,4 +109,4 @@ npm run smoke:real-code-all-tools
 
 ## Current boundary
 
-This is a local compatibility harness, not a byte-for-byte copy of Anthropic's source or hosted service. Remote Claude Code sessions, SSH/WSL/pool execution, worktrees, cloud GitHub review orchestration, proprietary subagents, usage/billing, and Anthropic inference are not implemented. Third-party MCP configurations are preserved by the settings service, while general stdio/HTTP MCP execution is not yet injected into Code turns; the built-in desktop artifact bridge is implemented directly.
+This is a local compatibility harness, not a byte-for-byte copy of Anthropic's source or hosted service. Remote Claude Code sessions, SSH/WSL/pool execution, worktrees, cloud GitHub review orchestration, proprietary subagents, usage/billing, and Anthropic inference are not implemented. Configured stdio/HTTP MCP tools and the built-in desktop artifact bridge execute directly through bounded local managers.

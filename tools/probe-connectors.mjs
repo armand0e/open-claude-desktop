@@ -190,7 +190,8 @@ const provider = createHttpServer(async (request, response) => {
         .filter((message) => message.role === "tool")
         .map((message) => String(message.content))
         .join("\n");
-      if (hasToolResult) console.error("tool result content:", toolText.slice(0, 300));
+      if (hasToolResult)
+        console.error("tool result content:", toolText.slice(0, 300));
       response.write(
         `data: ${JSON.stringify({
           choices: [
@@ -261,8 +262,7 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 8000));
   // The fullscreen /customize surface is retired: navigating there bounces
   // to the home surface and opens the settings dialog at Customize >
-  // Connectors. With Cowork enabled the home resolves to the task landing
-  // (/task/new), so accept either home route.
+  // Connectors, then returns to the normal home route.
   const page = await evaluateEventually(
     debuggerPort,
     `(() => {

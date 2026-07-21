@@ -34,6 +34,73 @@ async function backendInTemp(): Promise<LocalBackend> {
 const BASE = "/api/organizations/local/mcp/remote_servers";
 
 describe("remote MCP connector endpoints", () => {
+  it("serves native Directory connector and skill contracts locally", async () => {
+    const backend = await backendInTemp();
+    backend.setSkillSource({
+      list: async () => [
+        {
+          name: "skill-creator",
+          description: "Create and improve reusable skills.",
+        },
+      ],
+      read: async () => "# Skill Creator",
+    });
+
+    const connectorResponse = await call(
+      backend,
+      "/mcp-registry/v0/servers?version=latest&limit=4",
+    );
+    const connectorPayload = (await connectorResponse.json()) as {
+      servers: Array<Record<string, unknown>>;
+      metadata: Record<string, unknown>;
+    };
+    expect(connectorPayload.servers).toHaveLength(4);
+    expect(connectorPayload.servers[0]).toMatchObject({
+      server: {
+        name: "local.open-claude/gmail",
+        title: "Gmail",
+        remotes: [
+          {
+            type: "streamable-http",
+            url: "https://gmailmcp.googleapis.com/mcp/v1",
+          },
+        ],
+      },
+      _meta: {
+        "com.anthropic.api/mcp-registry": {
+          type: "remote",
+          worksWith: expect.arrayContaining(["claude-code"]),
+        },
+      },
+    });
+    expect(connectorPayload.servers[3]).toMatchObject({
+      server: { title: expect.any(String), remotes: expect.any(Array) },
+      _meta: {
+        "com.anthropic.api/mcp-registry": {
+          type: "remote",
+          source_feed: "official-mcp-registry",
+        },
+      },
+    });
+    expect(connectorPayload.metadata.nextCursor).toEqual(expect.any(String));
+
+    const skillResponse = await call(
+      backend,
+      "/api/organizations/test-org/skills/list-skills?include_wiggle_skills=true",
+    );
+    expect(await skillResponse.json()).toEqual({
+      skills: [
+        expect.objectContaining({
+          id: "local:skill-creator",
+          name: "skill-creator",
+          creator_type: "anthropic",
+          enabled: true,
+          user_invocable: true,
+        }),
+      ],
+    });
+  });
+
   it("creates, lists, updates, and deletes RAe-shaped records", async () => {
     const backend = await backendInTemp();
     const changed: string[] = [];
@@ -101,6 +168,7 @@ describe("remote MCP connector endpoints", () => {
       { url: "http://127.0.0.1/" },
       { name: "x", url: "file:///etc/passwd" },
       { name: "x", url: "not a url" },
+      { name: "x", url: "https://user:secret@example.com/mcp" },
     ]) {
       const response = await call(backend, BASE, {
         method: "POST",
@@ -110,6 +178,85 @@ describe("remote MCP connector endpoints", () => {
       expect(response.status).toBeGreaterThanOrEqual(400);
     }
     expect(backend.remoteMcpServers()).toEqual([]);
+  });
+
+  it("rejects duplicate names and invalid updates without partial mutation", async () => {
+    const backend = await backendInTemp();
+    const first = (await (
+      await call(backend, BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "one", url: "http://127.0.0.1:9001" }),
+      })
+    ).json()) as Record<string, unknown>;
+    expect(
+      (
+        await call(backend, BASE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "one", url: "http://127.0.0.1:9002" }),
+        })
+      ).status,
+    ).toBe(409);
+    const invalidUpdate = await call(backend, `${BASE}/${first.uuid}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "partially changed", url: "file:///bad" }),
+    });
+    expect(invalidUpdate.status).toBe(400);
+    expect(backend.remoteMcpServers()).toEqual([
+      expect.objectContaining({
+        name: "one",
+        url: "http://127.0.0.1:9001/",
+      }),
+    ]);
+  });
+
+  it("locks OAuth presets to official endpoints and exposes local auth state", async () => {
+    const backend = await backendInTemp();
+    backend.setRemoteMcpHooks({
+      status: () => null,
+      changed: () => undefined,
+      authentication: () => ({
+        preset: "gmail",
+        clientId: "local-client-id",
+        authenticated: true,
+        pending: false,
+        access: "read",
+        error: null,
+      }),
+    });
+    const wrongEndpoint = await call(backend, BASE, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "phish",
+        url: "https://example.com/mcp",
+        preset: "gmail",
+      }),
+    });
+    expect(wrongEndpoint.status).toBe(400);
+
+    const created = (await (
+      await call(backend, BASE, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: "Gmail",
+          url: "https://gmailmcp.googleapis.com/mcp/v1",
+        }),
+      })
+    ).json()) as Record<string, unknown>;
+    expect(created).toMatchObject({ preset: "gmail" });
+    const connected = (await (
+      await call(backend, `${BASE}_with_connection`)
+    ).json()) as Array<Record<string, unknown>>;
+    expect(connected[0]).toMatchObject({
+      is_authenticated: true,
+      custom_oauth_client_id: "local-client-id",
+      oauth_access: "read",
+      connection_auth_type: "oauth",
+    });
   });
 
   it("defaults connection_state to initiated before the first listing", async () => {

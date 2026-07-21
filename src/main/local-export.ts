@@ -61,12 +61,94 @@ export const DEFAULT_EXPORT_OPTIONS: TrainingExportOptions = {
   minAssistantTurns: 1,
 };
 
+export function normalizeTrainingExportOptions(
+  value: unknown,
+): TrainingExportOptions {
+  const input = isRecord(value) ? value : {};
+  const format = ["markdown", "openai", "sharegpt"].includes(
+    String(input.format),
+  )
+    ? (input.format as TrainingExportOptions["format"])
+    : DEFAULT_EXPORT_OPTIONS.format;
+  const validDate = (candidate: unknown): string | undefined =>
+    typeof candidate === "string" && Number.isFinite(Date.parse(candidate))
+      ? candidate
+      : undefined;
+  const minTurns = Number(input.minAssistantTurns);
+  return {
+    format,
+    includeChat:
+      typeof input.includeChat === "boolean"
+        ? input.includeChat
+        : DEFAULT_EXPORT_OPTIONS.includeChat,
+    includeCode:
+      typeof input.includeCode === "boolean"
+        ? input.includeCode
+        : DEFAULT_EXPORT_OPTIONS.includeCode,
+    includeThinking:
+      typeof input.includeThinking === "boolean"
+        ? input.includeThinking
+        : DEFAULT_EXPORT_OPTIONS.includeThinking,
+    includeToolCalls:
+      typeof input.includeToolCalls === "boolean"
+        ? input.includeToolCalls
+        : DEFAULT_EXPORT_OPTIONS.includeToolCalls,
+    minAssistantTurns: Number.isFinite(minTurns)
+      ? Math.min(1_000, Math.max(1, Math.floor(minTurns)))
+      : DEFAULT_EXPORT_OPTIONS.minAssistantTurns,
+    ...(validDate(input.after) ? { after: validDate(input.after) } : {}),
+    ...(validDate(input.before) ? { before: validDate(input.before) } : {}),
+    ...(typeof input.conversationUuid === "string" &&
+    input.conversationUuid.length <= 512
+      ? { conversationUuid: input.conversationUuid }
+      : {}),
+    ...(typeof input.systemPrompt === "string" &&
+    input.systemPrompt.length <= 1024 * 1024
+      ? { systemPrompt: input.systemPrompt }
+      : {}),
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function xmlAttribute(value: unknown): string {
+  return asString(value).replace(
+    /[&<>"']/g,
+    (character) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&apos;",
+      })[character]!,
+  );
+}
+
+function protectedTagContent(value: unknown, tag: string): string {
+  const protectedReservedTags = asString(value).replace(
+    /<(\/?)(artifact(?:_update)?|attachment|thinking|tool_call|tool_result|old_str|new_str)(?=[\s>])/gi,
+    "&lt;$1$2",
+  );
+  return protectedReservedTags.replace(
+    new RegExp(`</${tag}(?=[\\s>])`, "gi"),
+    `&lt;/${tag}`,
+  );
+}
+
+function fenced(content: string, language = ""): string {
+  const longest = Math.max(
+    0,
+    ...[...content.matchAll(/`+/g)].map((match) => match[0].length),
+  );
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `${fence}${language}\n${content}\n${fence}`;
 }
 
 // The canonical thread of a conversation: the parent chain ending at the
@@ -112,14 +194,14 @@ function withinRange(
 }
 
 function artifactTag(input: Record<string, unknown>): string {
-  const id = asString(input.id) || "artifact";
-  const type = asString(input.type);
-  const title = asString(input.title);
+  const id = xmlAttribute(input.id) || "artifact";
+  const type = xmlAttribute(input.type);
+  const title = xmlAttribute(input.title);
   if (input.command === "update") {
     return (
       `<artifact_update identifier="${id}">\n` +
-      `<old_str>${asString(input.old_str)}</old_str>\n` +
-      `<new_str>${asString(input.new_str)}</new_str>\n` +
+      `<old_str>${protectedTagContent(input.old_str, "old_str")}</old_str>\n` +
+      `<new_str>${protectedTagContent(input.new_str, "new_str")}</new_str>\n` +
       `</artifact_update>`
     );
   }
@@ -130,7 +212,7 @@ function artifactTag(input: Record<string, unknown>): string {
   ]
     .filter(Boolean)
     .join(" ");
-  return `<artifact ${attrs}>\n${asString(input.content)}\n</artifact>`;
+  return `<artifact ${attrs}>\n${protectedTagContent(input.content, "artifact")}\n</artifact>`;
 }
 
 function toolResultText(content: unknown): string {
@@ -158,11 +240,14 @@ export function assistantTurnText(
   for (const block of blocks) {
     if (block.type === "thinking") {
       if (options.includeThinking && asString(block.thinking).trim())
-        parts.push(`<thinking>\n${asString(block.thinking)}\n</thinking>`);
+        parts.push(
+          `<thinking>\n${protectedTagContent(block.thinking, "thinking")}\n</thinking>`,
+        );
       continue;
     }
     if (block.type === "text") {
-      if (asString(block.text).trim()) parts.push(asString(block.text));
+      if (asString(block.text).trim())
+        parts.push(protectedTagContent(block.text, "text"));
       continue;
     }
     if (block.type === "tool_use" && isRecord(block.input)) {
@@ -172,7 +257,7 @@ export function assistantTurnText(
       }
       if (options.includeToolCalls)
         parts.push(
-          `<tool_call name="${asString(block.name)}">${JSON.stringify(block.input)}</tool_call>`,
+          `<tool_call name="${xmlAttribute(block.name)}">${protectedTagContent(JSON.stringify(block.input), "tool_call")}</tool_call>`,
         );
       continue;
     }
@@ -180,7 +265,7 @@ export function assistantTurnText(
       const text = toolResultText(block.content);
       if (text.trim())
         parts.push(
-          `<tool_result name="${asString(block.name)}">\n${text}\n</tool_result>`,
+          `<tool_result name="${xmlAttribute(block.name)}">\n${protectedTagContent(text, "tool_result")}\n</tool_result>`,
         );
     }
   }
@@ -188,12 +273,19 @@ export function assistantTurnText(
 }
 
 function humanTurnText(message: ExportMessage): string {
-  const parts = [message.text ?? ""];
+  const parts = [protectedTagContent(message.text ?? "", "text")];
   for (const attachment of message.attachments ?? []) {
     const extracted = asString(attachment.extracted_content);
     if (extracted)
       parts.push(
-        `<attachment name="${asString(attachment.file_name) || "file"}">\n${extracted}\n</attachment>`,
+        `<attachment name="${xmlAttribute(attachment.file_name) || "file"}">\n${protectedTagContent(extracted, "attachment")}\n</attachment>`,
+      );
+  }
+  for (const file of message.files ?? []) {
+    const name = asString(file.file_name);
+    if (name)
+      parts.push(
+        `<attachment name="${xmlAttribute(name)}">\n[Binary or separately stored file]\n</attachment>`,
       );
   }
   return parts.filter((part) => part.trim()).join("\n\n");
@@ -241,7 +333,10 @@ export function codeSessionTurns(
     const message = item.message;
     if (item.type === "user") {
       if (typeof message.content === "string")
-        turns.push({ role: "user", text: message.content });
+        turns.push({
+          role: "user",
+          text: protectedTagContent(message.content, "text"),
+        });
       else if (Array.isArray(message.content) && options.includeToolCalls) {
         const results = message.content
           .filter(
@@ -250,7 +345,10 @@ export function codeSessionTurns(
           )
           .map((block) => toolResultText(block.content))
           .filter((text) => text.trim())
-          .map((text) => `<tool_result>\n${text}\n</tool_result>`);
+          .map(
+            (text) =>
+              `<tool_result>\n${protectedTagContent(text, "tool_result")}\n</tool_result>`,
+          );
         if (results.length > 0)
           turns.push({ role: "user", text: results.join("\n\n") });
       }
@@ -262,20 +360,22 @@ export function codeSessionTurns(
     for (const block of blocks) {
       if (!isRecord(block)) continue;
       if (block.type === "text" && asString(block.text).trim())
-        parts.push(asString(block.text));
+        parts.push(protectedTagContent(block.text, "text"));
       else if (
         block.type === "thinking" &&
         options.includeThinking &&
         asString(block.thinking).trim()
       )
-        parts.push(`<thinking>\n${asString(block.thinking)}\n</thinking>`);
+        parts.push(
+          `<thinking>\n${protectedTagContent(block.thinking, "thinking")}\n</thinking>`,
+        );
       else if (
         block.type === "tool_use" &&
         options.includeToolCalls &&
         isRecord(block.input)
       )
         parts.push(
-          `<tool_call name="${asString(block.name)}">${JSON.stringify(block.input)}</tool_call>`,
+          `<tool_call name="${xmlAttribute(block.name)}">${protectedTagContent(JSON.stringify(block.input), "tool_call")}</tool_call>`,
         );
     }
     if (parts.length > 0)
@@ -292,13 +392,18 @@ function trainingRow(
   turns: Turn[],
   options: TrainingExportOptions,
 ): Record<string, unknown> | null {
-  if (turns.length === 0 || turns[0].role !== "user") return null;
-  if (assistantTurnCount(turns) < Math.max(1, options.minAssistantTurns))
+  const completed = turns.slice();
+  // A crash, cancellation, or currently-running conversation can leave an
+  // unanswered user turn at the leaf. It is not an SFT target and must not
+  // be emitted as if the training example were complete.
+  while (completed.at(-1)?.role === "user") completed.pop();
+  if (completed.length === 0 || completed[0].role !== "user") return null;
+  if (assistantTurnCount(completed) < Math.max(1, options.minAssistantTurns))
     return null;
   if (options.format === "sharegpt") {
     return {
       ...(options.systemPrompt ? { system: options.systemPrompt } : {}),
-      conversations: turns.map((turn) => ({
+      conversations: completed.map((turn) => ({
         from: turn.role === "user" ? "human" : "gpt",
         value: turn.text,
       })),
@@ -309,7 +414,7 @@ function trainingRow(
       ...(options.systemPrompt
         ? [{ role: "system", content: options.systemPrompt }]
         : []),
-      ...turns.map((turn) => ({ role: turn.role, content: turn.text })),
+      ...completed.map((turn) => ({ role: turn.role, content: turn.text })),
     ],
   };
 }
@@ -378,21 +483,16 @@ function markdownArtifact(input: Record<string, unknown>): string {
   if (input.command === "update")
     return (
       `### Artifact update: ${title}\n\n` +
-      "Replaced:\n\n```\n" +
-      asString(input.old_str) +
-      "\n```\n\nWith:\n\n```\n" +
-      asString(input.new_str) +
-      "\n```"
+      "Replaced:\n\n" +
+      fenced(asString(input.old_str)) +
+      "\n\nWith:\n\n" +
+      fenced(asString(input.new_str))
     );
   const fence =
     FENCES[type] ?? asString(input.language) ?? (type ? "" : "text");
   return (
     `### Artifact: ${title}${type ? ` (${type})` : ""}\n\n` +
-    "```" +
-    fence +
-    "\n" +
-    asString(input.content) +
-    "\n```"
+    fenced(asString(input.content), fence)
   );
 }
 
@@ -416,6 +516,8 @@ export function conversationMarkdown(
       for (const attachment of message.attachments ?? [])
         if (attachment.file_name)
           lines.push("", `*Attachment: ${attachment.file_name}*`);
+      for (const file of message.files ?? [])
+        if (file.file_name) lines.push("", `*File: ${file.file_name}*`);
       lines.push("");
       continue;
     }
@@ -444,9 +546,7 @@ export function conversationMarkdown(
           lines.push(
             `*Tool call — ${asString(block.name)}*`,
             "",
-            "```json",
-            JSON.stringify(block.input, null, 2),
-            "```",
+            fenced(JSON.stringify(block.input, null, 2), "json"),
             "",
           );
       } else if (block.type === "tool_result" && options.includeToolCalls) {
@@ -455,9 +555,7 @@ export function conversationMarkdown(
           lines.push(
             `*Tool result — ${asString(block.name)}*`,
             "",
-            "```",
-            text,
-            "```",
+            fenced(text),
             "",
           );
       }
@@ -473,5 +571,9 @@ export function safeFileName(name: string): string {
     .trim()
     .slice(0, 80)
     .trim();
-  return cleaned || "untitled";
+  const usable = cleaned.replace(/[. ]+$/g, "");
+  if (!usable) return "untitled";
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(usable)
+    ? `_${usable}`
+    : usable;
 }

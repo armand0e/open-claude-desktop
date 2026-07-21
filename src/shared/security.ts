@@ -28,12 +28,28 @@ export function isTrustedRendererUrl(
     if (url.protocol === "file:") return true;
     return (
       allowDevelopment &&
+      (url.protocol === "http:" || url.protocol === "https:") &&
       (url.hostname === "localhost" ||
         url.hostname === "127.0.0.1" ||
         url.hostname.endsWith(".ant.dev"))
     );
   } catch {
     return false;
+  }
+}
+
+export function isRemoteWebRendererUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return (
+      (url.protocol === "http:" || url.protocol === "https:") &&
+      url.hostname !== "localhost" &&
+      url.hostname !== "127.0.0.1" &&
+      url.hostname !== "[::1]"
+    );
+  } catch {
+    // An invalid sender URL must never gain privileged service access.
+    return true;
   }
 }
 

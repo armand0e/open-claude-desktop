@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import {
   BrowserWindow,
@@ -14,6 +15,7 @@ type JsonObject = Record<string, unknown>;
 
 const PREVIEW_EXTENSIONS = new Set([".html", ".htm", ".svg", ".pdf"]);
 const MAX_PREVIEW_BYTES = 50 * 1024 * 1024;
+const MAX_SCREENSHOT_BASE64 = 4 * 1024 * 1024;
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".gif": "image/gif",
@@ -48,10 +50,13 @@ function rectangle(value: unknown): Rectangle | null {
   )
     return null;
   return {
-    x: Math.max(0, Math.round(candidate.x as number)),
-    y: Math.max(0, Math.round(candidate.y as number)),
-    width: Math.max(1, Math.round(candidate.width as number)),
-    height: Math.max(1, Math.round(candidate.height as number)),
+    x: Math.min(32_767, Math.max(0, Math.round(candidate.x as number))),
+    y: Math.min(32_767, Math.max(0, Math.round(candidate.y as number))),
+    width: Math.min(32_768, Math.max(1, Math.round(candidate.width as number))),
+    height: Math.min(
+      32_768,
+      Math.max(1, Math.round(candidate.height as number)),
+    ),
   };
 }
 
@@ -75,6 +80,8 @@ export class LocalFilePreview {
   #attached = false;
   #consumerId: string | undefined;
   #token = "";
+  #generation = 0;
+  #disposed = false;
 
   constructor(
     window: () => BrowserWindow | null,
@@ -103,6 +110,8 @@ export class LocalFilePreview {
 
   async #handle(request: Request): Promise<Response> {
     try {
+      if (request.method !== "GET" && request.method !== "HEAD")
+        return new Response(null, { status: 405 });
       const url = new URL(request.url);
       const root = this.#roots.get(url.hostname);
       if (!root) return new Response("Preview expired", { status: 404 });
@@ -113,33 +122,57 @@ export class LocalFilePreview {
       const resolved = await realpath(candidate);
       if (!isPathInside(root, resolved))
         return new Response("Path outside preview root", { status: 403 });
-      const info = await stat(resolved);
-      if (!info.isFile() || info.size > MAX_PREVIEW_BYTES)
-        return new Response("Preview file unavailable", { status: 404 });
-      const content = await readFile(resolved);
-      return new Response(content, {
-        headers: {
-          "Content-Type":
-            MIME_TYPES[path.extname(resolved).toLowerCase()] ??
-            "application/octet-stream",
-          "Cache-Control": "no-store",
-          "Cross-Origin-Resource-Policy": "same-origin",
-          "Content-Security-Policy": [
-            "default-src 'self' data: blob:",
-            "script-src 'self' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline'",
-            "img-src 'self' data: blob:",
-            "font-src 'self' data:",
-            "media-src 'self' data: blob:",
-            "connect-src 'none'",
-            "frame-src 'self' data: blob:",
-            "object-src 'none'",
-            "base-uri 'none'",
-            "form-action 'none'",
-          ].join("; "),
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
+      // Read through a verified file descriptor. A path-level realpath/stat
+      // followed by readFile can be redirected through a symlink swap between
+      // validation and the read, exposing a file outside the session root.
+      const descriptor = await open(
+        resolved,
+        constants.O_RDONLY |
+          (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
+      );
+      try {
+        const info = await descriptor.stat();
+        if (!info.isFile() || info.size > MAX_PREVIEW_BYTES)
+          return new Response("Preview file unavailable", { status: 404 });
+        const confirmed = await realpath(resolved);
+        if (!isPathInside(root, confirmed))
+          return new Response("Path outside preview root", { status: 403 });
+        const confirmedInfo = await stat(confirmed);
+        if (confirmedInfo.dev !== info.dev || confirmedInfo.ino !== info.ino)
+          return new Response("Preview file changed during load", {
+            status: 409,
+          });
+        const content =
+          request.method === "HEAD" ? null : await descriptor.readFile();
+        if (content && content.byteLength > MAX_PREVIEW_BYTES)
+          return new Response("Preview file unavailable", { status: 404 });
+        return new Response(content, {
+          headers: {
+            "Content-Type":
+              MIME_TYPES[path.extname(resolved).toLowerCase()] ??
+              "application/octet-stream",
+            "Cache-Control": "no-store",
+            "Cross-Origin-Resource-Policy": "same-origin",
+            "Content-Security-Policy": [
+              "default-src 'self' data: blob:",
+              "script-src 'self' 'unsafe-inline'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob:",
+              "font-src 'self' data:",
+              "media-src 'self' data: blob:",
+              "connect-src 'none'",
+              "frame-src 'self' data: blob:",
+              "object-src 'none'",
+              "base-uri 'none'",
+              "form-action 'none'",
+            ].join("; "),
+            "X-Content-Type-Options": "nosniff",
+            "Content-Length": String(content?.byteLength ?? info.size),
+          },
+        });
+      } finally {
+        await descriptor.close();
+      }
     } catch {
       return new Response("Preview file unavailable", { status: 404 });
     }
@@ -189,7 +222,11 @@ export class LocalFilePreview {
     rawBounds: unknown,
     consumerId?: unknown,
   ): Promise<{ ok: boolean; declineReason?: string }> {
-    if (typeof sessionId !== "string" || typeof filePath !== "string")
+    if (
+      this.#disposed ||
+      typeof sessionId !== "string" ||
+      typeof filePath !== "string"
+    )
       return { ok: false, declineReason: "invalid_path" };
     const bounds = rectangle(rawBounds);
     if (!bounds) return { ok: false, declineReason: "invalid_bounds" };
@@ -201,25 +238,35 @@ export class LocalFilePreview {
       requestedConsumer !== this.#consumerId
     )
       return { ok: false, declineReason: "preview_busy" };
+    const generation = ++this.#generation;
     const resolved = await this.#codeSessions.invoke("resolveSessionFile", [
       sessionId,
       filePath,
     ]);
-    if (typeof resolved !== "string")
+    if (
+      this.#disposed ||
+      generation !== this.#generation ||
+      typeof resolved !== "string"
+    )
       return { ok: false, declineReason: "invalid_path" };
     const extension = path.extname(resolved).toLowerCase();
     if (!PREVIEW_EXTENSIONS.has(extension))
       return { ok: false, declineReason: "unsupported_extension" };
-    const root = await realpath(path.dirname(resolved));
+    const info = await stat(resolved).catch(() => null);
+    if (!info?.isFile() || info.size > MAX_PREVIEW_BYTES)
+      return { ok: false, declineReason: "invalid_path" };
+    const root = await realpath(path.dirname(resolved)).catch(() => null);
+    if (this.#disposed || generation !== this.#generation || !root)
+      return { ok: false, declineReason: "invalid_path" };
+    const owner = this.#window();
+    if (!owner || owner.isDestroyed())
+      return { ok: false, declineReason: "no_parent_window" };
     const token = randomUUID();
     this.#roots.clear();
     this.#roots.set(token, root);
     this.#token = token;
     this.#consumerId = requestedConsumer;
     const view = this.#ensureView();
-    const owner = this.#window();
-    if (!owner || owner.isDestroyed())
-      return { ok: false, declineReason: "no_parent_window" };
     if (!this.#attached) {
       owner.contentView.addChildView(view);
       this.#attached = true;
@@ -227,13 +274,27 @@ export class LocalFilePreview {
     this.#setBounds(bounds);
     view.setVisible(true);
     try {
-      await view.webContents.loadURL(
-        previewUrl(token, path.basename(resolved)),
-      );
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        await Promise.race([
+          view.webContents.loadURL(previewUrl(token, path.basename(resolved))),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => {
+              if (!view.webContents.isDestroyed()) view.webContents.stop();
+              reject(new Error("File preview load timed out"));
+            }, 15_000);
+            timer.unref?.();
+          }),
+        ]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     } catch {
-      this.hide(requestedConsumer);
+      if (generation === this.#generation) this.hide(requestedConsumer);
       return { ok: false, declineReason: "preview_load_failed" };
     }
+    if (this.#disposed || generation !== this.#generation)
+      return { ok: false, declineReason: "preview_load_failed" };
     return { ok: true };
   }
 
@@ -244,6 +305,7 @@ export class LocalFilePreview {
       consumerId !== this.#consumerId
     )
       return false;
+    this.#generation += 1;
     const owner = this.#window();
     if (this.#view) this.#view.setVisible(false);
     if (owner && !owner.isDestroyed() && this.#view && this.#attached) {
@@ -270,19 +332,22 @@ export class LocalFilePreview {
     if (bounds) this.#setBounds(bounds);
     if (!this.#view || this.#view.webContents.isDestroyed()) return null;
     try {
-      return (await this.#view.webContents.capturePage())
+      const screenshot = (await this.#view.webContents.capturePage())
         .toPNG()
         .toString("base64");
+      return screenshot.length <= MAX_SCREENSHOT_BASE64 ? screenshot : null;
     } catch {
       return null;
     }
   }
 
-  dispose(): void {
+  async dispose(): Promise<void> {
+    if (this.#disposed) return;
+    this.#disposed = true;
     this.hide();
     if (this.#view && !this.#view.webContents.isDestroyed())
       this.#view.webContents.close();
     this.#view = null;
-    void this.#session.protocol.unhandle("claude-local-preview");
+    await this.#session.protocol.unhandle("claude-local-preview");
   }
 }

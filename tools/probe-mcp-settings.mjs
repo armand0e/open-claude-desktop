@@ -298,9 +298,7 @@ try {
       );
       if (!state) throw new Error("Local MCP servers page did not render");
       if (state.noRow)
-        throw new Error(
-          `Seeded server is not listed: ${state.pageText}`,
-        );
+        throw new Error(`Seeded server is not listed: ${state.pageText}`);
       if (state.status !== "running")
         throw new Error(
           `Server status is "${state.status}", waiting for "running": ${state.pageText}`,
@@ -377,7 +375,9 @@ try {
       })()`,
     );
     if (state.missing)
-      throw new Error("Capabilities nav item was not found in the settings modal");
+      throw new Error(
+        "Capabilities nav item was not found in the settings modal",
+      );
     return state;
   });
   assert(

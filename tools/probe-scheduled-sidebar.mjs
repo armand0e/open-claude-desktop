@@ -1,9 +1,7 @@
-// Proves the Scheduled (routines) surface works end to end on the Code
-// sidebar: with at least one enabled routine the native sidebar pins the
-// Scheduled tab (the hasCodeRoutines pipeline through the local
-// CCDScheduledTasks service), the tab navigates to /epitaxy/scheduled, the
-// routine's detail page renders, and deleting it through the native UI
-// round-trips into the local scheduler store.
+// Proves the Scheduled surface works end to end from a genuinely empty local
+// profile: the native empty state and templates settle, an IPC-created task
+// appears without a reload, the Code sidebar pins Scheduled, the detail page
+// renders, and deleting the task round-trips into the scheduler store.
 import { spawn } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -122,22 +120,7 @@ await writeFile(
   `${JSON.stringify(
     {
       version: 1,
-      tasks: [
-        {
-          id: "probe-routine-1",
-          name: "probe-routine-1",
-          displayName: "Nightly digest",
-          description: "Probe-seeded routine",
-          prompt: "Summarize the repository",
-          cronExpression: "0 3 * * *",
-          cwd: os.tmpdir(),
-          status: "active",
-          createdAt: new Date().toISOString(),
-          lastRunAt: null,
-          nextRunAt: null,
-          runCount: 0,
-        },
-      ],
+      tasks: [],
     },
     null,
     2,
@@ -175,8 +158,122 @@ child.stderr.setEncoding("utf8");
 child.stderr.on("data", (chunk) => output.push(chunk));
 
 try {
+  const emptyState = await eventually(debuggerPort, async (target) => {
+    const state = await evaluate(
+      target,
+      `(async () => {
+        const deadline = Date.now() + 25000;
+        while (!document.querySelector("#local-claude-workbench")?.shadowRoot && Date.now() < deadline)
+          await new Promise(resolve => setTimeout(resolve, 100));
+        history.pushState(history.state, "", "/epitaxy/scheduled");
+        window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
+        const settleDeadline = Date.now() + 15000;
+        let text = "";
+        while (Date.now() < settleDeadline) {
+          text = document.body.innerText.replace(/[\\uE000-\\uF8FF]/gu, "");
+          if (
+            /Failed to load scheduled tasks\./.test(text) ||
+            (/No scheduled tasks yet\./.test(text) &&
+              document.querySelectorAll("[data-local-scheduled-preset]").length === 6)
+          )
+            break;
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+        const service = window["claude.web"]?.CCDScheduledTasks;
+        const directList = await Promise.race([
+          service?.getAllScheduledTasks?.()
+            .then(value => ({ status: "resolved", value }))
+            .catch(error => ({ status: "rejected", error: String(error) })),
+          new Promise(resolve => setTimeout(() => resolve({ status: "timed-out" }), 2000)),
+        ]);
+        return {
+          url: location.pathname,
+          text: text.slice(-2200),
+          customOverridePresent: Boolean(document.getElementById("local-code-routines")),
+          hasEmptyState: /No scheduled tasks yet\./.test(text),
+          hasTemplates:
+            document.querySelectorAll("[data-local-scheduled-preset]").length === 6,
+          hasReferenceSearch: Boolean(
+            document.querySelector('input[aria-label="Search scheduled tasks"]'),
+          ),
+          hasReferenceSort: text.includes("Sort by Next run"),
+          presetColumns: getComputedStyle(
+            document.querySelector(".local-scheduled-grid"),
+          ).gridTemplateColumns,
+          statusText: [...document.querySelectorAll('[role="status"]')]
+            .filter(el => el.getClientRects().length > 0)
+            .map(el => (el.textContent || "").trim()),
+          directList,
+        };
+      })()`,
+    );
+    if (!state.hasEmptyState)
+      throw new Error(
+        `Empty Scheduled page did not settle: ${JSON.stringify(state)}`,
+      );
+    return state;
+  });
+  assert(
+    !emptyState.customOverridePresent,
+    "The legacy custom routines page replaced the native UI",
+  );
+  assert(
+    emptyState.hasTemplates,
+    "The native empty state did not expose local presets",
+  );
+  assert(
+    emptyState.hasReferenceSearch &&
+      emptyState.hasReferenceSort &&
+      emptyState.presetColumns.split(" ").length === 2,
+    `The Scheduled page did not match the reference layout: ${JSON.stringify(emptyState)}`,
+  );
+  if (process.env.OPEN_CLAUDE_CAPTURE_SCHEDULED) {
+    const screenshotTarget = await targetAt(debuggerPort);
+    const screenshot = await cdp(screenshotTarget, "Page.captureScreenshot", {
+      format: "png",
+      captureBeyondViewport: false,
+    });
+    await writeFile(
+      path.resolve(process.env.OPEN_CLAUDE_CAPTURE_SCHEDULED),
+      Buffer.from(screenshot.data, "base64"),
+    );
+  }
+
+  const created = await eventually(debuggerPort, async (target) => {
+    const result = await evaluate(
+      target,
+      `(async () => {
+        const service = window["claude.web"]?.CCDScheduledTasks;
+        if (!service?.getAllScheduledTasks) return { missingService: true };
+        const deadline = Date.now() + 10000;
+        let preset = null;
+        while (!preset && Date.now() < deadline) {
+          preset = document.querySelector('[data-local-scheduled-preset="briefing"]');
+          if (!preset) await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (!preset)
+          return { missingPreset: true, text: document.body.innerText.slice(-1600) };
+        preset.click();
+        while (location.pathname !== "/epitaxy/scheduled/briefing" && Date.now() < deadline)
+          await new Promise(resolve => setTimeout(resolve, 150));
+        const list = await service.getAllScheduledTasks();
+        const task = list.find(item => item.id === "briefing");
+        return { task, list, url: location.pathname };
+      })()`,
+    );
+    if (result.missingService || result.missingPreset || !result.task)
+      throw new Error(
+        `Scheduled preset creation failed: ${JSON.stringify(result)}`,
+      );
+    if (result.url !== "/epitaxy/scheduled/briefing")
+      throw new Error(
+        `Scheduled preset did not open its detail page: ${result.url}`,
+      );
+    return result;
+  });
+
   // On the Code surface the Scheduled tab must be pinned to the rail (the
-  // native default pins it whenever any enabled routine exists).
+  // native default pins it after the newly created enabled routine exists).
   const rail = await eventually(debuggerPort, async (target) => {
     const state = await evaluate(
       target,
@@ -222,8 +319,10 @@ try {
     const state = await evaluate(
       target,
       `(async () => {
+        if (document.getElementById("local-code-routines"))
+          return { customOverridePresent: true };
         const row = [...document.querySelectorAll("button")].find(el =>
-          el.getClientRects().length > 0 && /Nightly digest/.test(el.textContent || ""));
+          el.getClientRects().length > 0 && /daily briefing/i.test(el.textContent || ""));
         if (!row) return { pageText: document.body.innerText.slice(-1500), noRow: true };
         row.click();
         const deadline = Date.now() + 10000;
@@ -241,12 +340,14 @@ try {
         };
       })()`,
     );
+    if (state.customOverridePresent)
+      throw new Error("The legacy custom routines page replaced the native UI");
     if (state.noRow)
       throw new Error(`Seeded routine is not listed: ${state.pageText}`);
     return state;
   });
   assert(
-    detail.url === "/epitaxy/scheduled/probe-routine-1",
+    detail.url === "/epitaxy/scheduled/briefing",
     `Routine detail did not open: ${detail.url}`,
   );
   assert(
@@ -254,9 +355,75 @@ try {
     `Routine detail is missing controls: ${detail.text}`,
   );
   assert(
-    detail.text.includes("Every day at 3:00 AM"),
+    detail.text.includes("8:00 AM"),
     `Cron schedule is not rendered: ${detail.text}`,
   );
+
+  const setDetailToggle = async (expectedBefore, expectedAfter) =>
+    eventually(debuggerPort, async (target) => {
+      const state = await evaluate(
+        target,
+        `(async () => {
+          const visible = element => element instanceof Element &&
+            element.getClientRects().length > 0 &&
+            getComputedStyle(element).visibility !== "hidden";
+          const service = window["claude.web"]?.CCDScheduledTasks;
+          const enabled = async () => (await service.getAllScheduledTasks())
+            .find(item => item.id === "briefing")?.enabled;
+          const before = await enabled();
+          const control = [...document.querySelectorAll(
+            '[role="switch"], input[type="checkbox"], button[aria-checked]',
+          )].find(visible);
+          if (!control) return {
+            failed: "Status toggle not found",
+            before,
+            controls: [...document.querySelectorAll('button,input')]
+              .filter(visible)
+              .map(element => ({
+                text: (element.textContent || '').replace(/\\s+/g, ' ').trim(),
+                aria: element.getAttribute('aria-label'),
+                role: element.getAttribute('role'),
+                checked: element.getAttribute('aria-checked'),
+              })),
+          };
+          control.click();
+          const deadline = Date.now() + 10000;
+          let after = before;
+          while (after === before && Date.now() < deadline) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            after = await enabled();
+          }
+          return { before, after };
+        })()`,
+      );
+      if (
+        state.failed ||
+        state.before !== expectedBefore ||
+        state.after !== expectedAfter
+      )
+        throw new Error(
+          `Status toggle did not change: ${JSON.stringify(state)}`,
+        );
+      return state;
+    });
+
+  const disabled = await setDetailToggle(true, false);
+  const pausedPersisted = await eventually(debuggerPort, async () => {
+    const parsed = JSON.parse(await readFile(tasksFile, "utf8"));
+    const task = (parsed.tasks ?? []).find((entry) => entry.id === "briefing");
+    if (task?.status !== "paused")
+      throw new Error(`Disabled task persisted as ${task?.status}`);
+    return task.status;
+  });
+
+  const reenabled = await setDetailToggle(false, true);
+  const activePersisted = await eventually(debuggerPort, async () => {
+    const parsed = JSON.parse(await readFile(tasksFile, "utf8"));
+    const task = (parsed.tasks ?? []).find((entry) => entry.id === "briefing");
+    if (task?.status !== "active")
+      throw new Error(`Re-enabled task persisted as ${task?.status}`);
+    return task.status;
+  });
 
   const deleteTarget = await targetAt(debuggerPort);
   const afterDelete = await evaluate(
@@ -287,7 +454,7 @@ try {
       return {
         url: location.pathname,
         dialogText,
-        stillListed: /Nightly digest/.test(document.body.innerText),
+        stillListed: /daily briefing/i.test(document.body.innerText),
       };
     })()`,
   );
@@ -305,7 +472,7 @@ try {
     debuggerPort,
     async () => {
       const parsed = JSON.parse(await readFile(tasksFile, "utf8"));
-      const task = (parsed.tasks ?? []).find((t) => t.id === "probe-routine-1");
+      const task = (parsed.tasks ?? []).find((t) => t.id === "briefing");
       if (task && task.status !== "deleted")
         throw new Error(`Task still ${task.status} in the local store`);
       return { status: task?.status ?? "removed" };
@@ -316,8 +483,22 @@ try {
   console.log(
     JSON.stringify(
       {
+        emptyState: {
+          url: emptyState.url,
+          hasTemplates: emptyState.hasTemplates,
+          hasReferenceSearch: emptyState.hasReferenceSearch,
+          hasReferenceSort: emptyState.hasReferenceSort,
+          presetColumns: emptyState.presetColumns,
+        },
+        createdTask: created.task?.id,
         railLabels: rail.labels,
         detailUrl: detail.url,
+        statusToggle: {
+          disabled,
+          pausedPersisted,
+          reenabled,
+          activePersisted,
+        },
         deleteDialog: afterDelete.dialogText,
         afterDelete: persisted,
       },

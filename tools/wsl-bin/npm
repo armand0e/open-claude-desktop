@@ -1,0 +1,5 @@
+#!/bin/sh
+set -eu
+
+: "${OPEN_CLAUDE_WSL_NPM_CLI:?Missing OPEN_CLAUDE_WSL_NPM_CLI}"
+exec /usr/bin/node "$OPEN_CLAUDE_WSL_NPM_CLI" "$@"

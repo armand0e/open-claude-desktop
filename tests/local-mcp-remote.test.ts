@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
-import { LocalMcpManager } from "../src/main/local-mcp";
+import { LocalMcpManager, qualifiedToolName } from "../src/main/local-mcp";
 import { growthbookFeatureKey } from "../src/shared/growthbook";
 
 type JsonRecord = Record<string, unknown>;
@@ -10,6 +10,10 @@ interface FakeRemoteMcpOptions {
   requireSession?: boolean;
   status?: number;
   toolIsError?: boolean;
+  paginate?: boolean;
+  crlf?: boolean;
+  keepSseOpen?: boolean;
+  wrongId?: boolean;
 }
 
 interface FakeRemoteMcp {
@@ -50,7 +54,7 @@ async function fakeRemoteMcp(
     const reply = (result: JsonRecord) => {
       const payload = JSON.stringify({
         jsonrpc: "2.0",
-        id: message.id,
+        id: options.wrongId ? Number(message.id) + 1 : message.id,
         result,
       });
       if (options.sse) {
@@ -59,7 +63,10 @@ async function fakeRemoteMcp(
           "Mcp-Session-Id": "session-123",
         });
         // A ping frame first, then the JSON-RPC response frame.
-        response.end(`: keepalive\n\nevent: message\ndata: ${payload}\n\n`);
+        const newline = options.crlf ? "\r\n" : "\n";
+        const frames = `: keepalive${newline}${newline}event: message${newline}data: ${payload}${newline}${newline}`;
+        if (options.keepSseOpen) response.write(frames);
+        else response.end(frames);
       } else {
         response.writeHead(200, {
           "Content-Type": "application/json",
@@ -80,19 +87,35 @@ async function fakeRemoteMcp(
         response.writeHead(202).end();
         return;
       case "tools/list":
-        reply({
-          tools: [
-            {
-              name: "echo",
-              description: "Echo a string",
-              inputSchema: {
-                type: "object",
-                properties: { text: { type: "string" } },
+        if (
+          options.paginate &&
+          (message.params as JsonRecord | undefined)?.cursor === "page-2"
+        ) {
+          reply({
+            tools: [
+              {
+                name: "second",
+                description: "Second page",
+                inputSchema: { type: "object", properties: {} },
               },
-            },
-            { description: "nameless tool is skipped" },
-          ],
-        });
+            ],
+          });
+        } else {
+          reply({
+            tools: [
+              {
+                name: "echo",
+                description: "Echo a string",
+                inputSchema: {
+                  type: "object",
+                  properties: { text: { type: "string" } },
+                },
+              },
+              { description: "nameless tool is skipped" },
+            ],
+            ...(options.paginate ? { nextCursor: "page-2" } : {}),
+          });
+        }
         return;
       case "tools/call":
         reply(
@@ -104,9 +127,8 @@ async function fakeRemoteMcp(
                     type: "text",
                     text: `echo ${String(
                       (message.params as JsonRecord | undefined)?.arguments &&
-                        (
-                          (message.params as JsonRecord).arguments as JsonRecord
-                        ).text,
+                        ((message.params as JsonRecord).arguments as JsonRecord)
+                          .text,
                     )}`,
                   },
                 ],
@@ -149,6 +171,30 @@ function managerFor(
 }
 
 describe("remote MCP connectors", () => {
+  it("loads plugin-provided HTTP MCP configs through the shared tool source", async () => {
+    const remote = await fakeRemoteMcp();
+    const manager = new LocalMcpManager(
+      () => ({}),
+      () => [],
+      async () => null,
+      async () => ({
+        "demo-plugin:remote": { type: "http", url: remote.url },
+      }),
+    );
+    managers.push(manager);
+
+    const tools = await manager.listTools();
+    expect(tools).toEqual([
+      expect.objectContaining({
+        server: "demo-plugin:remote",
+        name: "echo",
+      }),
+    ]);
+    await expect(
+      manager.callTool(tools[0].qualifiedName, { text: "plugin" }),
+    ).resolves.toBe("echo plugin");
+  });
+
   it("initializes, lists qualified tools, and round-trips a call", async () => {
     const remote = await fakeRemoteMcp();
     const manager = managerFor([{ name: "probe-connector", url: remote.url }]);
@@ -171,14 +217,37 @@ describe("remote MCP connectors", () => {
     expect(remote.sessionHeaders.at(-1)).toBe("session-123");
   });
 
-  it("parses JSON-RPC responses delivered as SSE frames", async () => {
-    const remote = await fakeRemoteMcp({ sse: true });
+  it("parses JSON-RPC responses delivered as CRLF SSE frames", async () => {
+    const remote = await fakeRemoteMcp({ sse: true, crlf: true });
     const manager = managerFor([{ name: "sse-connector", url: remote.url }]);
     const tools = await manager.listTools();
     expect(tools).toHaveLength(1);
     await expect(
       manager.callTool("mcp__sse-connector__echo", { text: "frame" }),
     ).resolves.toBe("echo frame");
+  });
+
+  it("returns when a matching SSE response arrives even if the stream stays open", async () => {
+    const remote = await fakeRemoteMcp({ sse: true, keepSseOpen: true });
+    const manager = managerFor([{ name: "open-sse", url: remote.url }]);
+    await expect(manager.listTools()).resolves.toHaveLength(1);
+  });
+
+  it("rejects JSON-RPC responses with a different request id", async () => {
+    const remote = await fakeRemoteMcp({ wrongId: true });
+    const manager = managerFor([{ name: "wrong-id", url: remote.url }]);
+    await expect(manager.listTools()).resolves.toEqual([]);
+    expect(manager.statusFor("wrong-id")).toBe("error");
+  });
+
+  it("loads every page of a remote tool catalog", async () => {
+    const remote = await fakeRemoteMcp({ paginate: true });
+    const manager = managerFor([{ name: "paged", url: remote.url }]);
+    const tools = await manager.listTools();
+    expect(tools.map((tool) => tool.name)).toEqual(["echo", "second"]);
+    expect(
+      remote.seenMethods.filter((method) => method === "tools/list"),
+    ).toHaveLength(2);
   });
 
   it("keeps chat alive when one connector is down", async () => {
@@ -203,6 +272,19 @@ describe("remote MCP connectors", () => {
     expect(manager.statusFor("authy")).toBe("error");
   });
 
+  it("rejects redirects and malformed remote endpoint URLs", async () => {
+    const redirected = await fakeRemoteMcp({ status: 302 });
+    const manager = managerFor([
+      { name: "redirected", url: redirected.url },
+      { name: "credentials", url: "https://user:secret@example.com/mcp" },
+      { name: "script", url: "javascript:alert(1)" },
+    ]);
+    await expect(manager.listTools()).resolves.toEqual([]);
+    expect(manager.statusFor("redirected")).toBe("error");
+    expect(manager.statusFor("credentials")).toBeNull();
+    expect(manager.statusFor("script")).toBeNull();
+  });
+
   it("turns isError tool results into thrown errors", async () => {
     const remote = await fakeRemoteMcp({ toolIsError: true });
     const manager = managerFor([{ name: "flaky", url: remote.url }]);
@@ -210,6 +292,39 @@ describe("remote MCP connectors", () => {
     await expect(
       manager.callTool("mcp__flaky__echo", { text: "x" }),
     ).rejects.toThrow("boom");
+  });
+
+  it("invalidates stale status when a connector configuration changes", async () => {
+    const first = await fakeRemoteMcp();
+    let remotes = [{ name: "changing", url: first.url }];
+    const manager = new LocalMcpManager(
+      () => ({}),
+      () => remotes,
+    );
+    managers.push(manager);
+    await manager.listTools();
+    expect(manager.statusFor("changing")).toBe("connected");
+
+    remotes = [{ name: "changing", url: "http://127.0.0.1:9/" }];
+    expect(manager.statusFor("changing")).toBeNull();
+    await manager.listTools();
+    expect(manager.statusFor("changing")).toBe("error");
+  });
+});
+
+describe("MCP tool names", () => {
+  it("keeps names within provider limits without sanitization aliases", () => {
+    const first = qualifiedToolName("server one", "tool@name");
+    const second = qualifiedToolName("server@one", "tool name");
+    expect(first).not.toBe(second);
+    expect(first.length).toBeLessThanOrEqual(64);
+    expect(second.length).toBeLessThanOrEqual(64);
+    expect(qualifiedToolName("safe-server", "safe_tool")).toBe(
+      "mcp__safe-server__safe_tool",
+    );
+    expect(qualifiedToolName("a", "b__c")).not.toBe(
+      qualifiedToolName("a__b", "c"),
+    );
   });
 });
 

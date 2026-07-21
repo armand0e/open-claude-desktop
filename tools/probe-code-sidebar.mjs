@@ -1,6 +1,7 @@
-// Probe: what does the Code sidebar render for local sessions across
-// multiple working directories? Dumps row structure (text, indent, group
-// affordances) to design/verify directory grouping.
+// Probe: the default Code sidebar keeps local sessions in one flat Recents
+// list. Native grouping remains available through the sidebar filter menu,
+// but no preload shim may force directory/project headers while Group by is
+// set to None.
 import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
@@ -135,7 +136,7 @@ try {
       const deadline = Date.now() + 25000;
       while (!document.querySelector('[contenteditable="true"]') && Date.now() < deadline)
         await new Promise(resolve => setTimeout(resolve, 200));
-      const svc = window["claude.web"]?.LocalSessions ?? window["claude.web"]?.CoworkSessions;
+      const svc = window["claude.web"]?.LocalSessions;
       const sessions = ${JSON.stringify([
         ["alpha one", "WSA"],
         ["alpha two", "WSA"],
@@ -151,71 +152,73 @@ try {
       history.pushState(history.state, "", "/epitaxy");
       window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
       await new Promise(resolve => setTimeout(resolve, 3500));
+      const wantedTitles = sessions.map(([title]) => title);
       const audit = () => {
-        const tree = document.querySelector('[data-testid="local-code-dir-groups"]');
-        if (!tree) return null;
-        return [...tree.children].map(el => ({
-          text: (el.textContent || "").trim().slice(0, 40),
-          left: Math.round(el.getBoundingClientRect().left),
-          expanded: el.getAttribute("aria-expanded"),
-          isHeader: el.hasAttribute("aria-expanded"),
-        }));
+        const visible = [...document.querySelectorAll('a, button')]
+          .filter(element => element.getClientRects().length > 0)
+          .map(element => ({
+            element,
+            text: (element.textContent || "").replace(/[\uE000-\uF8FF]/gu, "").trim(),
+          }));
+        const rows = wantedTitles.map(title => {
+          const match = visible.find(({ text }) => text === title || text.includes(title));
+          return match ? {
+            title,
+            tag: match.element.tagName,
+            left: Math.round(match.element.getBoundingClientRect().left),
+          } : null;
+        });
+        return {
+          rows,
+          hasForcedTree: Boolean(document.querySelector('[data-testid="local-code-dir-groups"]')),
+          nativeRowsHidden: Boolean(document.querySelector('[data-local-hidden-for-groups]')),
+          visibleText: document.body.innerText,
+        };
       };
-      // The tree renders after the first sessions fetch.
-      const treeDeadline = Date.now() + 15000;
-      while (!audit() && Date.now() < treeDeadline)
+      const rowsDeadline = Date.now() + 15000;
+      let before = audit();
+      while (before.rows.some(row => !row) && Date.now() < rowsDeadline) {
         await new Promise(resolve => setTimeout(resolve, 300));
-      const before = audit();
-      // Collapse the first directory header and re-audit.
-      const firstHeader = document.querySelector('[data-testid="local-code-dir-groups"] button[aria-expanded]');
-      firstHeader?.click();
-      await new Promise(resolve => setTimeout(resolve, 400));
-      const collapsed = audit();
-      firstHeader && document.querySelector('[data-testid="local-code-dir-groups"] button[aria-expanded="false"]')?.click();
-      await new Promise(resolve => setTimeout(resolve, 400));
-      // Click a session row and verify navigation.
-      const sessionRow = document.querySelector('[data-testid="local-code-dir-groups"] button[data-session-id]');
+        before = audit();
+      }
+      const sessionRow = [...document.querySelectorAll('a, button')].find(element =>
+        element.getClientRects().length > 0 &&
+        (element.textContent || "").includes(wantedTitles[0])
+      );
       sessionRow?.click();
       await new Promise(resolve => setTimeout(resolve, 1200));
       return {
         created,
         path: location.pathname,
-        tree: before,
-        collapsedTree: collapsed,
-        nativeHidden: Boolean(document.querySelector("[data-local-hidden-for-groups]")),
+        ...before,
       };
     })()`,
     60_000,
   );
   console.log(JSON.stringify(report, null, 2));
-  const headers = report.tree.filter((row) => row.isHeader);
-  const children = report.tree.filter((row) => !row.isHeader);
-  if (headers.length !== 2)
-    throw new Error(`Expected 2 directory headers, saw ${headers.length}`);
-  if (children.length !== 3)
-    throw new Error(`Expected 3 session rows, saw ${children.length}`);
-  if (
-    !headers.every((row) => row.left < Math.min(...children.map((c) => c.left)))
-  )
-    throw new Error("Directory headers are not out-dented from sessions");
-  const firstGroupSize = (() => {
-    let count = 0;
-    for (const row of report.tree.slice(1)) {
-      if (row.isHeader) break;
-      count += 1;
-    }
-    return count;
-  })();
-  const remaining = report.collapsedTree.filter((row) => !row.isHeader).length;
-  if (remaining !== children.length - firstGroupSize)
+  const rows = report.rows.filter(Boolean);
+  if (rows.length !== 3)
     throw new Error(
-      `Collapsing the first directory (${firstGroupSize} sessions) left ${remaining} rows`,
+      `Expected 3 visible native session rows: ${JSON.stringify(report.rows)}`,
     );
+  if (
+    Math.max(...rows.map((row) => row.left)) -
+      Math.min(...rows.map((row) => row.left)) >
+    2
+  )
+    throw new Error(`Session rows are not flat: ${JSON.stringify(rows)}`);
+  if (report.hasForcedTree)
+    throw new Error("The preload-injected directory tree is still present");
+  if (report.nativeRowsHidden)
+    throw new Error("Native session rows are still hidden by grouping markup");
+  for (const workspace of [path.basename(wsA), path.basename(wsB)])
+    if (report.visibleText.includes(workspace))
+      throw new Error(
+        `Default None grouping exposed a workspace header: ${workspace}`,
+      );
   if (!/^\/epitaxy\/[0-9a-f-]{36}$/.test(report.path))
     throw new Error(`Clicking a session did not navigate: ${report.path}`);
-  if (!report.nativeHidden)
-    throw new Error("Native flat session rows were not hidden");
-  console.log("PROBE PASS: code sidebar groups sessions by directory");
+  console.log("PROBE PASS: Group by None renders one flat native session list");
 } catch (error) {
   console.error("PROBE FAIL:", error.message);
   console.error(output.join("").slice(-3000));

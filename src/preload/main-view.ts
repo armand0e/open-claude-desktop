@@ -9,7 +9,22 @@ import { installLocalWorkbench, localClaudeApi } from "./local-workbench";
 contextBridge.exposeInMainWorld("desktopReconstructionReady", {
   phase: "preload-start",
 });
-const namespaces = exposeContract("mainView.js");
+const LOCAL_SESSION_EXTENSION_METHODS = [
+  "deleteLocalSkill",
+  "getAllArtifacts",
+  "getLocalSkillFiles",
+  "listLocalSkills",
+  "saveLocalSkill",
+  "setLocalSkillEnabled",
+] as const;
+const namespaces = exposeContract("mainView.js", (contract) => {
+  const web = (contract["claude.web"] ??= {});
+  const localSessions = (web.LocalSessions ??= {}) as Record<string, unknown>;
+  for (const method of LOCAL_SESSION_EXTENSION_METHODS) {
+    localSessions[method] = (...args: unknown[]) =>
+      ipcRenderer.invoke("open-claude-local-sessions", method, ...args);
+  }
+});
 const appVersion =
   process.argv
     .find((value) => value.startsWith("--desktop-app-version="))
@@ -45,32 +60,128 @@ if (localBackend) {
   contextBridge.exposeInMainWorld("localClaude", localClaudeApi);
   const webNs = namespaces["claude.web"] as
     | {
-        LocalAgentModeSessions?: { start?: (input: unknown) => unknown };
         FileSystem?: {
           browseFolder?: (title: string, ...rest: unknown[]) => unknown;
         };
+        CCDScheduledTasks?: {
+          getAllScheduledTasks?: () => unknown;
+          createScheduledTask?: (input: unknown) => unknown;
+          updateScheduledTaskStatus?: (
+            scheduledTaskId: string,
+            status: string,
+          ) => unknown;
+        };
+        LocalSessions?: {
+          start?: (input: unknown) => unknown;
+          listLocalSkills?: () => unknown;
+          saveLocalSkill?: (
+            name: string,
+            description: string,
+            content: string,
+            overwrite: boolean,
+          ) => unknown;
+          setLocalSkillEnabled?: (name: string, enabled: boolean) => unknown;
+        };
+        LocalPlugins?: {
+          getPlugins?: () => unknown;
+          installCatalogPlugin?: (catalogId: string) => unknown;
+        };
       }
     | undefined;
-  const sessionService = webNs?.LocalAgentModeSessions;
+  const sessionService = webNs?.LocalSessions;
   const fileSystem = webNs?.FileSystem;
+  const scheduledTasks = webNs?.CCDScheduledTasks;
+  const localSessions = webNs?.LocalSessions;
+  const localPlugins = webNs?.LocalPlugins;
   installLocalWorkbench({
-    startCoworkSession:
+    startLocalSession:
       typeof sessionService?.start === "function"
         ? (input) =>
-            Promise.resolve(
-              sessionService.start!(input),
-            ) as Promise<{ sessionId?: string } | null | undefined>
+            Promise.resolve(sessionService.start!(input)) as Promise<
+              { sessionId?: string } | null | undefined
+            >
         : undefined,
-    pickCoworkFolder:
+    pickFolder:
       typeof fileSystem?.browseFolder === "function"
         ? () =>
             // The channel's first argument (title) is a REQUIRED string —
             // calling with no args fails contract validation and the IPC
             // rejects silently, so the picker never opens.
             Promise.resolve(
-              fileSystem.browseFolder!("Choose a folder for Cowork"),
+              fileSystem.browseFolder!("Choose a working folder"),
             ) as Promise<string | null | undefined>
         : undefined,
+    scheduledTasks:
+      typeof scheduledTasks?.getAllScheduledTasks === "function" &&
+      typeof scheduledTasks?.createScheduledTask === "function" &&
+      typeof scheduledTasks?.updateScheduledTaskStatus === "function"
+        ? {
+            getAllScheduledTasks: () =>
+              Promise.resolve(scheduledTasks.getAllScheduledTasks!()),
+            createScheduledTask: (input) =>
+              Promise.resolve(scheduledTasks.createScheduledTask!(input)),
+            updateScheduledTaskStatus: (scheduledTaskId, status) =>
+              Promise.resolve(
+                scheduledTasks.updateScheduledTaskStatus!(
+                  scheduledTaskId,
+                  status,
+                ),
+              ),
+          }
+        : undefined,
+    localSkills:
+      typeof localSessions?.listLocalSkills === "function" &&
+      typeof localSessions?.saveLocalSkill === "function" &&
+      typeof localSessions?.setLocalSkillEnabled === "function"
+        ? {
+            listLocalSkills: () =>
+              Promise.resolve(localSessions.listLocalSkills!()),
+            saveLocalSkill: (name, description, content, overwrite) =>
+              Promise.resolve(
+                localSessions.saveLocalSkill!(
+                  name,
+                  description,
+                  content,
+                  overwrite,
+                ),
+              ),
+            setLocalSkillEnabled: (name, enabled) =>
+              Promise.resolve(
+                localSessions.setLocalSkillEnabled!(name, enabled),
+              ),
+          }
+        : undefined,
+    localPlugins:
+      typeof localPlugins?.getPlugins === "function" &&
+      typeof localPlugins?.installCatalogPlugin === "function"
+        ? {
+            getPlugins: () => Promise.resolve(localPlugins.getPlugins!()),
+            installCatalogPlugin: (catalogId) =>
+              Promise.resolve(localPlugins.installCatalogPlugin!(catalogId)),
+          }
+        : undefined,
+    connectorOAuth: {
+      listPresets: () =>
+        ipcRenderer.invoke("open-claude-connector-oauth", "list-presets"),
+      start: (input) =>
+        ipcRenderer.invoke("open-claude-connector-oauth", "start", input),
+      openSetup: (preset) =>
+        ipcRenderer.invoke("open-claude-connector-oauth", "open-setup", {
+          preset,
+        }),
+      openDocs: (preset) =>
+        ipcRenderer.invoke("open-claude-connector-oauth", "open-docs", {
+          preset,
+        }),
+      cancel: (uuid) =>
+        ipcRenderer.invoke("open-claude-connector-oauth", "cancel", { uuid }),
+      disconnect: (uuid) =>
+        ipcRenderer.invoke("open-claude-connector-oauth", "disconnect", {
+          uuid,
+        }),
+    },
+    listConfiguredMcpServers: () =>
+      ipcRenderer.invoke("list-mcp-servers") as Promise<unknown>,
   });
 }
 

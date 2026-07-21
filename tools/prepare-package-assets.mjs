@@ -1,4 +1,5 @@
 import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
@@ -89,6 +90,23 @@ if (!(await stat(icon).catch(() => null)))
     `The packaged UI snapshot is missing its application icon: ${icon}`,
   );
 await cp(icon, path.join(staging, "icon.png"));
+if (process.platform === "win32") {
+  execFileSync(
+    "powershell.exe",
+    [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      path.join(workspace, "tools", "prepare-windows-icon.ps1"),
+      "-Source",
+      path.join(staging, "icon.png"),
+      "-Destination",
+      path.join(staging, "icon.ico"),
+    ],
+    { stdio: "inherit" },
+  );
+}
 
 process.stdout.write(
   `Prepared the retained Claude UI and app icon for the Open-Claude installer from ${source}\n`,

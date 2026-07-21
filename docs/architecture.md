@@ -9,11 +9,13 @@ flowchart LR
   W --> PS["Sandboxed shell preload"]
   V --> PV["Sandboxed main-view preload"]
   PS --> I["Generated IPC router: 126 shell channels"]
-  PV --> I2["Generated IPC router: 806 view channels"]
+  PV --> I2["Generated IPC router: 817 view channels"]
   I --> D["ServiceDispatcher"]
   I2 --> D
   D --> S["Atomic desktop state"]
   D --> OS["Electron and operating-system adapters"]
+  D --> C["Durable Code sessions and routines"]
+  D --> X["MCP, plugins, schedules, preview"]
   V --> H["https://claude.ai"]
   V --> L["app://localhost ion-dist"]
   L --> A["Local bootstrap and API contracts"]
@@ -23,7 +25,7 @@ flowchart LR
   A --> OAI["OpenAI-compatible provider"]
 ```
 
-The preload channel sets overlap, so 126 plus 806 is greater than the 831 distinct-channel total.
+The preload channel sets overlap, so 126 plus 817 is greater than the 842 distinct-channel total.
 
 ## Main process
 
@@ -42,6 +44,12 @@ The parent `BrowserWindow` never receives remote content. The remote or packaged
 [`src/main/services.ts`](../src/main/services.ts) implements high-confidence desktop behaviors and routes unknown or unavailable operations to stable safe defaults. This keeps the web client bootable without pretending that local-agent, VM, simulator, Office, device-attestation, or backend services can be recovered from interface names alone.
 
 [`src/main/state.ts`](../src/main/state.ts) maintains the reconstructed settings store. Every update is serialized and written through a same-directory temporary file followed by rename, preventing partially written JSON.
+
+Main-process managers own every capability that can touch the filesystem,
+launch a process, access the network, control a browser, or inject input. The
+preload adapts presentation but does not persist data or acquire new authority.
+The detailed keep/trim/port rules are in
+[`product-boundary.md`](product-boundary.md).
 
 ## Local SPA protocol
 
@@ -63,6 +71,8 @@ The local backend persists conversation trees, uploaded files, and artifact vers
 ## Filesystem boundary
 
 Remote content cannot read or write an arbitrary supplied path. [`src/main/file-access.ts`](../src/main/file-access.ts) issues in-memory capabilities only for files or directories returned by a native user picker or created by a controlled download/paste flow. Existing paths are canonicalized with `realpath`; root containment is checked after symlink resolution. Writes may create a file only beneath an already granted canonical root.
+
+Open-Claude project configuration is namespaced under `.open-claude`. The `.claude` directory is reserved for Anthropic Claude and is excluded from model file/search tools; the standalone runtime neither imports nor migrates it. Retained-client path strings are rewritten in memory with exact-count release gates so native dev-server, customization, plugin, worktree, and memory surfaces point only at the Open-Claude namespace.
 
 Downloads accept only trusted application origins, use sanitized base names, choose a collision-free path, and use exclusive creation. Local reads are limited to 50 MiB.
 

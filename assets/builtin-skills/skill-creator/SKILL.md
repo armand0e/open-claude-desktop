@@ -7,6 +7,10 @@ description: Create new skills, modify and improve existing skills, and measure 
 
 A skill for creating new skills and iteratively improving them.
 
+## Open-Claude filesystem boundary
+
+Never read, write, create, migrate, or delete an Anthropic `.claude` directory, and never invoke the external `claude` CLI. Open-Claude project state belongs under `.open-claude`. Evaluate skills with the current Open-Claude session and its available subagents or tools; CLI-only optimizer scripts are intentionally not bundled.
+
 At a high level, the process of creating a skill goes like this:
 
 - Decide what you want the skill to do and roughly how it should do it
@@ -244,7 +248,7 @@ Put each with_skill version before its baseline counterpart.
    ```
    For iteration 2+, also pass `--previous-workspace <workspace>/iteration-<N-1>`.
 
-   **Cowork / headless environments:** If `webbrowser.open()` is not available or the environment has no display, use `--static <output_path>` to write a standalone HTML file instead of starting a server. Feedback will be downloaded as a `feedback.json` file when the user clicks "Submit All Reviews". After download, copy `feedback.json` into the workspace directory for the next iteration to pick up.
+   **Headless environments:** If `webbrowser.open()` is not available or the environment has no display, use `--static <output_path>` to write a standalone HTML file instead of starting a server. Feedback will be downloaded as a `feedback.json` file when the user clicks "Submit All Reviews". After download, copy `feedback.json` into the workspace directory for the next iteration to pick up.
 
 Note: please use generate_review.py to create the viewer; there's no need to write custom HTML.
 
@@ -374,24 +378,9 @@ This step matters — bad eval queries lead to bad descriptions.
 
 ### Step 3: Run the optimization loop
 
-Tell the user: "This will take some time — I'll run the optimization loop in the background and check on it periodically."
+Use the current Open-Claude session to evaluate the reviewed queries. If subagents are available, run the should-trigger and should-not-trigger cases as independent tasks; otherwise evaluate them inline and label that limitation. Record each result, revise the description based on false negatives and false positives, then rerun a held-out subset. Do not shell out to another assistant CLI.
 
-Save the eval set to the workspace, then run in the background:
-
-```bash
-python -m scripts.run_loop \
-  --eval-set <path-to-trigger-eval.json> \
-  --skill-path <path-to-skill> \
-  --model <model-id-powering-this-session> \
-  --max-iterations 5 \
-  --verbose
-```
-
-Use the model ID from your system prompt (the one powering the current session) so the triggering test matches what the user actually experiences.
-
-While it runs, periodically tail the output to give the user updates on which iteration it's on and what the scores look like.
-
-This handles the full optimization loop automatically. It splits the eval set into 60% train and 40% held-out test, evaluates the current description (running each query 3 times to get a reliable trigger rate), then calls Claude to propose improvements based on what failed. It re-evaluates each new description on both train and test, iterating up to 5 times. When it's done, it opens an HTML report in the browser showing the results per iteration and returns JSON with `best_description` — selected by test score rather than train score to avoid overfitting.
+Choose the best description by held-out accuracy rather than training accuracy, show the before/after text, and preserve the per-query evidence so the user can inspect the decision.
 
 ### How skill triggering works
 
@@ -429,7 +418,7 @@ In Claude.ai, the core workflow is the same (draft → test → review → impro
 
 **The iteration loop**: Same as before — improve the skill, rerun the test cases, ask for feedback — just without the browser reviewer in the middle. You can still organize results into iteration directories on the filesystem if you have one.
 
-**Description optimization**: This section requires the `claude` CLI tool (specifically `claude -p`) which is only available in Claude Code. Skip it if you're on Claude.ai.
+**Description optimization**: Evaluate queries in the current session. Do not invoke an external assistant CLI.
 
 **Blind comparison**: Requires subagents. Skip it.
 
@@ -439,20 +428,6 @@ In Claude.ai, the core workflow is the same (draft → test → review → impro
 - **Preserve the original name.** Note the skill's directory name and `name` frontmatter field -- use them unchanged. E.g., if the installed skill is `research-helper`, output `research-helper.skill` (not `research-helper-v2`).
 - **Copy to a writeable location before editing.** The installed skill path may be read-only. Copy to `/tmp/skill-name/`, edit there, and package from the copy.
 - **If packaging manually, stage in `/tmp/` first**, then copy to the output directory -- direct writes may fail due to permissions.
-
----
-
-## Cowork-Specific Instructions
-
-If you're in Cowork, the main things to know are:
-
-- You have subagents, so the main workflow (spawn test cases in parallel, run baselines, grade, etc.) all works. (However, if you run into severe problems with timeouts, it's OK to run the test prompts in series rather than parallel.)
-- You don't have a browser or display, so when generating the eval viewer, use `--static <output_path>` to write a standalone HTML file instead of starting a server. Then proffer a link that the user can click to open the HTML in their browser.
-- For whatever reason, the Cowork setup seems to disincline Claude from generating the eval viewer after running the tests, so just to reiterate: whether you're in Cowork or in Claude Code, after running tests, you should always generate the eval viewer for the human to look at examples before revising the skill yourself and trying to make corrections, using `generate_review.py` (not writing your own boutique html code). Sorry in advance but I'm gonna go all caps here: GENERATE THE EVAL VIEWER *BEFORE* evaluating inputs yourself. You want to get them in front of the human ASAP!
-- Feedback works differently: since there's no running server, the viewer's "Submit All Reviews" button will download `feedback.json` as a file. You can then read it from there (you may have to request access first).
-- Packaging works — `package_skill.py` just needs Python and a filesystem.
-- Description optimization (`run_loop.py` / `run_eval.py`) should work in Cowork just fine since it uses `claude -p` via subprocess, not a browser, but please save it until you've fully finished making the skill and the user agrees it's in good shape.
-- **Updating an existing skill**: The user might be asking you to update an existing skill, not create a new one. Follow the update guidance in the claude.ai section above.
 
 ---
 
@@ -480,6 +455,6 @@ Repeating one more time the core loop here for emphasis:
 - Repeat until you and the user are satisfied
 - Package the final skill and return it to the user.
 
-Please add steps to your TodoList, if you have such a thing, to make sure you don't forget. If you're in Cowork, please specifically put "Create evals JSON and run `eval-viewer/generate_review.py` so human can review test cases" in your TodoList to make sure it happens.
+Please add steps to your TodoList, if you have such a thing, to make sure you don't forget. Include "Create evals JSON and run `eval-viewer/generate_review.py` so the human can review test cases" when the task includes evaluation.
 
 Good luck!

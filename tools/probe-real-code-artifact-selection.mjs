@@ -471,7 +471,7 @@ try {
         const artifactDeadline = Date.now() + 15000;
         let published;
         while (!published && Date.now() < artifactDeadline) {
-          const artifacts = await window["claude.web"].CoworkArtifacts.getAllArtifacts();
+          const artifacts = await window["claude.web"].LocalSessions.getAllArtifacts();
           published = artifacts.find(candidate => candidate.sessionId === existingSession.sessionId);
           if (!published) await new Promise(resolve => setTimeout(resolve, 100));
         }
@@ -497,11 +497,8 @@ try {
         const folderDeadline = Date.now() + 10000;
         let folderChoice;
         while (!folderChoice && Date.now() < folderDeadline) {
-          // The preload's directory-grouped sidebar renders a header with the
-          // same basename text, so keep the search out of that tree.
           const label = [...document.querySelectorAll("*")].find(element =>
             element !== folderButton &&
-            !element.closest('[data-testid="local-code-dir-groups"]') &&
             visible(element) &&
             (element.textContent || "").trim() === ${JSON.stringify(path.basename(workspace))}
           );
@@ -542,7 +539,7 @@ try {
       const artifactDeadline = Date.now() + 15000;
       let published;
       while (!published && Date.now() < artifactDeadline) {
-        const artifacts = await window["claude.web"].CoworkArtifacts.getAllArtifacts();
+        const artifacts = await window["claude.web"].LocalSessions.getAllArtifacts();
         published = artifacts.find(candidate => candidate.sessionId === session.sessionId);
         if (!published) await new Promise(resolve => setTimeout(resolve, 100));
       }
@@ -584,7 +581,7 @@ try {
         }
         let select = [...document.querySelectorAll('button[aria-label="Select element"]')].find(visible);
         if (!select && !window.__selectionPreviewRequested) {
-          const artifacts = await window["claude.web"].CoworkArtifacts.getAllArtifacts();
+          const artifacts = await window["claude.web"].LocalSessions.getAllArtifacts();
           const artifact = artifacts.find(candidate => candidate.sessionId === ${JSON.stringify(sessionId)});
           if (artifact) {
             window.__selectionPreviewRequested = true;
@@ -693,16 +690,25 @@ try {
   const rendererDiagnostics = rendererTarget
     ? await evaluate(
         rendererTarget,
-        `(() => ({
-          url: location.href,
-          bodyText: document.body?.innerText?.slice(-10000) || "",
-          buttons: [...document.querySelectorAll("button")].map(button => ({
-            text: button.textContent?.replace(/\\s+/g, " ").trim().slice(0, 200),
-            aria: button.getAttribute("aria-label"),
-            visible: button.getClientRects().length > 0,
-            disabled: button.disabled
-          })).filter(button => button.visible)
-        }))()`,
+        `(async () => {
+          const servers = await window["claude.web"]?.Launch?.activeServersStore?.getState?.().catch(() => []);
+          const previewTabs = await Promise.all((servers || []).map(async server => ({
+            serverId: server.serverId,
+            tabs: await window["claude.web"]?.Launch?.getPreviewTabs?.(server.serverId).catch(() => null)
+          })));
+          return {
+            url: location.href,
+            bodyText: document.body?.innerText?.slice(-10000) || "",
+            servers,
+            previewTabs,
+            buttons: [...document.querySelectorAll("button")].map(button => ({
+              text: button.textContent?.replace(/\\s+/g, " ").trim().slice(0, 200),
+              aria: button.getAttribute("aria-label"),
+              visible: button.getClientRects().length > 0,
+              disabled: button.disabled
+            })).filter(button => button.visible)
+          };
+        })()`,
       ).catch(() => null)
     : null;
   throw new Error(

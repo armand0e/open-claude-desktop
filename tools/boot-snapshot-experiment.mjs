@@ -35,7 +35,9 @@ let ws;
 let nextId = 1;
 const pending = new Map();
 async function connect() {
-  const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+  const targets = await (
+    await fetch(`http://127.0.0.1:${port}/json/list`)
+  ).json();
   const page = targets.find(
     (t) => t.type === "page" && t.url.startsWith("app://localhost"),
   );
@@ -110,7 +112,10 @@ const state = await evaluate(
 await cdp("Page.enable").catch(() => undefined);
 try {
   const { data } = await cdp("Page.captureScreenshot", { format: "png" });
-  await writeFile(path.join(outDir, "newbundle-boot.png"), Buffer.from(data, "base64"));
+  await writeFile(
+    path.join(outDir, "newbundle-boot.png"),
+    Buffer.from(data, "base64"),
+  );
   console.log("captured newbundle-boot");
 } catch (e) {
   console.log("screenshot failed:", String(e));

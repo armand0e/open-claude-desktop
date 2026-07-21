@@ -73,20 +73,24 @@ const providerPort = provider.address().port;
 const debuggerPort = await unusedPort();
 const profile = await mkdtemp(path.join(os.tmpdir(), "claude-conn-nav-"));
 const output = [];
-const child = spawn(electron, [".", `--remote-debugging-port=${debuggerPort}`], {
-  cwd: process.cwd(),
-  windowsHide: false,
-  stdio: ["ignore", "pipe", "pipe"],
-  env: {
-    ...process.env,
-    OPEN_CLAUDE_USER_DATA_DIR: profile,
-    CLAUDE_LOCAL_USER_DATA_DIR: profile,
-    CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
-    CLAUDE_DESKTOP_LOCAL_UI: "1",
-    CLAUDE_LOCAL_BASE_URL: `http://127.0.0.1:${providerPort}/v1`,
-    CLAUDE_LOCAL_MODEL: "smoke-model",
+const child = spawn(
+  electron,
+  [".", `--remote-debugging-port=${debuggerPort}`],
+  {
+    cwd: process.cwd(),
+    windowsHide: false,
+    stdio: ["ignore", "pipe", "pipe"],
+    env: {
+      ...process.env,
+      OPEN_CLAUDE_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_USER_DATA_DIR: profile,
+      CLAUDE_LOCAL_SKIP_UI_SNAPSHOT: "1",
+      CLAUDE_DESKTOP_LOCAL_UI: "1",
+      CLAUDE_LOCAL_BASE_URL: `http://127.0.0.1:${providerPort}/v1`,
+      CLAUDE_LOCAL_MODEL: "smoke-model",
+    },
   },
-});
+);
 child.stdout.setEncoding("utf8");
 child.stdout.on("data", (chunk) => output.push(chunk));
 child.stderr.setEncoding("utf8");

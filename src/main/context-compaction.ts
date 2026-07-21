@@ -3,6 +3,8 @@
 // context window, the older part of the conversation is replaced by a
 // model-written summary and only a recent tail is kept verbatim.
 
+import { readResponseJson } from "./bounded-response";
+
 type JsonObject = Record<string, unknown>;
 
 export interface CompactionProviderConfig {
@@ -21,6 +23,7 @@ const CHARS_PER_TOKEN = 4;
 // transcript sent for summarization is capped and cut from the middle.
 const MAX_SUMMARY_INPUT_CHARS = 160_000;
 const SUMMARY_TIMEOUT_MS = 120_000;
+const MAX_SUMMARY_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN);
@@ -137,9 +140,15 @@ export async function providerSummaryCompletion(
       ],
     }),
   });
-  if (!response.ok)
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
     throw new Error(`Provider summary failed: HTTP ${response.status}`);
-  const payload = (await response.json()) as {
+  }
+  const payload = (await readResponseJson(
+    response,
+    MAX_SUMMARY_RESPONSE_BYTES,
+    "Provider summary",
+  )) as {
     choices?: Array<{ message?: { content?: unknown } }>;
   };
   const content = payload.choices?.[0]?.message?.content;

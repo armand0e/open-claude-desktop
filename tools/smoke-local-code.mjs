@@ -606,11 +606,8 @@ try {
         const folderDeadline = Date.now() + 10000;
         let folderChoice;
         while (!folderChoice && Date.now() < folderDeadline) {
-          // The preload's directory-grouped sidebar renders a header with the
-          // same basename text, so keep the search out of that tree.
           const label = [...document.querySelectorAll("*")].find(element =>
             element !== folderButton &&
-            !element.closest('[data-testid="local-code-dir-groups"]') &&
             visible(element) &&
             (element.textContent || "").trim() === ${JSON.stringify(path.basename(workspace))}
           );
@@ -682,7 +679,7 @@ try {
         );
         if (!session) await new Promise(resolve => setTimeout(resolve, 100));
       }
-      const skills = await window["claude.web"].LocalAgentModeSessions?.listLocalSkills?.() || [];
+      const skills = await window["claude.web"].LocalSessions?.listLocalSkills?.() || [];
       return session ? {
         sessionId: session.sessionId,
         skillNames: skills.map(skill => skill.name),

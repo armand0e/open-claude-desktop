@@ -3,9 +3,15 @@ import { promisify } from "node:util";
 import {
   access,
   cp,
+  lstat,
   mkdir,
+  open,
+  realpath,
   readFile,
   readdir,
+  rename,
+  rm,
+  rmdir,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -34,18 +40,21 @@ import {
   storeNameFromMethod,
 } from "../shared/channels";
 import { originOf, TRUSTED_REMOTE_ORIGINS } from "../shared/security";
+import { isRemovedCoworkService } from "../shared/removed-product";
 import { StateStore } from "./state";
 import { FileAccessPolicy } from "./file-access";
 import type { LocalCodeSessionManager } from "./local-code";
-import { coworkFilesDir, setCoworkFilesRoot } from "./local-code";
 import type { LocalBackend } from "./local-backend";
 import type { LocalFilePreview } from "./local-file-preview";
 import type { LocalPluginManager } from "./local-plugins";
 import type { LocalScheduledTasks } from "./local-scheduled-tasks";
 import type { LocalLaunchPreview } from "./local-launch-preview";
 import type { LocalMcpManager } from "./local-mcp";
+import { writeResponseFile } from "./bounded-response";
 
 const execFileAsync = promisify(execFile);
+const MAX_DESKTOP_DOWNLOAD_BYTES = 200 * 1024 * 1024;
+const MAX_PASTED_FILE_BYTES = 50 * 1024 * 1024;
 
 export interface ServiceContext {
   readonly state: StateStore;
@@ -61,12 +70,14 @@ export interface ServiceContext {
   broadcast(channel: string, ...args: unknown[]): void;
   targetUrl(): string;
   showMainWindow(): void;
+  isMenuBarEnabled?(): boolean;
+  setMenuBarEnabled?(enabled: boolean): void;
 }
 
 const channelsByServiceMethod = new Map<string, string>();
 for (const entry of PRELOAD_CHANNELS) {
   const parsed = parseEncoded(entry.channel);
-  if (parsed)
+  if (parsed && !isRemovedCoworkService(parsed.namespace, parsed.service))
     channelsByServiceMethod.set(
       `${serviceKey(parsed)}.${parsed.method}`,
       entry.channel,
@@ -100,11 +111,10 @@ export function featureMatrix(): Record<
   const unavailable = { status: "unavailable" };
   return {
     artifactsPane: supported,
-    nativeQuickEntry: process.platform === "darwin" ? supported : unavailable,
-    quickEntryDictation:
-      process.platform === "darwin" ? supported : unavailable,
-    quickEntryGlobalShortcut: supported,
-    customQuickEntryDictationShortcut: supported,
+    nativeQuickEntry: unavailable,
+    quickEntryDictation: unavailable,
+    quickEntryGlobalShortcut: unavailable,
+    customQuickEntryDictationShortcut: unavailable,
     plushRaccoon: unavailable,
     quietPenguin: unavailable,
     chillingSlothFeat: supported,
@@ -112,17 +122,11 @@ export function featureMatrix(): Record<
     chillingSlothEnterprise: supported,
     chillingSlothLocal: supported,
     chillingSlothPool: unavailable,
-    yukonSilver: supported,
-    yukonSilverGems: unavailable,
-    yukonSilverGemsCache: unavailable,
-    wakeScheduler: supported,
+    wakeScheduler: unavailable,
     desktopTopBar: supported,
     ccdPlugins: supported,
-    computerUse: unavailable,
-    coworkWatchRecord: unavailable,
-    coworkKappa: unavailable,
-    coworkArtifacts: unavailable,
-    framebufferPreview: supported,
+    computerUse: process.platform === "win32" ? supported : unavailable,
+    framebufferPreview: unavailable,
     iosSimulator: unavailable,
     androidEmulator: unavailable,
     iosSimulatorH264: unavailable,
@@ -132,13 +136,9 @@ export function featureMatrix(): Record<
       reason: "Tear-off halo overlay is not implemented in the reconstruction",
       unsupportedCode: "unimplemented",
     },
-    coworkArtifactPopout: unavailable,
     claudeDesignWindow: unavailable,
-    coworkRemoteSessionSpaces: unavailable,
     spaceMemoryBridge: unavailable,
     grandPrixRequest: unavailable,
-    coworkBranchSession: unavailable,
-    coworkScheduledTaskProjects: unavailable,
     bootstrapConfig: supported,
     chatIn3p: supported,
     builtinMcpPresets: supported,
@@ -184,10 +184,17 @@ async function pickPaths(
 
 function safeDownloadName(input: unknown): string | null {
   if (typeof input !== "string") return null;
-  const name = path.basename(input).trim();
+  const name = path
+    .basename(input)
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_")
+    .replace(/[. ]+$/g, "")
+    .trim()
+    .slice(0, 240);
   if (!name || name === "." || name === ".." || name.includes("\0"))
     return null;
-  return name;
+  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name)
+    ? `_${name}`
+    : name;
 }
 
 async function downloadToDownloads(
@@ -210,34 +217,161 @@ async function downloadToDownloads(
     return null;
   const response = await net.fetch(url.toString());
   if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
+  const responseOrigin = originOf(response.url);
+  if (
+    !responseOrigin ||
+    (!TRUSTED_REMOTE_ORIGINS.has(responseOrigin) &&
+      responseOrigin !== "app://localhost")
+  ) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new Error("Download redirected to an untrusted origin");
+  }
   const directory = app.getPath("downloads");
   await mkdir(directory, { recursive: true });
   const extension = path.extname(name);
   const stem = path.basename(name, extension);
-  let destination = path.join(directory, name);
-  let suffix = 1;
-  while (
-    await stat(destination).then(
-      () => true,
-      () => false,
-    )
-  ) {
-    destination = path.join(directory, `${stem}_${suffix++}${extension}`);
+  for (let suffix = 0; suffix < 10_000; suffix += 1) {
+    const destination = path.join(
+      directory,
+      suffix === 0 ? name : `${stem}_${suffix}${extension}`,
+    );
+    try {
+      // writeResponseFile opens with `wx`, making collision handling atomic
+      // even when another download chooses the same name concurrently.
+      await writeResponseFile(
+        response,
+        destination,
+        MAX_DESKTOP_DOWNLOAD_BYTES,
+        "Desktop download",
+      );
+      return destination;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") continue;
+      throw error;
+    }
   }
-  await writeFile(destination, Buffer.from(await response.arrayBuffer()), {
-    flag: "wx",
-  });
-  return destination;
+  await response.body?.cancel().catch(() => undefined);
+  throw new Error("Could not allocate a unique download filename");
+}
+
+function decodedBase64(input: string): Buffer | null {
+  const compact = input.replace(/\s+/g, "");
+  if (
+    compact.length > Math.ceil((MAX_PASTED_FILE_BYTES * 4) / 3) + 4 ||
+    compact.length % 4 === 1 ||
+    !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)
+  )
+    return null;
+  const bytes = Buffer.from(compact, "base64");
+  if (bytes.byteLength > MAX_PASTED_FILE_BYTES) return null;
+  const canonical = compact.replace(/=+$/g, "");
+  return bytes.toString("base64").replace(/=+$/g, "") === canonical
+    ? bytes
+    : null;
+}
+
+function pathKey(value: string): string {
+  const original = path.resolve(value);
+  const root = path.parse(original).root;
+  const resolved =
+    original.length > root.length ? original.replace(/[\\/]+$/g, "") : original;
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function pathsOverlap(first: string, second: string): boolean {
+  const a = pathKey(first);
+  const b = pathKey(second);
+  const relative = path.relative(a, b);
+  const reverse = path.relative(b, a);
+  const inside = (value: string) =>
+    value === "" || (!value.startsWith("..") && !path.isAbsolute(value));
+  return inside(relative) || inside(reverse);
+}
+
+function sanitizeMcpServers(input: unknown): Record<string, unknown> {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  const servers: Record<string, unknown> = {};
+  for (const [name, raw] of Object.entries(input).slice(0, 64)) {
+    if (
+      !name.trim() ||
+      name.length > 256 ||
+      name.includes("\0") ||
+      ["__proto__", "prototype", "constructor"].includes(name)
+    )
+      continue;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const config = raw as Record<string, unknown>;
+    const command =
+      typeof config.command === "string" ? config.command.trim() : "";
+    if (!command || command.length > 8_192 || command.includes("\0")) continue;
+    const args = Array.isArray(config.args)
+      ? config.args
+          .filter(
+            (entry): entry is string =>
+              typeof entry === "string" &&
+              entry.length <= 8_192 &&
+              !entry.includes("\0"),
+          )
+          .slice(0, 128)
+      : [];
+    const env =
+      config.env && typeof config.env === "object" && !Array.isArray(config.env)
+        ? Object.fromEntries(
+            Object.entries(config.env)
+              .filter(
+                (entry): entry is [string, string] =>
+                  Boolean(entry[0]) &&
+                  entry[0].length <= 256 &&
+                  !entry[0].includes("\0") &&
+                  typeof entry[1] === "string" &&
+                  entry[1].length <= 32_768 &&
+                  !entry[1].includes("\0"),
+              )
+              .slice(0, 256),
+          )
+        : {};
+    servers[name] = {
+      command,
+      ...(args.length ? { args } : {}),
+      ...(Object.keys(env).length ? { env } : {}),
+      ...(typeof config.enabled === "boolean"
+        ? { enabled: config.enabled }
+        : {}),
+      ...(typeof config.disabled === "boolean"
+        ? { disabled: config.disabled }
+        : {}),
+    };
+  }
+  return servers;
 }
 
 async function formatFileContent(
   filePath: string,
 ): Promise<Record<string, unknown>> {
-  const info = await stat(filePath);
-  if (!info.isFile()) throw new Error("Not a regular file");
-  if (info.size > 50 * 1024 * 1024)
-    throw new Error("File exceeds the 50 MiB limit");
-  const buffer = await readFile(filePath);
+  const expected = await realpath(filePath);
+  const handle = await open(
+    expected,
+    fsConstants.O_RDONLY |
+      (process.platform === "win32" ? 0 : fsConstants.O_NOFOLLOW),
+  );
+  let buffer: Buffer;
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) throw new Error("Not a regular file");
+    if (info.size > 50 * 1024 * 1024)
+      throw new Error("File exceeds the 50 MiB limit");
+    const confirmed = await realpath(expected);
+    if (path.resolve(confirmed) !== path.resolve(expected))
+      throw new Error("File changed while it was being opened");
+    const confirmedInfo = await stat(confirmed);
+    if (confirmedInfo.dev !== info.dev || confirmedInfo.ino !== info.ino)
+      throw new Error("File changed while it was being opened");
+    buffer = await handle.readFile();
+    if (buffer.byteLength > 50 * 1024 * 1024)
+      throw new Error("File exceeds the 50 MiB limit");
+  } finally {
+    await handle.close();
+  }
   const extension = path.extname(filePath).toLowerCase();
   const textExtensions = new Set([
     ".c",
@@ -278,6 +412,27 @@ async function formatFileContent(
       };
 }
 
+async function atomicTextWrite(
+  destination: string,
+  content: string,
+): Promise<void> {
+  const existing = await stat(destination).catch(() => null);
+  const temporary = path.join(
+    path.dirname(destination),
+    `.${path.basename(destination)}.${crypto.randomUUID()}.tmp`,
+  );
+  try {
+    await writeFile(temporary, content, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: existing?.isFile() ? existing.mode & 0o777 : 0o600,
+    });
+    await rename(temporary, destination);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
 function defaultStoreValue(
   context: ServiceContext,
   parsed: ParsedChannel,
@@ -297,20 +452,39 @@ function genericDefault(parsed: ParsedChannel): unknown {
     return [];
   }
   if (/^(is|has|check|can|should)/.test(method)) return false;
+  // These calls only synchronize ephemeral renderer state. They are safe to
+  // acknowledge even when their optional host surface (quick entry, resource
+  // mentions, or the hosted build reporter) is not present locally.
+  const compatibilitySignals = new Set([
+    "claude.web.Account.setAccountDetails",
+    "claude.web.CustomPlugins.syncLocalOrgPlugins",
+    "claude.web.FindInPageProvider.reportFindResult",
+    "claude.web.FindInPageProvider.setProviderActive",
+    "claude.web.QuickEntry.setRecentChats",
+    "claude.web.Resources.setFindInPageClaimed",
+    "claude.web.Resources.setFocusedCwd",
+    "claude.web.Resources.setFocusedSshTarget",
+    "claude.web.WebBuild.reportCommitHash",
+  ]);
+  if (compatibilitySignals.has(`${parsed.namespace}.${service}.${method}`))
+    return undefined;
   if (
-    /^(delete|remove|set|update|write|save|archive|unarchive|stop|interrupt|cancel|clear|report|notify|mark|revoke|respond|replace|disconnect|detach|close|hide|show|focus|resize|navigate|open|request|submit|sync|warm|prepare|patch|apply|add)/.test(
+    /^(delete|remove|set|update|write|save|archive|unarchive|stop|interrupt|cancel|clear|report|notify|mark|revoke|respond|replace|disconnect|detach|close|hide|show|focus|resize|navigate|open|request|submit|sync|warm|prepare|patch|apply|add|install|uninstall|start|run)/.test(
       method,
     )
   ) {
-    return undefined;
+    throw new Error(
+      `${parsed.namespace}.${service}.${method} is unavailable in local mode`,
+    );
   }
-  if (service === "LocalSessions" || service === "LocalAgentModeSessions")
-    return null;
+  if (service === "LocalSessions") return null;
   return null;
 }
 
 export class ServiceDispatcher {
   private readonly fileAccess = new FileAccessPolicy();
+  private shortcutMutationChain = Promise.resolve();
+  private activeGlobalShortcut = "";
 
   constructor(private readonly context: ServiceContext) {}
 
@@ -338,6 +512,10 @@ export class ServiceDispatcher {
     event?: IpcMainInvokeEvent,
   ): unknown | Promise<unknown> {
     const key = serviceKey(parsed);
+    if (isRemovedCoworkService(parsed.namespace, parsed.service))
+      throw new Error(
+        "Cowork has been removed from Open-Claude; use claude.web.LocalSessions.",
+      );
     if (
       key === "claude.web.Launch" &&
       storeNameFromMethod(parsed.method) === "activeServers"
@@ -381,6 +559,8 @@ export class ServiceDispatcher {
         return this.about(parsed.method);
       case "claude.internal.ui.MainWindowTitleBar":
         return this.titleBar(parsed.method, event);
+      case "claude.internal.findInPage.FindInPage":
+        return this.findInPage(parsed.method, args);
       case "claude.web.WindowControl":
         return this.windowControl(parsed.method, args, event);
       case "claude.web.WindowState":
@@ -402,12 +582,7 @@ export class ServiceDispatcher {
       case "claude.web.ClaudeCode":
         return this.claudeCode(parsed.method, args);
       case "claude.web.LocalSessions":
-      case "claude.web.LocalAgentModeSessions":
         return this.localSessions(parsed.method, args, event);
-      case "claude.web.CoworkFilePreview":
-        return this.filePreview(parsed.method, args);
-      case "claude.web.CoworkArtifacts":
-        return this.coworkArtifacts(parsed.method, args);
       case "claude.web.Launch":
         return this.launch(parsed.method, args);
       case "claude.web.LocalPlugins":
@@ -415,37 +590,11 @@ export class ServiceDispatcher {
           this.context.plugins?.invoke(parsed.method, args) ??
           genericDefault(parsed)
         );
-      // Settings > Cowork files: where folderless Cowork tasks keep their
-      // output (default ~/Claude, persisted in coworkFilesRoot).
-      case "claude.web.CoworkUserFiles":
-        return this.coworkUserFiles(parsed, args, event);
-      // Global Cowork instructions (settings > Cowork). The renderer also
-      // mirrors these into account settings (cowork_global_instructions);
-      // this desktop store must round-trip or the save path throws.
-      case "claude.web.CoworkMemory":
-        return this.coworkMemory(parsed, args);
-      // Cowork sessions run directly through the local session runner
-      // ("host loop" mode); there is no Anthropic VM to download or boot.
-      // Reporting host-loop mode makes the composer skip the VM-readiness
-      // wait that otherwise stalls task submission forever.
-      case "claude.web.ClaudeVM":
-        switch (parsed.method) {
-          case "isHostLoopModeEnabled":
-            return true;
-          case "isHostLoopDevOverrideActive":
-            return false;
-          case "checkVirtualMachinePlatform":
-            return { enabled: true, requiresRestart: false };
-          case "getDownloadStatus":
-            return "ready";
-          case "getRunningStatus":
-            return "ready";
-          default:
-            return genericDefault(parsed);
-        }
-      // The Cowork surface and the Code (CCD) surface each reach scheduled
-      // tasks through their own service name; both share one local manager.
-      case "claude.web.CoworkScheduledTasks":
+      case "claude.web.CustomPlugins":
+        return (
+          this.context.plugins?.invoke(parsed.method, args) ??
+          genericDefault(parsed)
+        );
       case "claude.web.CCDScheduledTasks":
         return (
           this.context.scheduledTasks?.invoke(parsed.method, args) ??
@@ -472,6 +621,8 @@ export class ServiceDispatcher {
         if (
           method === "setAppFeature" &&
           typeof args[0] === "string" &&
+          args[0].length <= 256 &&
+          !args[0].includes("\0") &&
           typeof args[1] === "boolean"
         ) {
           draft.appConfig.features[args[0]] = args[1];
@@ -490,13 +641,43 @@ export class ServiceDispatcher {
       .then(() => undefined);
   }
 
+  private findInPage(method: string, args: unknown[]): unknown {
+    const contents = this.context.mainView()?.webContents;
+    if (!contents || contents.isDestroyed()) return null;
+    if (method === "findInPage") {
+      if (typeof args[0] !== "string" || !args[0] || args[0].length > 4_096)
+        return null;
+      const raw =
+        args[1] && typeof args[1] === "object" && !Array.isArray(args[1])
+          ? (args[1] as Record<string, unknown>)
+          : {};
+      return contents.findInPage(args[0], {
+        forward: raw.forward !== false,
+        findNext: raw.findNext === true,
+        matchCase: raw.matchCase === true,
+      });
+    }
+    if (method === "stopFindInPage" || method === "endFindSession") {
+      contents.stopFindInPage(
+        method === "endFindSession" ? "clearSelection" : "keepSelection",
+      );
+    }
+    return undefined;
+  }
+
   private preferences(
     method: string,
     args: unknown[],
   ): unknown | Promise<unknown> {
     if (method === "getPreferences")
       return this.context.state.get("appConfig").preferences;
-    if (method !== "setPreference" || typeof args[0] !== "string")
+    if (
+      method !== "setPreference" ||
+      typeof args[0] !== "string" ||
+      !args[0] ||
+      args[0].length > 256 ||
+      args[0].includes("\0")
+    )
       return undefined;
     return this.context.state
       .update((draft) => {
@@ -514,11 +695,23 @@ export class ServiceDispatcher {
 
   private startup(method: string, args: unknown[]): unknown | Promise<unknown> {
     if (method === "isMenuBarEnabled")
-      return this.context.state.get("menuBarEnabled");
+      return (
+        this.context.isMenuBarEnabled?.() ??
+        this.context.state.get("menuBarEnabled")
+      );
     if (method === "setMenuBarEnabled") {
+      const enabled = Boolean(args[0]);
+      const previous =
+        this.context.isMenuBarEnabled?.() ??
+        this.context.state.get("menuBarEnabled");
+      this.context.setMenuBarEnabled?.(enabled);
       return this.context.state
         .update((draft) => {
-          draft.menuBarEnabled = Boolean(args[0]);
+          draft.menuBarEnabled = enabled;
+        })
+        .catch((error) => {
+          this.context.setMenuBarEnabled?.(previous);
+          throw error;
         })
         .then(() => undefined);
     }
@@ -535,32 +728,74 @@ export class ServiceDispatcher {
     return undefined;
   }
 
-  private shortcuts(
-    method: string,
-    args: unknown[],
-  ): unknown | Promise<unknown> {
-    if (method === "getGlobalShortcut")
-      return this.context.state.get("globalShortcut");
-    if (method !== "setGlobalShortcut") return undefined;
-    const accelerator = typeof args[0] === "string" ? args[0] : "";
+  restoreGlobalShortcut(): boolean {
     globalShortcut.unregisterAll();
-    if (
-      accelerator &&
-      !globalShortcut.register(accelerator, () => this.context.showMainWindow())
-    ) {
-      throw new Error(`Shortcut could not be registered: ${accelerator}`);
+    const accelerator = this.context.state.get("globalShortcut");
+    if (!accelerator) {
+      this.activeGlobalShortcut = "";
+      return true;
     }
-    return this.context.state
-      .update((draft) => {
-        draft.globalShortcut = accelerator;
-      })
-      .then(() => {
+    const registered = globalShortcut.register(accelerator, () =>
+      this.context.showMainWindow(),
+    );
+    this.activeGlobalShortcut = registered ? accelerator : "";
+    return registered;
+  }
+
+  private async shortcuts(method: string, args: unknown[]): Promise<unknown> {
+    if (method === "getGlobalShortcut") return this.activeGlobalShortcut;
+    if (method !== "setGlobalShortcut") return undefined;
+    if (typeof args[0] !== "string" || args[0].length > 256)
+      throw new Error("Invalid global shortcut");
+    const accelerator = args[0].trim();
+    const operation = this.shortcutMutationChain
+      .catch(() => undefined)
+      .then(async () => {
+        const previous = this.context.state.get("globalShortcut");
+        globalShortcut.unregisterAll();
+        if (
+          accelerator &&
+          !globalShortcut.register(accelerator, () =>
+            this.context.showMainWindow(),
+          )
+        ) {
+          const restored = Boolean(
+            previous &&
+            globalShortcut.register(previous, () =>
+              this.context.showMainWindow(),
+            ),
+          );
+          this.activeGlobalShortcut = restored ? previous : "";
+          throw new Error(`Shortcut could not be registered: ${accelerator}`);
+        }
+        this.activeGlobalShortcut = accelerator;
+        try {
+          await this.context.state.update((draft) => {
+            draft.globalShortcut = accelerator;
+          });
+        } catch (error) {
+          globalShortcut.unregisterAll();
+          const restored = Boolean(
+            previous &&
+            globalShortcut.register(previous, () =>
+              this.context.showMainWindow(),
+            ),
+          );
+          this.activeGlobalShortcut = restored ? previous : "";
+          throw error;
+        }
         const channel = eventChannel(
           "claude.settings.GlobalShortcut",
           "globalShortcutChange",
         );
         if (channel) this.context.broadcast(channel, accelerator);
       });
+    this.shortcutMutationChain = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    await operation;
+    return undefined;
   }
 
   private desktopInfo(method: string): unknown {
@@ -628,18 +863,7 @@ export class ServiceDispatcher {
     ) {
       // The settings page round-trips the status-augmented map on edits and
       // deletes; the display-only fields must not be persisted.
-      const sanitized = Object.fromEntries(
-        Object.entries(args[0] as Record<string, unknown>).map(
-          ([name, config]) => {
-            if (!config || typeof config !== "object") return [name, config];
-            const { status: _status, error: _error, ...rest } = config as Record<
-              string,
-              unknown
-            >;
-            return [name, rest];
-          },
-        ),
-      );
+      const sanitized = sanitizeMcpServers(args[0]);
       return this.context.state
         .update((draft) => {
           draft.appConfig.mcpServers = sanitized;
@@ -876,8 +1100,8 @@ export class ServiceDispatcher {
           ? (args[2] as Record<string, unknown>)
           : {};
       return window.setSize(
-        Math.max(320, Math.round(width)),
-        Math.max(240, Math.round(height)),
+        Math.min(32_768, Math.max(320, Math.round(width))),
+        Math.min(32_768, Math.max(240, Math.round(height))),
         Boolean(options.animate),
       );
     }
@@ -977,8 +1201,8 @@ export class ServiceDispatcher {
     if (method === "showNotification" && supported) {
       const [title, body, tag, navigateTo, notificationType] = args;
       const notification = new Notification({
-        title: typeof title === "string" ? title : LOCAL_APP_NAME,
-        body: typeof body === "string" ? body : "",
+        title: typeof title === "string" ? title.slice(0, 512) : LOCAL_APP_NAME,
+        body: typeof body === "string" ? body.slice(0, 20_000) : "",
       });
       notification.on("click", () => {
         this.context.showMainWindow();
@@ -1072,7 +1296,8 @@ export class ServiceDispatcher {
           directories: entries
             .filter((entry) => entry.isDirectory())
             .map((entry) => entry.name)
-            .sort(),
+            .sort()
+            .slice(0, 10_000),
         };
       } catch {
         return {
@@ -1111,7 +1336,9 @@ export class ServiceDispatcher {
       const destination = await this.fileAccess.requireFile(args[1], {
         write: true,
       });
-      await writeFile(destination, args[2], "utf8");
+      if (Buffer.byteLength(args[2], "utf8") > MAX_PASTED_FILE_BYTES)
+        throw new Error("Local file writes are limited to 50 MB");
+      await atomicTextWrite(destination, args[2]);
       return true;
     }
     if (
@@ -1119,13 +1346,16 @@ export class ServiceDispatcher {
       typeof args[0] === "string" &&
       typeof args[2] === "string"
     ) {
+      const bytes = decodedBase64(args[0]);
+      const name = safeDownloadName(args[2]);
+      if (!bytes || !name) throw new Error("Invalid pasted file data");
       const directory = path.join(app.getPath("userData"), "pasted-files");
       await mkdir(directory, { recursive: true });
       const destination = path.join(
         directory,
-        `${crypto.randomUUID()}-${path.basename(args[2])}`,
+        `${crypto.randomUUID()}-${name}`,
       );
-      await writeFile(destination, Buffer.from(args[0], "base64"), {
+      await writeFile(destination, bytes, {
         flag: "wx",
       });
       await this.fileAccess.grantFile(destination);
@@ -1136,7 +1366,7 @@ export class ServiceDispatcher {
       const entries = await readdir(directory, { withFileTypes: true }).catch(
         () => [],
       );
-      return entries.map((entry) => ({
+      return entries.slice(0, 10_000).map((entry) => ({
         name: entry.name,
         path: path.join(directory, entry.name),
         isDirectory: entry.isDirectory(),
@@ -1211,6 +1441,16 @@ export class ServiceDispatcher {
     args: unknown[],
     event?: IpcMainInvokeEvent,
   ): Promise<unknown> {
+    if (method === "getAllArtifacts") {
+      const codeArtifacts = await this.context.codeSessions.invoke(
+        "getAllArtifacts",
+        [],
+      );
+      return [
+        ...(this.context.localBackend?.artifactSummaries() ?? []),
+        ...(Array.isArray(codeArtifacts) ? codeArtifacts : []),
+      ];
+    }
     if (method === "openOutputsDir" && typeof args[0] === "string") {
       const session = (await this.context.codeSessions.invoke("getSession", [
         args[0],
@@ -1266,182 +1506,7 @@ export class ServiceDispatcher {
     }
     if (method === "showSessionFilePreview")
       return this.context.filePreview.show(args[0], args[1], args[2], args[3]);
-    // Trusted Cowork folders (settings > Cowork): stored in app
-    // preferences under localAgentModeTrustedFolders; the picker reads the
-    // list straight off AppPreferences.getPreferences.
-    if (
-      method === "getTrustedFolders" ||
-      method === "addTrustedFolder" ||
-      method === "removeTrustedFolder" ||
-      method === "isFolderTrusted"
-    )
-      return this.trustedFolders(method, args);
     return this.context.codeSessions.invoke(method, args);
-  }
-
-  private async trustedFolders(
-    method: string,
-    args: unknown[],
-  ): Promise<unknown> {
-    const current = (): string[] => {
-      const stored =
-        this.context.state.get("appConfig").preferences
-          .localAgentModeTrustedFolders;
-      return Array.isArray(stored)
-        ? stored.filter((entry): entry is string => typeof entry === "string")
-        : [];
-    };
-    if (method === "getTrustedFolders") return current();
-    const target = typeof args[0] === "string" ? path.resolve(args[0]) : "";
-    if (method === "isFolderTrusted") return current().includes(target);
-    if (!target) return method === "addTrustedFolder" ? false : undefined;
-    const next =
-      method === "addTrustedFolder"
-        ? [...new Set([...current(), target])]
-        : current().filter((entry) => entry !== target);
-    await this.context.state.update((draft) => {
-      draft.appConfig.preferences.localAgentModeTrustedFolders = next;
-    });
-    const channel = eventChannel(
-      "claude.settings.AppPreferences",
-      "preferencesChanged",
-    );
-    if (channel)
-      this.context.broadcast(
-        channel,
-        this.context.state.get("appConfig").preferences,
-      );
-    return method === "addTrustedFolder" ? true : undefined;
-  }
-
-  private filePreview(method: string, args: unknown[]): unknown {
-    if (method === "isEnabled" || method === "isEpitaxyPreviewEnabled")
-      return true;
-    if (method === "isOpenInDefaultAppEnabled" || method === "isVmReady")
-      return true;
-    if (method === "show")
-      return this.context.filePreview.show(args[0], args[1], args[2], args[3]);
-    if (method === "hide") return this.context.filePreview.hide(args[0]);
-    if (method === "parkAndCapture")
-      return this.context.filePreview.parkAndCapture(args[0], args[1]);
-    return undefined;
-  }
-
-  private coworkMemory(
-    parsed: ParsedChannel,
-    args: unknown[],
-  ): unknown | Promise<unknown> {
-    if (parsed.method === "readGlobalMemory")
-      return this.context.state.get("coworkGlobalInstructions") ?? "";
-    if (parsed.method === "writeGlobalMemory")
-      return this.context.state
-        .update((draft) => {
-          draft.coworkGlobalInstructions =
-            typeof args[0] === "string" ? args[0] : "";
-        })
-        .then(() => true);
-    return genericDefault(parsed);
-  }
-
-  private async coworkUserFiles(
-    parsed: ParsedChannel,
-    args: unknown[],
-    event?: IpcMainInvokeEvent,
-  ): Promise<unknown> {
-    const method = parsed.method;
-    if (method === "getInfo") {
-      const currentRoot = coworkFilesDir();
-      await mkdir(currentRoot, { recursive: true }).catch(() => undefined);
-      return { currentRoot, isLegacyDocumentsRoot: false };
-    }
-    if (method === "reveal") {
-      const error = await shell.openPath(coworkFilesDir());
-      return !error;
-    }
-    if (method === "pickTarget") {
-      const selected =
-        (await pickPaths(this.context, event, true, false))?.[0] ?? null;
-      return selected ? { path: selected } : null;
-    }
-    if (method === "migrate") {
-      const target = typeof args[0] === "string" ? args[0].trim() : "";
-      if (!target) return { ok: false, errorCode: "target-invalid" };
-      if (target.startsWith("\\\\"))
-        return { ok: false, errorCode: "target-unc" };
-      const current = coworkFilesDir();
-      const resolved = path.resolve(target);
-      if (
-        resolved === path.resolve(current) ||
-        resolved.startsWith(path.resolve(current) + path.sep)
-      )
-        return { ok: false, errorCode: "target-inside-current" };
-      try {
-        await mkdir(resolved, { recursive: true });
-        await access(resolved, fsConstants.W_OK);
-      } catch {
-        return { ok: false, errorCode: "target-not-writable" };
-      }
-      try {
-        const existing = await stat(current).catch(() => null);
-        if (existing?.isDirectory())
-          await cp(current, resolved, {
-            recursive: true,
-            force: false,
-            errorOnExist: false,
-          });
-      } catch {
-        return { ok: false, errorCode: "copy-failed" };
-      }
-      try {
-        await this.context.state.update((draft) => {
-          draft.coworkFilesRoot = resolved;
-        });
-        setCoworkFilesRoot(resolved);
-      } catch {
-        return { ok: false, errorCode: "state-write-failed" };
-      }
-      return { ok: true };
-    }
-    return genericDefault(parsed);
-  }
-
-  private coworkArtifacts(
-    method: string,
-    args: unknown[],
-  ): unknown | Promise<unknown> {
-    if (method === "getAllArtifacts")
-      return Promise.resolve(
-        this.context.codeSessions.invoke("getAllArtifacts", []),
-      ).then((codeArtifacts) => [
-        ...(this.context.localBackend?.artifactSummaries() ?? []),
-        ...(Array.isArray(codeArtifacts) ? codeArtifacts : []),
-      ]);
-    if (method === "deleteArtifact")
-      return this.context.codeSessions.invoke("deleteArtifactById", [args[0]]);
-    if (method === "getArtifactMetadata")
-      return this.context.codeSessions.invoke("readArtifactById", [args[0]]);
-    if (method === "getArtifactIndexHtmlPath")
-      return this.context.codeSessions
-        .invoke("readArtifactById", [args[0]])
-        .then((artifact) =>
-          artifact &&
-          typeof artifact === "object" &&
-          "path" in artifact &&
-          typeof artifact.path === "string"
-            ? artifact.path
-            : "",
-        );
-    if (method === "isAutoPublishEnabled") return true;
-    if (method === "isSharingEnabled") return false;
-    if (method === "getArtifactThumbnail") return null;
-    return genericDefault({
-      channel: "",
-      kind: "message",
-      generatorId: "",
-      namespace: "claude.web",
-      service: "CoworkArtifacts",
-      method,
-    });
   }
 
   private launch(method: string, args: unknown[]): unknown | Promise<unknown> {
@@ -1474,28 +1539,28 @@ export class ServiceDispatcher {
       case "getPreviewUrl":
         return preview.getPreviewUrl(args[0]);
       case "getPreviewNavState":
-        return preview.getPreviewNavState(args[0]);
+        return preview.getPreviewNavState(args[0], args[1]);
       case "navigatePreview":
-        return preview.navigatePreview(args[0], args[1]);
+        return preview.navigatePreview(args[0], args[1], args[2]);
       case "goBack":
-        return preview.goBack(args[0]);
+        return preview.goBack(args[0], args[1]);
       case "goForward":
-        return preview.goForward(args[0]);
+        return preview.goForward(args[0], args[1]);
       case "refreshPreview":
-        return preview.refreshPreview(args[0]);
+        return preview.refreshPreview(args[0], args[1]);
       case "capturePreviewScreenshot":
       case "capturePreviewScreenshotIfChanged":
-        return preview.capturePreviewScreenshot(args[0]);
+        return preview.capturePreviewScreenshot(args[0], args[1]);
       case "setPreviewViewport":
-        return preview.setPreviewViewport(args[0], args[1], args[2]);
+        return preview.setPreviewViewport(args[0], args[1], args[2], args[3]);
       case "clearPreviewViewport":
-        return preview.clearPreviewViewport(args[0]);
+        return preview.clearPreviewViewport(args[0], args[1]);
       case "setPreviewColorScheme":
-        return preview.setPreviewColorScheme(args[0], args[1]);
+        return preview.setPreviewColorScheme(args[0], args[1], args[2]);
       case "getPreviewTabs":
         return preview.getPreviewTabs(args[0]);
       case "openPreviewInBrowser":
-        return preview.openPreviewInBrowser(args[0]);
+        return preview.openPreviewInBrowser(args[0], args[1]);
       case "getLogs":
         return preview.getLogs(args[0]);
       case "getConfiguredServices":
@@ -1511,14 +1576,17 @@ export class ServiceDispatcher {
       case "stopServer":
         return preview.stopServer(args[0]);
       case "openPreviewTab":
-        return "default";
+        return preview.openPreviewTab(args[0], args[1]);
       case "setActivePreviewTab":
+        return preview.setActivePreviewTab(args[0], args[1]);
       case "closePreviewTab":
+        return preview.closePreviewTab(args[0], args[1]);
       case "closeAllPreviewTabs":
+        return preview.closeAllPreviewTabs(args[0]);
       case "clearPreviewAllowedOrigins":
         return true;
       case "toggleSelectionMode":
-        return preview.toggleSelectionMode(args[0], args[1]);
+        return preview.toggleSelectionMode(args[0], args[1], args[2]);
       case "getPreviewAllowedOrigins":
         return [];
       case "addPreviewAllowedOrigin":

@@ -10,24 +10,27 @@ import os from "node:os";
 import path from "node:path";
 import electron from "electron";
 
-const ROUTES = [
-  "/new",
-  "/recents",
-  "/projects",
-  "/artifacts",
-  "/customize",
-  "/customize/skills",
-  "/customize/memory",
-  "/customize/styles",
-  "/epitaxy",
-  "/epitaxy/scheduled",
-  "/epitaxy/apps",
-  "/settings/profile",
-  "/settings/appearance",
-  "/settings/capabilities",
-  "/settings/account",
-  "/settings/data-privacy-controls",
-];
+const ROUTES =
+  process.argv[2] === "scheduled"
+    ? ["/epitaxy", "/epitaxy/scheduled"]
+    : [
+        "/new",
+        "/recents",
+        "/projects",
+        "/artifacts",
+        "/customize",
+        "/customize/skills",
+        "/customize/memory",
+        "/customize/styles",
+        "/epitaxy",
+        "/epitaxy/scheduled",
+        "/epitaxy/apps",
+        "/settings/profile",
+        "/settings/appearance",
+        "/settings/capabilities",
+        "/settings/account",
+        "/settings/data-privacy-controls",
+      ];
 
 async function unusedPort() {
   const server = createNetServer();
@@ -183,7 +186,10 @@ try {
         history.pushState(history.state, "", route);
         window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
         await new Promise(resolve => setTimeout(resolve, 2600));
-        const text = (document.body?.innerText || "").replace(/\\s+/g, " ");
+        const shadowText = [...document.querySelectorAll("*")]
+          .map(el => el.shadowRoot?.querySelector("main,section:not([hidden])")?.textContent || "")
+          .join(" ");
+        const text = ((document.body?.innerText || "") + " " + shadowText).replace(/\\s+/g, " ");
         visited.push({
           route,
           landed: location.pathname,

@@ -175,7 +175,7 @@ try {
       while (!window["claude.web"]?.Launch && Date.now() < deadline)
         await new Promise(resolve => setTimeout(resolve, 100));
       const launch = window["claude.web"].Launch;
-      const artifacts = await window["claude.web"].CoworkArtifacts.getAllArtifacts();
+      const artifacts = await window["claude.web"].LocalSessions.getAllArtifacts();
       const serverId = await launch.loadClaudePagePreview(
         "/code/artifact/" + artifacts[0].id,
         ${JSON.stringify(workspace)},

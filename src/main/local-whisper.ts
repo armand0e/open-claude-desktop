@@ -45,7 +45,12 @@ export function bundledWhisperPaths(): WhisperPaths | null {
 
 export async function transcribeWithBundledWhisper(
   wav: Buffer,
+  signal?: AbortSignal,
 ): Promise<string> {
+  if (wav.byteLength === 0) throw new Error("The recording is empty");
+  if (wav.byteLength > 25_000_000)
+    throw new Error("The recording exceeds the 25 MB limit");
+  if (signal?.aborted) throw new Error("Transcription was cancelled");
   const paths = bundledWhisperPaths();
   if (!paths)
     throw new Error(
@@ -71,6 +76,7 @@ export async function transcribeWithBundledWhisper(
         ],
         {
           timeout: 180_000,
+          signal,
           windowsHide: true,
           maxBuffer: 4 * 1024 * 1024,
           env: {

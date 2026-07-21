@@ -1,36 +1,113 @@
 // The retained-client patch table and matcher. Patches are exact
 // find/replace edits applied to the served UI snapshot in memory; the
-// matcher throws unless every patch matches exactly once, so a renderer
+// matcher throws unless every patch matches its declared exact count, so a renderer
 // snapshot upgrade fails loudly instead of silently shipping unpatched
 // surfaces. Electron-free so tests can audit the table against the staged
 // snapshot (see tests/client-patches.test.ts).
-import { readFile, readdir, stat } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { open, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { resolveInside } from "../shared/security";
 
-async function regularFile(candidate: string): Promise<boolean> {
+const MAX_PATCH_ASSET_BYTES = 64 * 1024 * 1024;
+
+function pathIsInside(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === "" ||
+    (!path.isAbsolute(relative) &&
+      relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`))
+  );
+}
+
+async function readPatchAsset(
+  canonicalRoot: string,
+  candidate: string,
+): Promise<{ path: string; source: string } | null> {
   try {
-    return (await stat(candidate)).isFile();
+    const canonical = await realpath(candidate);
+    if (!pathIsInside(canonicalRoot, canonical)) return null;
+    const handle = await open(
+      canonical,
+      fsConstants.O_RDONLY |
+        (process.platform === "win32" ? 0 : fsConstants.O_NOFOLLOW),
+    );
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || info.size > MAX_PATCH_ASSET_BYTES) return null;
+      const confirmed = await realpath(canonical);
+      if (!pathIsInside(canonicalRoot, confirmed)) return null;
+      const confirmedInfo = await stat(confirmed);
+      if (confirmedInfo.dev !== info.dev || confirmedInfo.ino !== info.ino)
+        return null;
+      const bytes = await handle.readFile();
+      if (bytes.byteLength > MAX_PATCH_ASSET_BYTES) return null;
+      return {
+        path: confirmed,
+        source: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+      };
+    } finally {
+      await handle.close();
+    }
   } catch {
-    return false;
+    return null;
   }
 }
 
 export interface ClientPatch {
   id: string;
-  find: string;
+  find: string | RegExp;
   replace: string;
   assetUrlPath?: string;
+  expectedMatches?: number;
+  scopeToAsset?: boolean;
 }
 
-// The packaged desktop web client defaults /new into Cowork's VM-backed task
-// flow. Local mode needs the ordinary web-chat route, whose HTTP/SSE contract
+// The packaged desktop web client defaults /new into a VM-backed task flow.
+// Local mode needs the ordinary web-chat route, whose HTTP/SSE contract
 // can be implemented by LocalBackend. Apply this only while serving our private
 // in-memory copy; the installed Anthropic asset is never modified.
 export const DISABLED_PATCH_IDS = new Set(
   (process.env.CLAUDE_LOCAL_DISABLE_PATCHES ?? "").split(","),
 );
+
+const RETAINED_I18N_LOCALES = [
+  "de-DE",
+  "en-US",
+  "es-419",
+  "es-ES",
+  "fr-FR",
+  "hi-IN",
+  "id-ID",
+  "it-IT",
+  "ja-JP",
+  "ko-KR",
+  "pt-BR",
+] as const;
+
+const RETAINED_I18N_NAMESPACE_PATCHES: readonly ClientPatch[] =
+  RETAINED_I18N_LOCALES.flatMap((locale) => [
+    {
+      id: `reserve-claude-namespace-in-${locale}-messages`,
+      assetUrlPath: `/i18n/${locale}.json`,
+      find: /(?<![A-Za-z0-9])\.claude(?=(?:\\[\\/]|[\\/\[]))/gu,
+      replace: ".open-claude",
+      expectedMatches: 5,
+      scopeToAsset: true,
+    },
+    {
+      id: `replace-claude-local-namespace-in-${locale}-messages`,
+      assetUrlPath: `/i18n/${locale}.json`,
+      find: /(?<![A-Za-z0-9])\.claude\.local(?=(?:\\[\\/]|[\\/\[]))/gu,
+      replace: ".open-claude/local",
+      expectedMatches: 1,
+      scopeToAsset: true,
+    },
+  ]);
+
 export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
+  ...RETAINED_I18N_NAMESPACE_PATCHES,
   {
     id: "localize-general-instructions-copy",
     assetUrlPath: "/i18n/en-US.json",
@@ -115,6 +192,172 @@ export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
     find: 'function V(){return S()?null:(A("/settings"),s.jsxs("main",{className:"flex flex-col pb-10",children:[s.jsx(N,{}),s.jsx(W,{}),s.jsx(G,{}),s.jsx(U,{}),s.jsx(t,{includeTitle:!0}),s.jsx(D,{})]}))}',
     replace:
       'function V(){return s.jsxs("main",{className:"flex flex-col pb-10",children:[s.jsx(N,{}),s.jsx(W,{}),s.jsx(G,{}),s.jsx(U,{}),s.jsx(t,{includeTitle:!0}),s.jsx(D,{})]})}',
+  },
+  {
+    id: "import-native-settings-modal-router-for-extensions",
+    assetUrlPath: "/assets/v1/c71860c77-MIJzCkn9.js",
+    // The Extensions chunk used the page router even while mounted inside
+    // the Settings dialog. Import the dialog-aware route bridge already used
+    // by the rest of the retained Settings UI.
+    find: "cX as m,w as f,q as u,cm as h",
+    replace: "cX as m,w as f,dO as localSettingsStore,q as u,cm as h",
+  },
+  {
+    id: "route-extension-settings-inside-native-modal",
+    assetUrlPath: "/assets/v1/c71860c77-MIJzCkn9.js",
+    // Advanced settings, extension details, and directory administration are
+    // Settings-dialog subroutes. Calling the ordinary history object silently
+    // navigated /new instead of changing the active modal panel.
+    find: 'const g=u("extension_directory_management"),j=C.useCallback(e=>{s.push(`/settings/desktop/extensions/${e.id}`)},[s]),v=C.useCallback(()=>{c(null)},[]),w=C.useCallback(()=>{s.push("/settings/desktop/extensions/advanced")},[s]),M=C.useCallback(()=>{x({section:"connectors"},{connectorTypeFilter:["desktop"]})},[x]),y=C.useCallback(()=>{s.push("/settings/desktop/extensions/manage-directory")},[s]);',
+    replace:
+      'const g=u("extension_directory_management"),j=C.useCallback(e=>{localSettingsStore.getState().open("desktop/extensions",e.id)},[]),v=C.useCallback(()=>{c(null)},[]),w=C.useCallback(()=>{localSettingsStore.getState().open("desktop/extensions","advanced")},[]),M=C.useCallback(()=>{x({section:"connectors"},{connectorTypeFilter:["desktop"]})},[x]),y=C.useCallback(()=>{localSettingsStore.getState().open("desktop/extensions","manage-directory")},[]);',
+  },
+  {
+    id: "load-extension-subpages-in-native-settings-modal",
+    assetUrlPath: "/assets/v1/cc011544b-DNANE8Bs.js",
+    // The modal's component table only included the Extensions overview. Its
+    // complete Advanced and directory-management panes are retained in the
+    // full Settings route chunk, so expose those same components to the modal.
+    find: '"desktop/extensions":e.lazy(()=>s(()=>import("./c71860c77-MIJzCkn9.js").then(e=>e.p),__vite__mapDeps([0,1,2]))),"desktop/developer":',
+    replace:
+      '"desktop/extensions":e.lazy(()=>s(()=>import("./c71860c77-MIJzCkn9.js").then(e=>e.p),__vite__mapDeps([0,1,2]))),"desktop/extensions/advanced":e.lazy(()=>s(()=>import("./cf4f70727-CwoxIRQl.js"),__vite__mapDeps([0,1,2,3,4])).then(e=>({default:e.settingsComponentsByPath["desktop/extensions/advanced"]}))),"desktop/extensions/manage-directory":e.lazy(()=>s(()=>import("./cf4f70727-CwoxIRQl.js"),__vite__mapDeps([0,1,2,3,4])).then(e=>({default:e.settingsComponentsByPath["desktop/extensions/manage-directory"]}))),"desktop/developer":',
+  },
+  {
+    id: "honor-settings-subpath-in-native-modal",
+    assetUrlPath: "/assets/v1/cc011544b-DNANE8Bs.js",
+    find: "const o=m(),{groups:l}=V({forModal:!0}),c=L(e=>e.section),d=a?s:c,f=e.useMemo(()=>l.flatMap(e=>e.sections).find(e=>e.id===s),[l,s]),h=s?te[s]:void 0,x=null!==s&&b(s)&&void 0!==h,",
+    replace:
+      "const o=m(),{groups:l}=V({forModal:!0}),c=L(e=>e.section),subpath=L(e=>e.subpath),d=a?s:c,f=e.useMemo(()=>l.flatMap(e=>e.sections).find(e=>e.id===s),[l,s]),h=s?te[subpath?`${s}/${subpath}`:s]??te[s]:void 0,x=null!==s&&b(s)&&void 0!==h,",
+  },
+  {
+    id: "route-extension-subpage-backs-inside-native-modal",
+    assetUrlPath: "/assets/v1/cf4f70727-CwoxIRQl.js",
+    find: 'f=async()=>{const e=!d;c(e);try{await(z?.setIsDxtAutoUpdatesEnabled?.(e))}catch(s){i(t.formatMessage({defaultMessage:"Failed to save auto-update setting",id:"01AM3gDtkx",description:"Error message when saving auto-update setting fails"}),{error:s,messageForLogging:"Failed to save auto-update setting"}),c(!e)}},p=e=>{n.push(`/settings/desktop/extensions/${e}`)},j=()=>{n.push("/settings/desktop/extensions")};',
+    replace:
+      'f=async()=>{const e=!d;c(e);try{await(z?.setIsDxtAutoUpdatesEnabled?.(e))}catch(s){i(t.formatMessage({defaultMessage:"Failed to save auto-update setting",id:"01AM3gDtkx",description:"Error message when saving auto-update setting fails"}),{error:s,messageForLogging:"Failed to save auto-update setting"}),c(!e)}},p=e=>{Z.getState().open("desktop/extensions",e)},j=()=>{Z.getState().open("desktop/extensions")};',
+  },
+  {
+    id: "enable-native-unified-directory-sections",
+    assetUrlPath: "/assets/v1/index-XoaBlZfC.js",
+    // The desktop snapshot compiles the Skills and Connectors directory
+    // sections to false, then forcibly redirects Skills to Plugins. Their
+    // native data hooks and card renderer remain in this same chunk.
+    find: 'nBn=!1;const sBn=e.memo(function(){const n=CZ(),{track:s}=ot();Dl();const a=dIt(),{target:r,navigate:i}=rIt(),o=pt("mcp_connector_directory_cxdir_v2"),l=pt("claude_ai_winnow_enabled"),c=f6(e=>e.isOpen),d=f6(e=>e.section),u=f6(e=>e.itemId),m="allowlist"===f6(e=>e.openerProps?.connectorAdminMode??null),p=a&&null!==r&&!m,f=a&&null!==r||c,h=p?r.section:d;KS();const g=false,x="skills"===h&&!0,C=x?"plugins":h,',
+    replace:
+      'nBn=!0;const sBn=e.memo(function(){const n=CZ(),{track:s}=ot();Dl();const a=dIt(),{target:r,navigate:i}=rIt(),o=pt("mcp_connector_directory_cxdir_v2"),l=pt("claude_ai_winnow_enabled"),c=f6(e=>e.isOpen),d=f6(e=>e.section),u=f6(e=>e.itemId),m="allowlist"===f6(e=>e.openerProps?.connectorAdminMode??null),p=a&&null!==r&&!m,f=a&&null!==r||c,h=p?r.section:d;KS();const g=true,x="skills"===h&&!g,C=x?"plugins":h,',
+  },
+  {
+    id: "preserve-native-directory-section-selection",
+    assetUrlPath: "/assets/v1/index-XoaBlZfC.js",
+    // The compiled store normalized Skills and Connectors to Plugins before
+    // the unified directory could render them, which made every Browse/Add
+    // action look like the Plugins catalog even though all tabs were visible.
+    find: 'function m6(e){return"skills"===e||"connectors"===e?"plugins":e}',
+    replace: "function m6(e){return e}",
+  },
+  {
+    id: "render-native-unified-directory-navigation",
+    assetUrlPath: "/assets/v1/index-XoaBlZfC.js",
+    find: 'children:[g,nBn,t.jsx(sUn,{icon:t.jsx(c7,{size:16}),isActive:"plugins"===C,onClick:()=>X("plugins"),className:"max-sm:gap-2 max-sm:px-3",children:t.jsx(vZ,{defaultMessage:"Plugins",id:"QJAllUAc2k"})})]',
+    replace:
+      'children:[t.jsx(sUn,{icon:t.jsx(f7,{size:16}),isActive:"skills"===C,onClick:()=>X("skills"),className:"max-sm:gap-2 max-sm:px-3",children:t.jsx(vZ,{defaultMessage:"Skills",id:"EJSVsOA19u"})}),t.jsx(sUn,{icon:t.jsx(e7,{size:16}),isActive:"connectors"===C,onClick:()=>X("connectors"),className:"max-sm:gap-2 max-sm:px-3",children:t.jsx(vZ,{defaultMessage:"Connectors",id:"2mMJRvsAg1"})}),t.jsx(sUn,{icon:t.jsx(c7,{size:16}),isActive:"plugins"===C,onClick:()=>X("plugins"),className:"max-sm:gap-2 max-sm:px-3",children:t.jsx(vZ,{defaultMessage:"Plugins",id:"QJAllUAc2k"})})]',
+  },
+  {
+    id: "render-native-unified-directory-results",
+    assetUrlPath: "/assets/v1/index-XoaBlZfC.js",
+    find: '!ce&&!le&&"skills"===C&&g,!ce&&!le&&"connectors"===C&&nBn,!ce&&!le&&"plugins"===C&&t.jsx(EHn,{',
+    replace:
+      '!ce&&!le&&"skills"===C&&t.jsx(WHn,{query:V,skillsSectionAvailable:g,onOpenSkill:ae,onOpenPlugin:re}),!ce&&!le&&"connectors"===C&&t.jsx(GHn,{query:V,onOpenConnector:se}),!ce&&!le&&"plugins"===C&&t.jsx(EHn,{',
+  },
+  {
+    id: "enable-native-skills-directory-data",
+    assetUrlPath: "/assets/v1/index-XoaBlZfC.js",
+    // The native Skills query is present but gated by cloud account flags.
+    // LocalBackend implements the same list-skills response contract.
+    find: 'o=i?"?include_wiggle_skills=true":"",l=i||a,c=pt("claudeai_skill_content_scan")',
+    replace:
+      'o=i?"?include_wiggle_skills=true":"",l=!0,c=pt("claudeai_skill_content_scan")',
+  },
+  {
+    id: "ignore-cloud-skills-directory-kill-switch",
+    assetUrlPath: "/assets/v1/index-XoaBlZfC.js",
+    // The cloud disabled-product map can suppress the query even after the
+    // local Skills section is enabled. It does not apply to the local source.
+    find: "enabled:!!s&&l&&e&&!r.claudeai_skills_list,staleTime:",
+    replace: "custom3pCompatible:!0,enabled:!!s&&l&&e,staleTime:",
+  },
+  {
+    id: "enable-native-connectors-directory-data",
+    assetUrlPath: "/assets/v1/c2ee0272b-DPDuX889.js",
+    // The retained native hook is compiled off in this snapshot. Its fallback
+    // query below is backed by the bundled, one-time official MCP snapshot.
+    find: "const iBe=!1,cBe=ie(te()),lBe=[];",
+    replace: "const iBe=!0,cBe=ie(te()),lBe=[];",
+  },
+  {
+    id: "use-local-native-connectors-directory-data",
+    assetUrlPath: "/assets/v1/c2ee0272b-DPDuX889.js",
+    // Never poll Anthropic's directory from the app. The native query uses
+    // the local backend's compatible snapshot endpoint instead.
+    find: "const a=new URL(`${Qze()}/mcp-registry/v0/servers`);",
+    replace: 'const a=new URL("/mcp-registry/v0/servers",location.origin);',
+  },
+  {
+    id: "prefer-local-native-connectors-directory-data",
+    assetUrlPath: "/assets/v1/c2ee0272b-DPDuX889.js",
+    find: "d=!0===e?.pinToBffRegardlessOfGate||u",
+    replace: "d=!1",
+  },
+  {
+    id: "wire-native-skills-directory-action",
+    assetUrlPath: "/assets/v1/c5e558aae-BFRrCNDr.js",
+    // The retained Skills panel creates the native Directory callback but
+    // drops its return value, so there is no way to invoke it from Settings.
+    find: 'const M=w(e=>e.open);e.useCallback(()=>{M("skills",{source:"customize_skills_panel"})},[M]);const y=R(),',
+    replace:
+      'const M=w(e=>e.open),openSkillsDirectory=e.useCallback(()=>{M("skills",{source:"customize_skills_panel"})},[M]);const y=R(),',
+  },
+  {
+    id: "show-native-skills-directory-action",
+    assetUrlPath: "/assets/v1/c5e558aae-BFRrCNDr.js",
+    find: "actions:m?s.jsx(re,{handleRef:b}):null,children:",
+    replace:
+      'actions:s.jsxs("div",{className:"flex items-center gap-2",children:[s.jsx(te,{variant:"secondary",onClick:openSkillsDirectory,children:s.jsx(C,{defaultMessage:"Browse",id:"localBrowseSkills"})}),m?s.jsx(re,{handleRef:b}):null]}),children:',
+  },
+  {
+    id: "show-native-connectors-empty-state-actions",
+    assetUrlPath: "/assets/v1/c63a78ed4-C202DsUQ.js",
+    // Local mode owns its connector configuration, so the native empty page
+    // must not hide its controls behind cloud organization permissions.
+    find: 'd=(t||a)&&n;return s.jsx("div",{className:"flex h-full w-full items-center justify-center"',
+    replace:
+      'd=!0;return s.jsx("div",{className:"flex h-full w-full items-center justify-center"',
+  },
+  {
+    id: "show-native-connectors-directory-action",
+    assetUrlPath: "/assets/v1/c63a78ed4-C202DsUQ.js",
+    find: 'children:[i&&s.jsx(p,{variant:"primary",onClick:e,children:s.jsx(Le,{defaultMessage:"Browse connectors",id:"8Q+Q5LuGum"})}),c&&s.jsx(Us,',
+    replace:
+      'children:[s.jsx(p,{variant:"primary",onClick:e,children:s.jsx(Le,{defaultMessage:"Browse connectors",id:"8Q+Q5LuGum"})}),c&&s.jsx(Us,',
+  },
+  {
+    id: "show-native-connectors-directory-in-header",
+    assetUrlPath: "/assets/v1/ce6f11143-DPc04jaK.js",
+    // Local mode supports the directory even when the upstream account flag
+    // is absent. Keep the native Add menu and expose its Browse entry instead
+    // of collapsing it to the custom-connector action.
+    find: "e.jsx(we,{showBrowse:h,showAddCustom:S&&j,addCustomDisabled:y,onBrowse:o,onAddCustom:r})",
+    replace:
+      "e.jsx(we,{showBrowse:!0,showAddCustom:S&&j,addCustomDisabled:y,onBrowse:o,onAddCustom:r})",
+  },
+  {
+    id: "show-native-modal-connectors-directory-in-header",
+    assetUrlPath: "/assets/v1/c40525e86-D3fCSCrC.js",
+    // The Settings-modal Connectors implementation has its own feature flag
+    // and Add menu separate from the full-page component above.
+    find: 'p=de(),f=c,C=(d||m)&&l&&u,[v,y]=s.useState(!1),N=i.get("connectorName")',
+    replace:
+      'p=de(),f=!0,C=(d||m)&&l&&u,[v,y]=s.useState(!1),N=i.get("connectorName")',
   },
   {
     id: "dispatch-local-chat-after-navigation",
@@ -295,8 +538,8 @@ export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
   {
     id: "force-memory-page-summary-view",
     assetUrlPath: "/assets/v1/c06a0b3df-DP2HU9yQ.js",
-    // The Customize > Memory page picks between the Cowork file-memory view
-    // and the account "Summary" view behind statsig gates. Local mode
+    // The Customize > Memory page picks between a file-memory view and the
+    // account "Summary" view behind statsig gates. Local mode
     // implements the summary API (/memory, /memory/controls, /synthesize),
     // so pin the page to that view.
     find: 'function le(){const a=S("claudeai_customize_memory_tab_main"),t=z(),l=D(),',
@@ -391,6 +634,79 @@ export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       'claude_code_web:uD({feature:"claude_code_web",useClientSideGate:()=>!0})',
   },
   {
+    id: "classify-local-code-routes-as-local",
+    assetUrlPath: "/assets/v1/c11959232-PSRJllna.js",
+    // The upstream desktop client recognizes local sessions solely by a
+    // `local_` id prefix. Open-Claude has always persisted UUID session ids,
+    // so the upgraded renderer otherwise mounts the cloud Code transport and
+    // cloud preview pane for a session that is already present locally. This
+    // build has no cloud Code service; every /epitaxy task is local.
+    find: 'function(e){const t=!e||e.startsWith("local_"),s=Ps(!t),{data:n}=ds(!t),{data:r}=le(e??"",!t);if(t)return{type:"local",resolved:!0};',
+    replace:
+      'function(e){const t=!0,s=Ps(!t),{data:n}=ds(!t),{data:r}=le(e??"",!t);if(t)return{type:"local",resolved:!0};',
+  },
+  {
+    id: "start-local-code-browser-from-toggle",
+    assetUrlPath: "/assets/v1/c06173196-DmnMdctC.js",
+    // Cloud sessions pre-bind a browser server before this toolbar action is
+    // used. Local Code has already created its deterministic browser, so ask
+    // Launch for that server id and then use the renderer's native bind/open
+    // actions. This does not depend on cloud session metadata arriving first.
+    find: 'c=e.useMemo(()=>p2(l),[l]),u=e.useCallback(e=>{Sl({pane:e,opened:"diff"===e?!d:!l.has(e),via:s}),r(e)},[r,l,d,s]),f=e.useCallback',
+    replace:
+      'c=e.useMemo(()=>p2(l),[l]),B=hl(e=>e.bindPreviewServer),P=hl(e=>e.setSidePane),u=e.useCallback(e=>{"preview"===e&&!i&&!l.has(e)&&t?xt?.startBrowserPreview?.("",t.id)?.then(e=>{e&&(B(e),P("preview"))}):(Sl({pane:e,opened:"diff"===e?!d:!l.has(e),via:s}),r(e))},[r,l,d,s,i,t,B,P]),f=e.useCallback',
+  },
+  {
+    id: "show-local-code-browser-toggle",
+    assetUrlPath: "/assets/v1/c06173196-DmnMdctC.js",
+    // Upstream only adds the preview toolbar item after a cloud session
+    // advertises preview capability or a preview is already bound. Local Code
+    // owns a Launch-backed browser for every session, so expose the native
+    // globe control immediately instead of requiring a model tool call first.
+    find: 'g=gt(),x=aa(t?.type),v=p||!!i||"remote"===t?.type&&x',
+    replace: "g=gt(),x=!0,v=!0",
+  },
+  {
+    id: "host-local-code-browser-native-view",
+    assetUrlPath: "/assets/v1/c06173196-DmnMdctC.js",
+    // The retained fallback path polls screenshots when its cloud-computed
+    // native-view capability bit is false. Electron on the local Windows app
+    // does host WebContentsView, so attach it to the measured browser pane.
+    find: "if(!(t&&H&&e&&!x&&!q&&!B))return void(t&&xt?.hidePreview?.(t,U));",
+    replace: "if(!(t&&H&&e&&!q&&!B))return void(t&&xt?.hidePreview?.(t,U));",
+  },
+  {
+    id: "enable-local-claude-code-routines",
+    // 1.22 ships the complete local-routine list/create/detail stack but its
+    // capability hook is followed by a literal `return false`. Local mode
+    // implements the CCDScheduledTasks service, so expose the native Routines
+    // treatment and keep its create/run/delete actions on that local service.
+    find: 'function bKn(){const{isAvailable:e}=Vs("claude_code_routines");return false}',
+    replace:
+      'function bKn(){const{isAvailable:e}=Vs("claude_code_routines");return!0}',
+  },
+  {
+    id: "keep-scheduled-tasks-local",
+    assetUrlPath: "/assets/v1/index-XoaBlZfC.js",
+    // The upgraded renderer combines local CCDScheduledTasks with a remote
+    // organization fetch whenever its synthetic local organization exists.
+    // Open-Claude has no cloud scheduler, so the remote half can remain
+    // pending forever and hold the otherwise successful local [] result
+    // behind Promise.allSettled. Keep the native screen on the local service.
+    find: "return n?m??Ou:Ou}function WNe(e,t){return FNe(e,ZNe(),t,!0)}",
+    replace: "return Ou}function WNe(e,t){return FNe(e,ZNe(),t,!0)}",
+  },
+  {
+    id: "settle-empty-local-scheduled-page",
+    assetUrlPath: "/assets/v1/ca82bcec9-Bk8L5wm9.js",
+    // In the native Code Scheduled page, enabling the routines capability
+    // incorrectly keeps an empty local result on the loading branch. Once the
+    // local list hook has settled, render its empty state just as the
+    // non-routines path does.
+    find: "!n&&!b||X?D&&!X?",
+    replace: "!n||X?D&&!X?",
+  },
+  {
     id: "enable-native-local-code-artifacts",
     assetUrlPath: "/assets/v1/ca82bcec9-BHaPdnp0.js",
     find: "function gn(){const e=zt(),{data:t}=B(),a=void 0===t;return e||a?",
@@ -407,7 +723,7 @@ export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
     assetUrlPath: "/assets/v1/c47ad434c-D_dYPjVp.js",
     find: "function oe(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=U(),n=s?.uuid,i=c(),d=se(),m=l(",
     replace:
-      'function oe(e=!1,t){const r=c(),[a,s]=p.useState({artifacts:[],isPending:!0,isError:!1});return p.useEffect(()=>{let e=!1;const t=window["claude.web"]?.CoworkArtifacts?.getAllArtifacts?.();return Promise.resolve(t).then(t=>{e||s({artifacts:Array.isArray(t)?t:[],isPending:!1,isError:!1})}).catch(()=>{e||s({artifacts:[],isPending:!1,isError:!0})}),()=>{e=!0}},[]),{enabled:!0,includeShared:!1,items:a.artifacts.map(e=>({key:`frame:${e.sessionId}:${e.id}`,source:"frame",rel:"mine",title:e.title??"Artifact",description:e.sessionTitle,extraSearchText:[e.sessionTitle,e.path].filter(e=>"string"==typeof e),href:"chat"===e.sourceSurface?`/chat/${encodeURIComponent(e.sessionId)}?artifactId=${encodeURIComponent(e.id)}`:`/epitaxy/${encodeURIComponent(e.sessionId)}?open_local_artifact=${encodeURIComponent(e.id)}`,newTab:!1,updatedAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,createdAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,audience:"owner",softDeleted:!1,starred:!1})),isPending:a.isPending,isError:a.isError,capped:!1,isPartial:!1,isPartialError:!1,starsEnabled:!1}}function oeCloudUnused(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=U(),n=s?.uuid,i=c(),d=se(),m=l(',
+      'function oe(e=!1,t){const r=c(),[a,s]=p.useState({artifacts:[],isPending:!0,isError:!1});return p.useEffect(()=>{let e=!1;const t=window["claude.web"]?.LocalSessions?.getAllArtifacts?.();return Promise.resolve(t).then(t=>{e||s({artifacts:Array.isArray(t)?t:[],isPending:!1,isError:!1})}).catch(()=>{e||s({artifacts:[],isPending:!1,isError:!0})}),()=>{e=!0}},[]),{enabled:!0,includeShared:!1,items:a.artifacts.map(e=>({key:`frame:${e.sessionId}:${e.id}`,source:"frame",rel:"mine",title:e.title??"Artifact",description:e.sessionTitle,extraSearchText:[e.sessionTitle,e.path].filter(e=>"string"==typeof e),href:"chat"===e.sourceSurface?`/chat/${encodeURIComponent(e.sessionId)}?artifactId=${encodeURIComponent(e.id)}`:`/epitaxy/${encodeURIComponent(e.sessionId)}?open_local_artifact=${encodeURIComponent(e.id)}`,newTab:!1,updatedAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,createdAtMs:e.updatedAt?Date.parse(e.updatedAt):void 0,audience:"owner",softDeleted:!1,starred:!1})),isPending:a.isPending,isError:a.isError,capped:!1,isPartial:!1,isPartialError:!1,starsEnabled:!1}}function oeCloudUnused(e=!1,t){const r=!0===t?.starredOnly,a=!1!==t?.enabled,{activeOrganization:s}=u(),o=U(),n=s?.uuid,i=c(),d=se(),m=l(',
   },
   {
     id: "use-local-code-artifact-gallery-source",
@@ -427,9 +743,15 @@ export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
   {
     id: "allow-local-code-artifact-pane-urls",
     assetUrlPath: "/assets/v1/c06173196-DmnMdctC.js",
-    find: "e.useEffect(()=>{const e=Q;if(e)if(hp(e)&&$b(e))if(d){",
+    // Local artifact routes are not public Claude-page URLs, so the retained
+    // artifact pane normally rejects them before calling the desktop preview
+    // loader. Once the loader returns its local server, bind that same server
+    // to the Browser/Preview tile as well. Element selection is owned by that
+    // tile; leaving it on the session's seed browser keeps the toolbar visible
+    // but disabled over about:blank.
+    find: 'e.useEffect(()=>{const e=Q;if(e)if(hp(e)&&$b(e))if(d){Z(null),K.current=!0;const t=q.find(t=>t.url===e)??{url:e,slug:Ip(e)??e,kind:"claudePage"};U(t).then(s=>{null===s&&(D(t.url),K.current=!1,window.open(e,"_blank","noopener,noreferrer"))})}',
     replace:
-      "e.useEffect(()=>{const e=Q;if(e)if(hp(e)&&$b(e)||/^\\/code\\/artifact\\/[0-9a-f-]{36}$/i.test(e))if(d){",
+      'e.useEffect(()=>{const e=Q;if(e)if(hp(e)&&$b(e)||/^\\/code\\/artifact\\/[0-9a-f-]{36}$/i.test(e))if(d){Z(null),K.current=!0;const t=q.find(t=>t.url===e)??{url:e,slug:Ip(e)??e,kind:"claudePage"};U(t).then(s=>{if(null===s)D(t.url),K.current=!1,window.open(e,"_blank","noopener,noreferrer");else if(/^\\/code\\/artifact\\/[0-9a-f-]{36}$/i.test(e)&&N){const e=N.getState();e.bindPreviewServer(s),e.setSidePane("preview")}})}',
   },
   {
     id: "use-random-local-code-activity-label",
@@ -481,9 +803,9 @@ export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
   {
     id: "enable-local-mcp-connectors-connection-query",
     assetUrlPath: "/assets/v1/c6eedc03a-CsEFTfjy.js",
-    find: "return YT(`/api/organizations/${e}/mcp/remote_servers_with_connection`,{queryKey:[fI,e,\"with-connection\"],",
+    find: 'return YT(`/api/organizations/${e}/mcp/remote_servers_with_connection`,{queryKey:[fI,e,"with-connection"],',
     replace:
-      "return YT(`/api/organizations/${e}/mcp/remote_servers_with_connection`,{custom3pCompatible:!0,queryKey:[fI,e,\"with-connection\"],",
+      'return YT(`/api/organizations/${e}/mcp/remote_servers_with_connection`,{custom3pCompatible:!0,queryKey:[fI,e,"with-connection"],',
   },
   {
     id: "enable-local-mcp-connector-item-query",
@@ -515,6 +837,78 @@ export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
       "return{hasSettingsEditPermission:!0,isProjectShared:!1,hasKBEditPermissions:!0,canManageMembers:!0,isPermissionLoading:!1}",
   },
   {
+    id: "reserve-claude-namespace-in-code-client",
+    assetUrlPath: "/assets/v1/c06173196-BO3xYnQU.js",
+    // The retained Code client embeds upstream paths in its dev-server setup
+    // prompt, launch controls, worktree handling, plan rendering, and remote
+    // progress copy. Rewrite every path-shaped namespace token while leaving
+    // domains and the explicit reserved-folder warning untouched.
+    find: /(?<![A-Za-z0-9])\.claude(?=(?:\\[\\/]|[\\/\[]))/gu,
+    replace: ".open-claude",
+    expectedMatches: 12,
+    scopeToAsset: true,
+  },
+  {
+    id: "reserve-claude-namespace-in-shared-client",
+    assetUrlPath: "/assets/v1/c2ee0272b-DPDuX889.js",
+    // Shared file/memory classifiers also carry upstream .claude paths. They
+    // must classify only Open-Claude-owned state in this standalone runtime.
+    find: /(?<![A-Za-z0-9])\.claude(?=(?:\\[\\/]|[\\/\[]))/gu,
+    replace: ".open-claude",
+    expectedMatches: 9,
+    scopeToAsset: true,
+  },
+  {
+    id: "reserve-claude-namespace-in-code-settings",
+    assetUrlPath: "/assets/v1/c71860c77-DALji115.js",
+    find: /(?<![A-Za-z0-9])\.claude(?=(?:\\[\\/]|[\\/\[]))/gu,
+    replace: ".open-claude",
+    expectedMatches: 1,
+    scopeToAsset: true,
+  },
+  {
+    id: "reserve-claude-namespace-in-directory-insights",
+    assetUrlPath: "/assets/v1/ca768caa9-DXjGMACc.js",
+    find: /(?<![A-Za-z0-9])\.claude(?=(?:\\[\\/]|[\\/\[]))/gu,
+    replace: ".open-claude",
+    expectedMatches: 1,
+    scopeToAsset: true,
+  },
+  {
+    id: "reserve-claude-namespace-in-main-client",
+    assetUrlPath: "/assets/v1/index-XoaBlZfC.js",
+    // Covers plugin install copy, project-settings prompts, and agent release
+    // notes that otherwise direct the user or model to Anthropic's directory.
+    find: /(?<![A-Za-z0-9])\.claude(?=(?:\\[\\/]|[\\/\[]))/gu,
+    replace: ".open-claude",
+    expectedMatches: 5,
+    scopeToAsset: true,
+  },
+  {
+    id: "replace-claude-local-project-namespace",
+    assetUrlPath: "/assets/v1/index-XoaBlZfC.js",
+    find: /(?<![A-Za-z0-9])\.claude\.local(?=(?:\\[\\/]|[\\/\[]))/gu,
+    replace: ".open-claude/local",
+    expectedMatches: 1,
+    scopeToAsset: true,
+  },
+  {
+    id: "clarify-reserved-claude-folder-warning",
+    assetUrlPath: "/assets/v1/c06173196-BO3xYnQU.js",
+    find: "This folder is inside a .claude directory. Claude will ask before every file edit, even in bypass mode.",
+    replace:
+      "This folder belongs to Anthropic Claude and cannot be used by Open-Claude tools.",
+    scopeToAsset: true,
+  },
+  {
+    id: "clarify-reserved-claude-folder-warning-en-US",
+    assetUrlPath: "/i18n/en-US.json",
+    find: "This folder is inside a .claude directory. Claude will ask before every file edit, even in bypass mode.",
+    replace:
+      "This folder belongs to Anthropic Claude and cannot be used by Open-Claude tools.",
+    scopeToAsset: true,
+  },
+  {
     id: "defer-local-terminal-pty-delivery",
     find: 'for(const n of Jmt)try{n(e)}catch(t){ht.error(gt.DESKTOP_API,"localShellPtyTransport subscriber threw",{err:t})}',
     replace:
@@ -524,15 +918,19 @@ export const LOCAL_CLIENT_PATCHES: readonly ClientPatch[] = [
 
 export function moduleAssetPaths(indexHtml: string): string[] {
   const paths = new Set<string>();
-  for (const match of indexHtml.matchAll(
-    /<script\b[^>]*\btype=["']module["'][^>]*\bsrc=["']([^"']+)["']/gi,
-  )) {
-    if (match[1]) paths.add(match[1]);
+  const attribute = (tag: string, name: string): string | undefined =>
+    tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, "iu"))?.[1];
+  for (const match of indexHtml.matchAll(/<script\b[^>]*>/giu)) {
+    const tag = match[0];
+    if (attribute(tag, "type")?.toLowerCase() !== "module") continue;
+    const source = attribute(tag, "src");
+    if (source) paths.add(source);
   }
-  for (const match of indexHtml.matchAll(
-    /<link\b[^>]*\brel=["']modulepreload["'][^>]*\bhref=["']([^"']+)["']/gi,
-  )) {
-    if (match[1]) paths.add(match[1]);
+  for (const match of indexHtml.matchAll(/<link\b[^>]*>/giu)) {
+    const tag = match[0];
+    if (attribute(tag, "rel")?.toLowerCase() !== "modulepreload") continue;
+    const href = attribute(tag, "href");
+    if (href) paths.add(href);
   }
   if (paths.size === 0)
     throw new Error("Packaged UI module assets were not found");
@@ -545,18 +943,32 @@ export async function patchedClientAssets(
   patches: readonly ClientPatch[],
 ): Promise<Map<string, { source: string; ids: string[] }>> {
   const sources = new Map<string, string>();
+  const explicitAssetPaths = new Map<string, Set<string>>();
+  const rememberExplicitAsset = (assetUrlPath: string, assetPath: string) => {
+    const existing = explicitAssetPaths.get(assetUrlPath) ?? new Set<string>();
+    existing.add(path.resolve(assetPath));
+    explicitAssetPaths.set(assetUrlPath, existing);
+  };
+  const canonicalRoot = await realpath(root);
   for (const assetUrlPath of moduleAssetPaths(indexHtml)) {
     const assetPath = resolveInside(root, assetUrlPath);
-    if (!assetPath || !(await regularFile(assetPath)))
+    const asset = assetPath
+      ? await readPatchAsset(canonicalRoot, assetPath)
+      : null;
+    if (!asset)
       throw new Error(`Packaged UI module is unavailable: ${assetUrlPath}`);
-    sources.set(path.resolve(assetPath), await readFile(assetPath, "utf8"));
+    sources.set(path.resolve(asset.path), asset.source);
   }
   for (const assetUrlPath of new Set(
     patches.map((patch) => patch.assetUrlPath).filter(Boolean) as string[],
   )) {
     const assetPath = resolveInside(root, assetUrlPath);
-    if (assetPath && (await regularFile(assetPath))) {
-      sources.set(path.resolve(assetPath), await readFile(assetPath, "utf8"));
+    const asset = assetPath
+      ? await readPatchAsset(canonicalRoot, assetPath)
+      : null;
+    if (asset) {
+      sources.set(path.resolve(asset.path), asset.source);
+      rememberExplicitAsset(assetUrlPath, asset.path);
       continue;
     }
 
@@ -583,32 +995,67 @@ export async function patchedClientAssets(
       throw new Error(
         `Packaged UI patch asset is unavailable: ${assetUrlPath}`,
       );
-    for (const candidate of compatible)
-      sources.set(path.resolve(candidate), await readFile(candidate, "utf8"));
+    for (const candidate of compatible) {
+      const fallback = await readPatchAsset(canonicalRoot, candidate);
+      if (fallback) {
+        sources.set(path.resolve(fallback.path), fallback.source);
+        rememberExplicitAsset(assetUrlPath, fallback.path);
+      }
+    }
   }
 
   const idsByPath = new Map<string, string[]>();
   for (const patch of patches) {
+    const candidates =
+      patch.assetUrlPath && patch.scopeToAsset
+        ? [...(explicitAssetPaths.get(patch.assetUrlPath) ?? [])].flatMap(
+            (assetPath) => {
+              const source = sources.get(assetPath);
+              return source === undefined ? [] : [[assetPath, source] as const];
+            },
+          )
+        : [...sources.entries()];
+    const expression =
+      patch.find instanceof RegExp
+        ? new RegExp(
+            patch.find.source,
+            patch.find.flags.includes("g")
+              ? patch.find.flags
+              : `${patch.find.flags}g`,
+          )
+        : null;
     let occurrences = 0;
-    let matchedPath: string | undefined;
-    for (const [assetPath, source] of sources) {
-      const count = source.split(patch.find).length - 1;
+    const matchesByPath = new Map<string, number>();
+    for (const [assetPath, source] of candidates) {
+      const count = expression
+        ? [...source.matchAll(new RegExp(expression.source, expression.flags))]
+            .length
+        : source.split(patch.find as string).length - 1;
       occurrences += count;
-      if (count > 0) matchedPath = assetPath;
+      if (count > 0) matchesByPath.set(assetPath, count);
     }
-    if (occurrences !== 1 || !matchedPath) {
+    const expectedMatches = patch.expectedMatches ?? 1;
+    if (occurrences !== expectedMatches || matchesByPath.size === 0) {
       throw new Error(
-        `Client patch ${patch.id} expected exactly one match, found ${occurrences}`,
+        `Client patch ${patch.id} expected exactly ${expectedMatches} match${expectedMatches === 1 ? "" : "es"}, found ${occurrences}`,
       );
     }
-    sources.set(
-      matchedPath,
-      sources.get(matchedPath)!.replace(patch.find, patch.replace),
-    );
-    idsByPath.set(matchedPath, [
-      ...(idsByPath.get(matchedPath) ?? []),
-      patch.id,
-    ]);
+    for (const matchedPath of matchesByPath.keys()) {
+      const source = sources.get(matchedPath)!;
+      sources.set(
+        matchedPath,
+        expression
+          ? source.replace(
+              new RegExp(expression.source, expression.flags),
+              () => patch.replace,
+            )
+          : source.split(patch.find as string).join(patch.replace),
+      );
+      idsByPath.set(matchedPath, [
+        ...(idsByPath.get(matchedPath) ?? []),
+        patch.id,
+      ]);
+    }
   }
 
   return new Map(
@@ -618,4 +1065,3 @@ export async function patchedClientAssets(
     ]),
   );
 }
-

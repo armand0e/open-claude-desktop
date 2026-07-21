@@ -1,4 +1,13 @@
-import { access, readdir, stat } from "node:fs/promises";
+import {
+  access,
+  open,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+} from "node:fs/promises";
+import { constants } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -6,6 +15,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { app, dialog, net, protocol, shell } from "electron";
 import { resolveInside } from "../shared/security";
+import {
+  isRemovedCoworkHttpPath,
+  REMOVED_COWORK_MESSAGE,
+} from "../shared/removed-product";
 import {
   DISABLED_PATCH_IDS,
   LOCAL_CLIENT_PATCHES,
@@ -21,6 +34,7 @@ import {
   TrainingExportOptions,
   buildTrainingExport,
   conversationMarkdown,
+  normalizeTrainingExportOptions,
   safeFileName,
 } from "./local-export";
 import {
@@ -28,6 +42,12 @@ import {
   transcribeWithBundledWhisper,
 } from "./local-whisper";
 import { LocalArtifactTunnel } from "./local-tunnel";
+import { readResponseJson, readResponseText } from "./bounded-response";
+
+const MAX_LOCAL_UI_JSON_BYTES = 8 * 1024 * 1024;
+const MAX_DICTATION_BYTES = 25_000_000;
+const MAX_TRANSCRIPTION_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_LOCAL_UI_ASSET_BYTES = 64 * 1024 * 1024;
 
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -49,7 +69,6 @@ const MIME_TYPES: Record<string, string> = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
 };
-
 
 function localArtifactRendererHtml(): string {
   return `<!doctype html>
@@ -222,11 +241,51 @@ export function registerAppScheme(): void {
   ]);
 }
 
-async function regularFile(candidate: string): Promise<boolean> {
+function pathIsInside(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === "" ||
+    (!path.isAbsolute(relative) &&
+      relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`))
+  );
+}
+
+async function canonicalRegularFile(
+  canonicalRoot: string,
+  candidate: string,
+): Promise<string | null> {
   try {
-    return (await stat(candidate)).isFile();
+    const canonical = await realpath(candidate);
+    if (!pathIsInside(canonicalRoot, canonical)) return null;
+    return (await stat(canonical)).isFile() ? canonical : null;
   } catch {
-    return false;
+    return null;
+  }
+}
+
+async function readLocalUiAsset(
+  candidate: string,
+  canonicalRoot: string,
+): Promise<Buffer | null> {
+  const handle = await open(
+    candidate,
+    constants.O_RDONLY |
+      (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
+  ).catch(() => null);
+  if (!handle) return null;
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size > MAX_LOCAL_UI_ASSET_BYTES) return null;
+    const confirmed = await realpath(candidate);
+    if (!pathIsInside(canonicalRoot, confirmed)) return null;
+    const confirmedInfo = await stat(confirmed);
+    if (confirmedInfo.dev !== info.dev || confirmedInfo.ino !== info.ino)
+      return null;
+    const source = await handle.readFile();
+    return source.byteLength <= MAX_LOCAL_UI_ASSET_BYTES ? source : null;
+  } finally {
+    await handle.close().catch(() => undefined);
   }
 }
 
@@ -256,6 +315,107 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+async function atomicExportWrite(
+  filePath: string,
+  content: string,
+): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  const temporary = `${filePath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, content, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    await rename(temporary, filePath);
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+}
+
+async function uniqueExportDirectory(
+  parent: string,
+  name: string,
+): Promise<string> {
+  await mkdir(parent, { recursive: true });
+  for (let suffix = 0; suffix < 10_000; suffix += 1) {
+    const candidate = path.join(
+      parent,
+      suffix === 0 ? name : `${name}-${suffix}`,
+    );
+    try {
+      await mkdir(candidate);
+      return candidate;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+  }
+  throw new Error("Could not allocate a unique export directory");
+}
+
+class LocalUiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status = 400,
+  ) {
+    super(message);
+  }
+}
+
+async function readRequestBytes(
+  request: Request,
+  maxBytes: number,
+): Promise<Uint8Array> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes)
+    throw new LocalUiRequestError("Request body exceeds the safety limit", 413);
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new LocalUiRequestError(
+          "Request body exceeds the safety limit",
+          413,
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const joined = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    joined.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return joined;
+}
+
+async function readLocalJson(request: Request): Promise<unknown> {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(
+      await readRequestBytes(request, MAX_LOCAL_UI_JSON_BYTES),
+    );
+  } catch (error) {
+    if (error instanceof LocalUiRequestError) throw error;
+    throw new LocalUiRequestError("Request body is not valid UTF-8");
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new LocalUiRequestError("Request body is not valid JSON");
+  }
+}
+
 function currentUserAccess(): Record<string, unknown> {
   return {
     features: [
@@ -266,10 +426,6 @@ function currentUserAccess(): Record<string, unknown> {
       "skills",
       "cobalt_plinth",
       "web_search",
-      // Cowork: "cowork" is the surface itself, "dramatic_shrimp" is the
-      // local-execution capability every cowork/scheduled hook checks first.
-      "cowork",
-      "dramatic_shrimp",
     ].map((feature) => ({
       feature,
       status: "available",
@@ -381,7 +537,6 @@ function localAccount(
   const displayName =
     (typeof profile.display_name === "string" && profile.display_name.trim()) ||
     fullName;
-  const profileSettings = objectValue(profile.settings);
   return {
     ...profile,
     tagged_id: `local_${LOCAL_ACCOUNT_UUID}`,
@@ -423,7 +578,6 @@ function localAccount(
       enabled_browser_use: false,
       enabled_computer_use: false,
       ...accountSettings,
-      ...profileSettings,
     },
   };
 }
@@ -454,7 +608,7 @@ function modelSelectorConfig(
       },
     },
   ];
-  return ["cowork", "code", "chat"].map((id) => ({ id, models }));
+  return ["code", "chat"].map((id) => ({ id, models }));
 }
 
 function modelSelectorState(
@@ -466,7 +620,7 @@ function modelSelectorState(
     type: "mode",
     mode: enableThinking ? "extended" : "off",
   };
-  return ["cowork", "code", "chat"].map((id) => ({
+  return ["code", "chat"].map((id) => ({
     id,
     model,
     source: "global_default",
@@ -481,18 +635,15 @@ function growthbookFeatures(configuredModel?: string): Record<string, unknown> {
     // Scheduled tasks on the Code surface (/epitaxy/scheduled) — backed by
     // the local claude.web.CCDScheduledTasks service.
     [growthbookFeatureKey("chilling_sloth_clocks")]: enabled(true),
+    // Native Code-mode browser panel (tabs, address bar, screenshots, and
+    // loopback dev-server previews) backed by LocalLaunchPreview.
+    [growthbookFeatureKey("frontend_preview_external_domains")]: enabled(true),
     // Settings dialog "Customize" group: Skills / Connectors / Plugins
     // sections hosting the native customize pages (the legacy Connectors
     // section is a hard-coded "moved to Customize" stub in this build).
     [growthbookFeatureKey("claude_ai_tupelo")]: enabled(true),
-    // Forces Cowork sessions onto the local runner; with
-    // yukon_silver_dramatic_shrimp left off, the cloud-backend toggle
-    // stays hidden (canChooseBackend false).
-    [growthbookFeatureKey("dramatic_shrimp_force_local")]: enabled(true),
-    // Cowork ("yukon silver") base gate; with the desktop yukonSilver
-    // capability + the dramatic_shrimp feature in current_user_access this
-    // unlocks the Cowork surfaces and /scheduled-task.
-    [growthbookFeatureKey("yukon_silver")]: enabled(true),
+    [growthbookFeatureKey("dramatic_shrimp_force_local")]: enabled(false),
+    [growthbookFeatureKey("yukon_silver")]: enabled(false),
     "1101873029": enabled(false),
     "3150971238": enabled(false),
     "3007887412": enabled(false),
@@ -509,20 +660,12 @@ function growthbookFeatures(configuredModel?: string): Record<string, unknown> {
     "4085357330": enabled(true),
     "3368286709": enabled(true),
     "3615229285": enabled(true),
-    // Home scheduled-tasks surface (/scheduled-task).
-    [growthbookFeatureKey("yukon_silver_clocks")]: enabled(true),
-    // The reference starter-template gallery (Inbox triage / Meeting prep /
-    // Daily briefing / …) is cloud email+calendar automation with no local
-    // backend, and its "Set up" flow can't create a working local routine.
-    // Left "off" so the surface only shows routines that actually run; the
-    // local create form (New task) covers local automations.
+    [growthbookFeatureKey("yukon_silver_clocks")]: enabled(false),
+    [growthbookFeatureKey("cowork_scheduled_starter_templates")]:
+      enabled(false),
     "700397605": enabled(true),
-    [growthbookFeatureKey("yukon_silver_config")]: enabled({
-      showGsuiteConnectors: false,
-      enableAdditionalDirectoriesClaudeMd: true,
-    }),
-    // Settings dialog Cowork section.
-    [growthbookFeatureKey("yukon_silver_settings")]: enabled(true),
+    [growthbookFeatureKey("yukon_silver_config")]: enabled(false),
+    [growthbookFeatureKey("yukon_silver_settings")]: enabled(false),
     "4108768567": enabled(true),
     "3070110303": enabled(true),
     "2431502897": enabled("inherit"),
@@ -579,525 +722,603 @@ async function localApiResponse(
   const normalized = pathname.startsWith("/edge-api/")
     ? `/api/${pathname.slice(10)}`
     : pathname;
-  if (normalized === "/api/frame/frames" && request.method === "GET") {
-    const artifacts = (await codeSessions.invoke(
-      "getAllArtifacts",
-      [],
-    )) as Array<Record<string, unknown>>;
-    return jsonResponse({
-      frames: artifacts.map((artifact) => ({
-        slug: artifact.id,
-        title: artifact.title,
-        label: artifact.title,
-        description: artifact.sessionTitle,
-        source_surface: "code",
-        rel: "mine",
-        audience: "owner",
-        updatedAt: artifact.updatedAt,
-        created_at: artifact.updatedAt,
-        last_viewed_at: artifact.updatedAt,
-        softDeleted: false,
-        starred: false,
-      })),
-      starsEnabled: false,
-    });
-  }
-  if (normalized === "/api/frame/track" && request.method === "POST")
-    return new Response(null, { status: 204 });
-  if (
-    request.method === "GET" &&
-    normalized === "/api/published_artifacts/view_counts"
-  )
-    return jsonResponse([]);
-  const localFrameMatch = normalized.match(/^\/api\/frame\/([0-9a-f-]{36})$/i);
-  if (localFrameMatch) {
-    if (request.method === "DELETE") {
-      const deleted = await codeSessions.invoke("deleteArtifactById", [
-        localFrameMatch[1].toLowerCase(),
-      ]);
-      return new Response(null, { status: deleted ? 204 : 404 });
-    }
-    if (request.method === "GET") {
-      const artifact = (await codeSessions.invoke("readArtifactById", [
-        localFrameMatch[1].toLowerCase(),
-      ])) as Record<string, unknown> | null;
-      return artifact
-        ? jsonResponse({
-            uuid: localFrameMatch[1].toLowerCase(),
-            title: artifact.title,
-            updated_at: artifact.updatedAt,
-            perm: {
-              role: "owner",
-              mode: "private",
-              writersEnabled: false,
-              assignableReadModes: ["private"],
-              mayWiden: false,
-            },
-            author: { display_name: "Local User" },
-          })
-        : jsonResponse(
-            { error: { type: "not_found_error", message: "Not found" } },
-            404,
-          );
-    }
-  }
-  if (normalized === "/api/local/code/artifacts" && request.method === "GET") {
-    return jsonResponse({
-      artifacts: await codeSessions.invoke("getAllArtifacts", []),
-    });
-  }
-  if (normalized === "/api/local/code/artifact" && request.method === "GET") {
-    const artifact = await codeSessions.invoke("readArtifact", [
-      url.searchParams.get("sessionId"),
-      url.searchParams.get("url"),
-    ]);
-    return artifact
-      ? jsonResponse({ artifact })
-      : jsonResponse({ error: { message: "Artifact not found" } }, 404);
-  }
-  if (
-    normalized === "/api/local/code/artifact/open" &&
-    request.method === "POST"
-  ) {
-    const input = (await request.json()) as Record<string, unknown>;
-    const artifact = (await codeSessions.invoke("readArtifact", [
-      input.sessionId,
-      input.url,
-    ])) as Record<string, unknown> | null;
-    if (!artifact || typeof artifact.path !== "string")
-      return jsonResponse({ error: { message: "Artifact not found" } }, 404);
-    const action = input.action === "reveal" ? "reveal" : "open";
-    if (action === "reveal") shell.showItemInFolder(artifact.path);
-    else {
-      const error = await shell.openPath(artifact.path);
-      if (error) return jsonResponse({ error: { message: error } }, 500);
-    }
-    return jsonResponse({ ok: true });
-  }
-  if (
-    normalized === "/api/local/dictation/transcribe" &&
-    request.method === "POST"
-  ) {
-    // Batch speech-to-text: the bundled whisper.cpp model transcribes fully
-    // offline; a provider /audio/transcriptions endpoint is the fallback
-    // when the bundled model is absent or fails.
-    try {
-      const provider = backend.provider();
-      const audio = Buffer.from(await request.arrayBuffer());
-      if (audio.length === 0)
-        return jsonResponse({ error: { message: "Empty recording" } }, 400);
-      if (audio.length > 25_000_000)
-        return jsonResponse({ error: { message: "Recording too long" } }, 400);
-      const mime = request.headers.get("content-type") || "audio/webm";
-      if (
-        mime.includes("wav") &&
-        bundledWhisperPaths() &&
-        process.env.CLAUDE_LOCAL_TRANSCRIBE_PREFER !== "provider"
-      ) {
-        try {
-          return jsonResponse({
-            text: await transcribeWithBundledWhisper(audio),
-          });
-        } catch {
-          // The provider path below is the fallback.
-        }
-      }
-      const form = new FormData();
-      form.append(
-        "file",
-        new Blob([audio], { type: mime }),
-        mime.includes("ogg") ? "recording.ogg" : "recording.webm",
-      );
-      form.append(
-        "model",
-        process.env.CLAUDE_LOCAL_TRANSCRIBE_MODEL || "whisper-1",
-      );
-      const upstream = await fetch(`${provider.baseUrl}/audio/transcriptions`, {
-        method: "POST",
-        headers: provider.apiKey
-          ? { Authorization: `Bearer ${provider.apiKey}` }
-          : {},
-        body: form,
-        signal: AbortSignal.timeout(120_000),
-      });
-      if (!upstream.ok) {
-        const detail = (await upstream.text().catch(() => "")).slice(0, 300);
-        return jsonResponse(
-          {
-            error: {
-              message:
-                upstream.status === 404
-                  ? "The provider has no /audio/transcriptions endpoint. Run a Whisper-compatible server (for example faster-whisper-server) at the same base URL, or set CLAUDE_LOCAL_TRANSCRIBE_MODEL."
-                  : `Transcription failed: HTTP ${upstream.status}${detail ? ` — ${detail}` : ""}`,
-            },
-          },
-          502,
-        );
-      }
-      const payload = (await upstream.json()) as { text?: unknown };
+  try {
+    if (normalized === "/api/frame/frames" && request.method === "GET") {
+      const artifacts = (await codeSessions.invoke(
+        "getAllArtifacts",
+        [],
+      )) as Array<Record<string, unknown>>;
       return jsonResponse({
-        text: typeof payload.text === "string" ? payload.text : "",
-      });
-    } catch (error) {
-      return jsonResponse(
-        {
-          error: {
-            message: error instanceof Error ? error.message : String(error),
-          },
-        },
-        502,
-      );
-    }
-  }
-  // Client telemetry batches have no local sink; acknowledge them so the
-  // console stays free of 503 noise on every surface.
-  if (normalized.startsWith("/api/event_logging/"))
-    return jsonResponse({ ok: true });
-  // Session inventory for the preload's directory-grouped Code sidebar.
-  if (normalized === "/api/local/code/sessions") {
-    const sessions = (await codeSessions.invoke("getAll", [])) as Array<
-      Record<string, unknown>
-    >;
-    return jsonResponse({
-      sessions: sessions.map((session) => ({
-        sessionId: session.sessionId,
-        title: session.title,
-        cwd: session.cwd,
-        lastActivityAt: session.lastActivityAt,
-        isRunning: session.isRunning === true,
-        isArchived: session.isArchived === true,
-      })),
-    });
-  }
-  if (normalized === "/api/local/export/conversations") {
-    return jsonResponse({
-      conversations: backend
-        .exportConversations()
-        .filter((conversation) => !conversation.is_temporary)
-        .map((conversation) => ({
-          uuid: conversation.uuid,
-          name: conversation.name || "Untitled chat",
-          updated_at: conversation.updated_at,
-          messages: conversation.chat_messages.length,
+        frames: artifacts.map((artifact) => ({
+          slug: artifact.id,
+          title: artifact.title,
+          label: artifact.title,
+          description: artifact.sessionTitle,
+          source_surface: "code",
+          rel: "mine",
+          audience: "owner",
+          updatedAt: artifact.updatedAt,
+          created_at: artifact.updatedAt,
+          last_viewed_at: artifact.updatedAt,
+          softDeleted: false,
+          starred: false,
         })),
-    });
-  }
-  if (normalized === "/api/local/export" && request.method === "POST") {
-    try {
-      const input = (await request.json()) as Partial<TrainingExportOptions>;
-      const options: TrainingExportOptions = {
-        ...DEFAULT_EXPORT_OPTIONS,
-        ...input,
-      };
-      const conversations = backend
-        .exportConversations()
-        .filter(
-          (conversation) => !conversation.is_temporary,
-        ) as unknown as ExportConversation[];
-      const stamp = new Date().toISOString().slice(0, 10);
-      // Test harnesses point this at a directory to bypass the native file
-      // dialogs, which would otherwise block an automated renderer.
-      const unattendedDir = process.env.CLAUDE_LOCAL_EXPORT_DIR;
-      if (options.format === "markdown") {
-        const selected = conversations.filter(
-          (conversation) =>
-            !options.conversationUuid ||
-            conversation.uuid === options.conversationUuid,
-        );
-        if (selected.length === 0)
-          return jsonResponse(
-            { error: { message: "No conversations to export" } },
-            400,
-          );
-        if (selected.length === 1) {
-          const { canceled, filePath } = unattendedDir
-            ? {
-                canceled: false,
-                filePath: path.join(
-                  unattendedDir,
-                  `${safeFileName(selected[0].name)}.md`,
-                ),
-              }
-            : await dialog.showSaveDialog({
-                title: "Export chat as Markdown",
-                defaultPath: path.join(
-                  app.getPath("downloads"),
-                  `${safeFileName(selected[0].name)}.md`,
-                ),
-                filters: [{ name: "Markdown", extensions: ["md"] }],
-              });
-          if (canceled || !filePath) return jsonResponse({ canceled: true });
-          await writeFile(
-            filePath,
-            conversationMarkdown(selected[0], options),
-            "utf8",
-          );
-          return jsonResponse({ path: filePath, conversations: 1 });
-        }
-        const { canceled, filePaths } = unattendedDir
-          ? { canceled: false, filePaths: [unattendedDir] }
-          : await dialog.showOpenDialog({
-              title: "Choose a folder for the Markdown export",
-              defaultPath: app.getPath("downloads"),
-              properties: ["openDirectory", "createDirectory"],
-            });
-        if (canceled || filePaths.length === 0)
-          return jsonResponse({ canceled: true });
-        const target = path.join(filePaths[0], `open-claude-export-${stamp}`);
-        await mkdir(target, { recursive: true });
-        let written = 0;
-        const used = new Set<string>();
-        for (const conversation of selected) {
-          if (conversation.chat_messages.length === 0) continue;
-          let base = safeFileName(conversation.name);
-          if (used.has(base)) base = `${base}-${conversation.uuid.slice(0, 8)}`;
-          used.add(base);
-          await writeFile(
-            path.join(target, `${base}.md`),
-            conversationMarkdown(conversation, options),
-            "utf8",
-          );
-          written += 1;
-        }
-        return jsonResponse({ path: target, conversations: written });
-      }
-      const sessions = (
-        options.includeCode
-          ? await codeSessions.invoke("exportSessions", [])
-          : []
-      ) as ExportCodeSession[];
-      const result = buildTrainingExport(conversations, sessions, options);
-      if (result.rows.length === 0)
-        return jsonResponse(
-          {
-            error: {
-              message: `No conversations matched the filters (${result.skipped} skipped)`,
-            },
-          },
-          400,
-        );
-      const { canceled, filePath } = unattendedDir
-        ? {
-            canceled: false,
-            filePath: path.join(
-              unattendedDir,
-              `open-claude-training-${options.format}-${stamp}.jsonl`,
-            ),
-          }
-        : await dialog.showSaveDialog({
-            title: "Export training data",
-            defaultPath: path.join(
-              app.getPath("downloads"),
-              `open-claude-training-${options.format}-${stamp}.jsonl`,
-            ),
-            filters: [{ name: "JSON Lines", extensions: ["jsonl"] }],
-          });
-      if (canceled || !filePath) return jsonResponse({ canceled: true });
-      await writeFile(filePath, result.rows.join("\n") + "\n", "utf8");
-      return jsonResponse({
-        path: filePath,
-        conversations: result.conversations,
-        skipped: result.skipped,
+        starsEnabled: false,
       });
-    } catch (error) {
-      return jsonResponse(
-        {
-          error: {
-            message: error instanceof Error ? error.message : String(error),
-          },
-        },
-        500,
-      );
     }
-  }
-  if (normalized === "/api/local/code/customization") {
-    try {
-      if (request.method === "GET") {
-        return jsonResponse(
-          await codeSessions.invoke("getCustomization", [
-            url.searchParams.get("cwd"),
-          ]),
-        );
+    if (normalized === "/api/frame/track" && request.method === "POST")
+      return new Response(null, { status: 204 });
+    if (
+      request.method === "GET" &&
+      normalized === "/api/published_artifacts/view_counts"
+    )
+      return jsonResponse([]);
+    const localFrameMatch = normalized.match(
+      /^\/api\/frame\/([0-9a-f-]{36})$/i,
+    );
+    if (localFrameMatch) {
+      if (request.method === "DELETE") {
+        const deleted = await codeSessions.invoke("deleteArtifactById", [
+          localFrameMatch[1].toLowerCase(),
+        ]);
+        return new Response(null, { status: deleted ? 204 : 404 });
       }
-      if (request.method === "PUT" || request.method === "DELETE") {
-        const input = await request.json();
-        return jsonResponse(
-          await codeSessions.invoke(
-            request.method === "PUT"
-              ? "saveCustomization"
-              : "deleteCustomization",
-            [input],
-          ),
-        );
+      if (request.method === "GET") {
+        const artifact = (await codeSessions.invoke("readArtifactById", [
+          localFrameMatch[1].toLowerCase(),
+        ])) as Record<string, unknown> | null;
+        return artifact
+          ? jsonResponse({
+              uuid: localFrameMatch[1].toLowerCase(),
+              title: artifact.title,
+              updated_at: artifact.updatedAt,
+              perm: {
+                role: "owner",
+                mode: "private",
+                writersEnabled: false,
+                assignableReadModes: ["private"],
+                mayWiden: false,
+              },
+              author: { display_name: "Local User" },
+            })
+          : jsonResponse(
+              { error: { type: "not_found_error", message: "Not found" } },
+              404,
+            );
       }
       return new Response(null, { status: 405 });
-    } catch (error) {
-      return jsonResponse(
-        {
-          error: {
-            message: error instanceof Error ? error.message : String(error),
+    }
+    if (
+      normalized === "/api/local/code/artifacts" &&
+      request.method === "GET"
+    ) {
+      return jsonResponse({
+        artifacts: await codeSessions.invoke("getAllArtifacts", []),
+      });
+    }
+    if (normalized === "/api/local/code/artifact" && request.method === "GET") {
+      const artifact = await codeSessions.invoke("readArtifact", [
+        url.searchParams.get("sessionId"),
+        url.searchParams.get("url"),
+      ]);
+      return artifact
+        ? jsonResponse({ artifact })
+        : jsonResponse({ error: { message: "Artifact not found" } }, 404);
+    }
+    if (
+      normalized === "/api/local/code/artifact/open" &&
+      request.method === "POST"
+    ) {
+      const input = objectValue(await readLocalJson(request));
+      const artifact = (await codeSessions.invoke("readArtifact", [
+        input.sessionId,
+        input.url,
+      ])) as Record<string, unknown> | null;
+      if (!artifact || typeof artifact.path !== "string")
+        return jsonResponse({ error: { message: "Artifact not found" } }, 404);
+      const action = input.action === "reveal" ? "reveal" : "open";
+      if (action === "reveal") shell.showItemInFolder(artifact.path);
+      else {
+        const error = await shell.openPath(artifact.path);
+        if (error) return jsonResponse({ error: { message: error } }, 500);
+      }
+      return jsonResponse({ ok: true });
+    }
+    if (
+      normalized === "/api/local/dictation/transcribe" &&
+      request.method === "POST"
+    ) {
+      // Batch speech-to-text: the bundled whisper.cpp model transcribes fully
+      // offline; a provider /audio/transcriptions endpoint is the fallback
+      // when the bundled model is absent or fails.
+      try {
+        const provider = backend.provider();
+        const audio = Buffer.from(
+          await readRequestBytes(request, MAX_DICTATION_BYTES),
+        );
+        if (audio.length === 0)
+          return jsonResponse({ error: { message: "Empty recording" } }, 400);
+        if (audio.length > 25_000_000)
+          return jsonResponse(
+            { error: { message: "Recording too long" } },
+            400,
+          );
+        const mime = request.headers.get("content-type") || "audio/webm";
+        if (
+          mime.includes("wav") &&
+          bundledWhisperPaths() &&
+          process.env.CLAUDE_LOCAL_TRANSCRIBE_PREFER !== "provider"
+        ) {
+          try {
+            return jsonResponse({
+              text: await transcribeWithBundledWhisper(audio, request.signal),
+            });
+          } catch {
+            if (request.signal.aborted)
+              throw new LocalUiRequestError("Transcription was cancelled", 499);
+            // The provider path below is the fallback.
+          }
+        }
+        const form = new FormData();
+        form.append(
+          "file",
+          new Blob([audio], { type: mime }),
+          mime.includes("ogg") ? "recording.ogg" : "recording.webm",
+        );
+        form.append(
+          "model",
+          process.env.CLAUDE_LOCAL_TRANSCRIBE_MODEL || "whisper-1",
+        );
+        const upstream = await fetch(
+          `${provider.baseUrl}/audio/transcriptions`,
+          {
+            method: "POST",
+            headers: provider.apiKey
+              ? { Authorization: `Bearer ${provider.apiKey}` }
+              : {},
+            body: form,
+            signal: AbortSignal.any([
+              request.signal,
+              AbortSignal.timeout(120_000),
+            ]),
           },
-        },
-        400,
+        );
+        if (!upstream.ok) {
+          const detail = (
+            await readResponseText(
+              upstream,
+              64 * 1024,
+              "Transcription error response",
+            ).catch(() => "")
+          ).slice(0, 300);
+          return jsonResponse(
+            {
+              error: {
+                message:
+                  upstream.status === 404
+                    ? "The provider has no /audio/transcriptions endpoint. Run a Whisper-compatible server (for example faster-whisper-server) at the same base URL, or set CLAUDE_LOCAL_TRANSCRIBE_MODEL."
+                    : `Transcription failed: HTTP ${upstream.status}${detail ? ` — ${detail}` : ""}`,
+              },
+            },
+            502,
+          );
+        }
+        const payload = (await readResponseJson(
+          upstream,
+          MAX_TRANSCRIPTION_RESPONSE_BYTES,
+          "Transcription response",
+        )) as { text?: unknown };
+        return jsonResponse({
+          text: typeof payload.text === "string" ? payload.text : "",
+        });
+      } catch (error) {
+        return jsonResponse(
+          {
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          },
+          error instanceof LocalUiRequestError ? error.status : 502,
+        );
+      }
+    }
+    // Client telemetry batches have no local sink; acknowledge them so the
+    // console stays free of 503 noise on every surface.
+    if (normalized.startsWith("/api/event_logging/"))
+      return request.method === "POST"
+        ? jsonResponse({ ok: true })
+        : new Response(null, { status: 405 });
+    // The retained Code pane still resolves its workspace and title through
+    // the canonical session endpoint even for locally owned sessions. Mirror
+    // the local session metadata here so native preview/browser hooks have a
+    // cwd and do not fall through to the third-party-mode 503 response.
+    const localSessionMatch = /^\/v1\/sessions\/([^/]+)(\/events)?$/u.exec(
+      normalized,
+    );
+    if (localSessionMatch && request.method === "GET") {
+      let sessionId: string;
+      try {
+        sessionId = decodeURIComponent(localSessionMatch[1]);
+      } catch {
+        return new Response(null, { status: 400 });
+      }
+      const session = (await codeSessions.invoke("getSession", [
+        sessionId,
+      ])) as Record<string, unknown> | null;
+      if (!session) return new Response(null, { status: 404 });
+      if (localSessionMatch[2])
+        return jsonResponse({ data: [], has_more: false, last_id: null });
+      const createdAt = new Date(
+        typeof session.createdAt === "number" ? session.createdAt : Date.now(),
+      ).toISOString();
+      const updatedAt = new Date(
+        typeof session.lastActivityAt === "number"
+          ? session.lastActivityAt
+          : Date.now(),
+      ).toISOString();
+      return jsonResponse({
+        uuid: session.sessionId,
+        id: session.sessionId,
+        title: session.title,
+        cwd: session.cwd,
+        worktreePath: session.cwd,
+        worktree_path: session.cwd,
+        created_at: createdAt,
+        updated_at: updatedAt,
+        is_archived: session.isArchived === true,
+        model: session.model,
+        effort: session.effort,
+        permission_mode: session.permissionMode,
+      });
+    }
+    if (normalized === "/api/local/export/conversations") {
+      if (request.method !== "GET") return new Response(null, { status: 405 });
+      return jsonResponse({
+        conversations: backend
+          .exportConversations()
+          .filter((conversation) => !conversation.is_temporary)
+          .map((conversation) => ({
+            uuid: conversation.uuid,
+            name: conversation.name || "Untitled chat",
+            updated_at: conversation.updated_at,
+            messages: conversation.chat_messages.length,
+          })),
+      });
+    }
+    if (normalized === "/api/local/export" && request.method === "POST") {
+      try {
+        const input = (await readLocalJson(
+          request,
+        )) as Partial<TrainingExportOptions>;
+        const options = normalizeTrainingExportOptions(input);
+        const conversations = backend
+          .exportConversations()
+          .filter(
+            (conversation) => !conversation.is_temporary,
+          ) as unknown as ExportConversation[];
+        const stamp = new Date().toISOString().slice(0, 10);
+        // Test harnesses point this at a directory to bypass the native file
+        // dialogs, which would otherwise block an automated renderer.
+        const unattendedDir = process.env.CLAUDE_LOCAL_EXPORT_DIR;
+        if (options.format === "markdown") {
+          const selected = conversations.filter(
+            (conversation) =>
+              !options.conversationUuid ||
+              conversation.uuid === options.conversationUuid,
+          );
+          if (selected.length === 0)
+            return jsonResponse(
+              { error: { message: "No conversations to export" } },
+              400,
+            );
+          if (selected.length === 1) {
+            const { canceled, filePath } = unattendedDir
+              ? {
+                  canceled: false,
+                  filePath: path.join(
+                    unattendedDir,
+                    `${safeFileName(selected[0].name)}.md`,
+                  ),
+                }
+              : await dialog.showSaveDialog({
+                  title: "Export chat as Markdown",
+                  defaultPath: path.join(
+                    app.getPath("downloads"),
+                    `${safeFileName(selected[0].name)}.md`,
+                  ),
+                  filters: [{ name: "Markdown", extensions: ["md"] }],
+                });
+            if (canceled || !filePath) return jsonResponse({ canceled: true });
+            await atomicExportWrite(
+              filePath,
+              conversationMarkdown(selected[0], options),
+            );
+            return jsonResponse({ path: filePath, conversations: 1 });
+          }
+          const { canceled, filePaths } = unattendedDir
+            ? { canceled: false, filePaths: [unattendedDir] }
+            : await dialog.showOpenDialog({
+                title: "Choose a folder for the Markdown export",
+                defaultPath: app.getPath("downloads"),
+                properties: ["openDirectory", "createDirectory"],
+              });
+          if (canceled || filePaths.length === 0)
+            return jsonResponse({ canceled: true });
+          const target = await uniqueExportDirectory(
+            filePaths[0],
+            `open-claude-export-${stamp}`,
+          );
+          let written = 0;
+          const used = new Set<string>();
+          for (const conversation of selected) {
+            if (conversation.chat_messages.length === 0) continue;
+            let base = safeFileName(conversation.name);
+            if (used.has(base))
+              base = `${base}-${conversation.uuid.slice(0, 8)}`;
+            used.add(base);
+            await atomicExportWrite(
+              path.join(target, `${base}.md`),
+              conversationMarkdown(conversation, options),
+            );
+            written += 1;
+          }
+          return jsonResponse({ path: target, conversations: written });
+        }
+        const sessions = (
+          options.includeCode
+            ? await codeSessions.invoke("exportSessions", [])
+            : []
+        ) as ExportCodeSession[];
+        const result = buildTrainingExport(conversations, sessions, options);
+        if (result.rows.length === 0)
+          return jsonResponse(
+            {
+              error: {
+                message: `No conversations matched the filters (${result.skipped} skipped)`,
+              },
+            },
+            400,
+          );
+        const { canceled, filePath } = unattendedDir
+          ? {
+              canceled: false,
+              filePath: path.join(
+                unattendedDir,
+                `open-claude-training-${options.format}-${stamp}.jsonl`,
+              ),
+            }
+          : await dialog.showSaveDialog({
+              title: "Export training data",
+              defaultPath: path.join(
+                app.getPath("downloads"),
+                `open-claude-training-${options.format}-${stamp}.jsonl`,
+              ),
+              filters: [{ name: "JSON Lines", extensions: ["jsonl"] }],
+            });
+        if (canceled || !filePath) return jsonResponse({ canceled: true });
+        await atomicExportWrite(filePath, result.rows.join("\n") + "\n");
+        return jsonResponse({
+          path: filePath,
+          conversations: result.conversations,
+          skipped: result.skipped,
+        });
+      } catch (error) {
+        return jsonResponse(
+          {
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          },
+          error instanceof LocalUiRequestError ? error.status : 500,
+        );
+      }
+    }
+    if (normalized === "/api/local/code/customization") {
+      try {
+        if (request.method === "GET") {
+          return jsonResponse(
+            await codeSessions.invoke("getCustomization", [
+              url.searchParams.get("cwd"),
+            ]),
+          );
+        }
+        if (request.method === "PUT" || request.method === "DELETE") {
+          const input = await readLocalJson(request);
+          return jsonResponse(
+            await codeSessions.invoke(
+              request.method === "PUT"
+                ? "saveCustomization"
+                : "deleteCustomization",
+              [input],
+            ),
+          );
+        }
+        return new Response(null, { status: 405 });
+      } catch (error) {
+        return jsonResponse(
+          {
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          },
+          error instanceof LocalUiRequestError ? error.status : 400,
+        );
+      }
+    }
+    if (
+      (request.method === "GET" && normalized === "/api/bootstrap") ||
+      (request.method === "GET" &&
+        normalized.startsWith("/api/bootstrap/") &&
+        normalized.endsWith("/app_start"))
+    )
+      return jsonResponse(
+        bootstrapPayload(
+          backend.provider().model,
+          backend.accountProfile(),
+          backend.accountSettings(),
+          backend.provider().enableThinking ?? false,
+        ),
+      );
+    if (
+      request.method === "GET" &&
+      normalized.startsWith("/api/bootstrap/") &&
+      normalized.endsWith("/current_user_access")
+    ) {
+      return jsonResponse(currentUserAccess());
+    }
+    if (
+      request.method === "GET" &&
+      normalized.startsWith("/api/bootstrap/") &&
+      normalized.endsWith("/system_prompts")
+    ) {
+      return jsonResponse({});
+    }
+    if (normalized === "/api/account_profile") {
+      if (request.method === "PUT")
+        await backend.updateAccountProfile(await readLocalJson(request));
+      if (request.method === "GET" || request.method === "PUT")
+        return jsonResponse({
+          ...localAccount(
+            backend.provider().model,
+            backend.accountProfile(),
+            backend.accountSettings(),
+          ),
+          locale: null,
+        });
+      return new Response(null, { status: 405 });
+    }
+    if (normalized === "/v1/privacy-consents")
+      return request.method === "GET"
+        ? jsonResponse({ consents: [] })
+        : new Response(null, { status: 405 });
+    if (normalized === "/api/account/settings") {
+      if (request.method !== "PATCH")
+        return new Response(null, { status: 405 });
+      return jsonResponse(
+        await backend.updateAccountSettings(await readLocalJson(request)),
       );
     }
-  }
-  if (
-    normalized === "/api/bootstrap" ||
-    (normalized.startsWith("/api/bootstrap/") &&
-      normalized.endsWith("/app_start"))
-  )
-    return jsonResponse(
-      bootstrapPayload(
-        backend.provider().model,
-        backend.accountProfile(),
-        backend.accountSettings(),
-        backend.provider().enableThinking ?? false,
-      ),
-    );
-  if (
-    normalized.startsWith("/api/bootstrap/") &&
-    normalized.endsWith("/current_user_access")
-  ) {
-    return jsonResponse(currentUserAccess());
-  }
-  if (
-    normalized.startsWith("/api/bootstrap/") &&
-    normalized.endsWith("/system_prompts")
-  ) {
-    return jsonResponse({});
-  }
-  if (normalized === "/api/account_profile") {
-    if (request.method === "PUT")
-      await backend.updateAccountProfile(await request.json());
-    if (request.method === "GET" || request.method === "PUT")
-      return jsonResponse({
-        ...localAccount(
+    if (normalized === "/api/account") {
+      if (request.method !== "PUT") return new Response(null, { status: 405 });
+      const input = objectValue(await readLocalJson(request));
+      await backend.updateAccountProfile(input);
+      return jsonResponse(
+        localAccount(
           backend.provider().model,
           backend.accountProfile(),
           backend.accountSettings(),
         ),
-        locale: null,
+      );
+    }
+    if (isRemovedCoworkHttpPath(normalized))
+      return jsonResponse(
+        {
+          error: {
+            type: "removed_product_surface",
+            message: REMOVED_COWORK_MESSAGE,
+          },
+        },
+        410,
+      );
+    if (
+      request.method === "GET" &&
+      /^\/api\/organizations\/[^/]+\/notification\/preferences$/.test(
+        normalized,
+      )
+    ) {
+      return jsonResponse({
+        preferences: { feature_preference: {} },
+        push_reachability: null,
       });
-    return new Response(null, { status: 405 });
-  }
-  if (normalized === "/v1/privacy-consents") {
-    return request.method === "GET"
-      ? jsonResponse({ consents: [] })
-      : jsonResponse({});
-  }
-  if (normalized === "/api/account/settings" && request.method === "PATCH")
-    return jsonResponse(
-      await backend.updateAccountSettings(await request.json()),
-    );
-  if (normalized === "/api/account" && request.method === "PUT") {
-    const input = objectValue(await request.json());
-    await backend.updateAccountProfile(input);
-    if (input.settings) await backend.updateAccountSettings(input.settings);
-    return jsonResponse(
-      localAccount(
-        backend.provider().model,
-        backend.accountProfile(),
-        backend.accountSettings(),
-      ),
-    );
-  }
-  if (
-    request.method === "GET" &&
-    /^\/api\/organizations\/[^/]+\/cowork\/scheduled_tasks$/.test(normalized)
-  ) {
-    // Cloud-side scheduled tasks: none exist locally. The client merges
-    // this list with the desktop CoworkScheduledTasks service, and a
-    // rejected fetch here would surface as "Failed to load scheduled
-    // tasks" whenever the local list is empty.
-    return jsonResponse({ data: [] });
-  }
-  if (
-    request.method === "GET" &&
-    /^\/api\/organizations\/[^/]+\/notification\/preferences$/.test(normalized)
-  ) {
-    return jsonResponse({
-      preferences: { feature_preference: {} },
-      push_reachability: null,
-    });
-  }
-  if (
-    request.method === "PATCH" &&
-    /^\/api\/organizations\/[^/]+\/model_selector_state\/[^/]+$/.test(
-      normalized,
-    )
-  ) {
-    const surface = normalized.split("/").at(-1) ?? "chat";
-    const input = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    const thinking =
-      input.thinking && typeof input.thinking === "object"
-        ? (input.thinking as Record<string, unknown>)
-        : null;
-    const mode =
-      typeof thinking?.mode === "string" ? thinking.mode.toLowerCase() : "off";
-    const enableThinking = mode === "extended" || mode === "enabled";
-    await backend.setThinkingEnabled(enableThinking);
-    const model = backend.provider().model;
-    const storedThinking = {
-      type: "mode",
-      mode: enableThinking ? "extended" : "off",
-    };
-    return jsonResponse({
-      id: surface,
-      model,
-      source: "user_setting",
-      thinking: storedThinking,
-      thinking_by_model: [{ id: model, thinking: storedThinking }],
-    });
-  }
-  if (normalized.endsWith("/plugins/list-plugins"))
-    return jsonResponse({ plugins: [], has_more: false });
-  if (normalized.includes("/marketplaces/list-"))
-    return jsonResponse({ marketplaces: [] });
-  if (normalized.endsWith("/dust/command_display_names"))
-    return jsonResponse({ results: [] });
-  // Session titles are normally generated by a cloud model; derive one
-  // from the first message so Cowork tasks don't stay "Untitled".
-  if (
-    normalized.endsWith("/dust/generate_session_title") &&
-    request.method === "POST"
-  ) {
-    const input = objectValue(await request.json().catch(() => ({})));
-    const message =
-      typeof input.first_session_message === "string"
-        ? input.first_session_message
-        : "";
-    const title = message.replace(/\s+/g, " ").trim().slice(0, 60);
-    return jsonResponse({ title: title || "New task" });
-  }
-  if (normalized.startsWith("/v1/code/github/"))
-    return jsonResponse({ branch_statuses: [] });
-  // Cloud Claude Code Remote sessions: none exist locally. The Cowork
-  // surface polls this list and logs a QueryClient error on any non-2xx.
-  if (normalized === "/v1/code/sessions" && request.method === "GET")
-    return jsonResponse({ data: [], next_cursor: null });
-  if (pathname === "/healthcheck")
-    return jsonResponse({
-      status: "healthy",
-      timestamp: new Date().toISOString(),
-    });
-  const backendResponse = await backend.handle(request, url);
-  if (backendResponse) return backendResponse;
-  if (isApiPath(normalized)) {
+    }
+    if (
+      request.method === "PATCH" &&
+      /^\/api\/organizations\/[^/]+\/model_selector_state\/[^/]+$/.test(
+        normalized,
+      )
+    ) {
+      const surface = normalized.split("/").at(-1) ?? "chat";
+      const input = (await readLocalJson(request).catch(() => ({}))) as Record<
+        string,
+        unknown
+      >;
+      const thinking =
+        input.thinking && typeof input.thinking === "object"
+          ? (input.thinking as Record<string, unknown>)
+          : null;
+      const mode =
+        typeof thinking?.mode === "string"
+          ? thinking.mode.toLowerCase()
+          : "off";
+      const enableThinking = mode === "extended" || mode === "enabled";
+      await backend.setThinkingEnabled(enableThinking);
+      const model = backend.provider().model;
+      const storedThinking = {
+        type: "mode",
+        mode: enableThinking ? "extended" : "off",
+      };
+      return jsonResponse({
+        id: surface,
+        model,
+        source: "user_setting",
+        thinking: storedThinking,
+        thinking_by_model: [{ id: model, thinking: storedThinking }],
+      });
+    }
+    if (normalized.endsWith("/plugins/list-plugins"))
+      return jsonResponse({ plugins: [], has_more: false });
+    if (normalized.includes("/marketplaces/list-"))
+      return jsonResponse({ marketplaces: [] });
+    if (normalized.endsWith("/dust/command_display_names"))
+      return jsonResponse({ results: [] });
+    // Session titles are normally generated by a cloud model; derive one
+    // locally for retained session consumers.
+    if (
+      normalized.endsWith("/dust/generate_session_title") &&
+      request.method === "POST"
+    ) {
+      const input = objectValue(await readLocalJson(request).catch(() => ({})));
+      const message =
+        typeof input.first_session_message === "string"
+          ? input.first_session_message
+          : "";
+      const title = message.replace(/\s+/g, " ").trim().slice(0, 60);
+      return jsonResponse({ title: title || "New task" });
+    }
+    if (normalized.startsWith("/v1/code/github/"))
+      return jsonResponse({ branch_statuses: [] });
+    // Cloud Claude Code Remote sessions do not exist locally.
+    if (normalized === "/v1/code/sessions" && request.method === "GET")
+      return jsonResponse({ data: [], next_cursor: null });
+    if (pathname === "/healthcheck" && request.method === "GET")
+      return jsonResponse({
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+      });
+    const backendResponse = await backend.handle(request, url);
+    if (backendResponse) return backendResponse;
+    if (isApiPath(normalized)) {
+      return jsonResponse(
+        {
+          error: {
+            type: "custom_3p_not_available",
+            message: "This functionality is not available in third-party mode.",
+          },
+        },
+        503,
+      );
+    }
+    return null;
+  } catch (error) {
     return jsonResponse(
       {
         error: {
-          type: "custom_3p_not_available",
-          message: "This functionality is not available in third-party mode.",
+          message: error instanceof Error ? error.message : String(error),
         },
       },
-      503,
+      error instanceof LocalUiRequestError ? error.status : 500,
     );
   }
-  return null;
 }
 
 function inlineScriptHashes(html: string): string[] {
@@ -1137,9 +1358,12 @@ export async function installLocalUiProtocol(
   codeSessions: LocalCodeSessionManager,
   tunnel?: LocalArtifactTunnel,
 ): Promise<void> {
-  const indexPath = path.join(root, "index.html");
-  await access(indexPath);
   const absoluteRoot = path.resolve(root);
+  const canonicalRoot = await realpath(absoluteRoot);
+  const indexPath = path.join(absoluteRoot, "index.html");
+  await access(indexPath);
+  const canonicalIndex = await canonicalRegularFile(canonicalRoot, indexPath);
+  if (!canonicalIndex) throw new Error("Local UI index escaped its asset root");
   // base-ui only unmounts a closing dialog after its exit transition ends,
   // and Chromium stops the frame clock entirely while a document is hidden
   // or fully occluded, so a Settings/publish dialog closed while the window
@@ -1321,10 +1545,14 @@ export async function installLocalUiProtocol(
     document.addEventListener("DOMContentLoaded", start, { once: true });
   else start();
 })();</script>`;
-  const indexHtml = (await readFile(indexPath, "utf8")).replace(
-    "<head>",
-    `<head>${visibilityGuard}${artifactBridge}${tunnelClipboard}`,
-  );
+  const indexSource = await readLocalUiAsset(canonicalIndex, canonicalRoot);
+  if (!indexSource) throw new Error("Local UI index exceeds its safety limit");
+  const indexHtml = indexSource
+    .toString("utf8")
+    .replace(
+      "<head>",
+      `<head>${visibilityGuard}${artifactBridge}${tunnelClipboard}`,
+    );
   const csp = contentSecurityPolicy(inlineScriptHashes(indexHtml));
   const patchedAssets = await patchedClientAssets(
     absoluteRoot,
@@ -1334,25 +1562,31 @@ export async function installLocalUiProtocol(
   protocol.handle("app", async (request) => {
     const url = new URL(request.url);
     if (url.hostname === "artifacts.local") {
-      if (request.method !== "GET") return new Response(null, { status: 405 });
-      return new Response(localArtifactRendererHtml(), {
-        status: 200,
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Content-Security-Policy": [
-            "default-src 'none'",
-            "script-src 'unsafe-inline'",
-            "style-src 'unsafe-inline'",
-            "img-src data: blob: https:",
-            "frame-src data: blob:",
-            "connect-src 'none'",
-            "object-src 'none'",
-            "base-uri 'none'",
-          ].join("; "),
-          "X-Content-Type-Options": "nosniff",
-          "Cache-Control": "no-store",
+      if (request.method !== "GET" && request.method !== "HEAD")
+        return new Response(null, { status: 405 });
+      return new Response(
+        request.method === "HEAD" ? null : localArtifactRendererHtml(),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Content-Security-Policy": [
+              "default-src 'none'",
+              "script-src 'unsafe-inline'",
+              "style-src 'unsafe-inline'",
+              // Artifact content is untrusted and runs without network access;
+              // remote images would otherwise create a tracking side channel.
+              "img-src data: blob:",
+              "frame-src data: blob:",
+              "connect-src 'none'",
+              "object-src 'none'",
+              "base-uri 'none'",
+            ].join("; "),
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "no-store",
+          },
         },
-      });
+      );
     }
     if (url.hostname !== "localhost")
       return new Response(null, { status: 404 });
@@ -1360,11 +1594,16 @@ export async function installLocalUiProtocol(
     if (origin && origin !== "app://localhost")
       return new Response(null, { status: 403 });
 
-    if (url.pathname === "/api/local/tunnel/status")
+    if (url.pathname === "/api/local/tunnel/status") {
+      if (request.method !== "GET" && request.method !== "HEAD")
+        return new Response(null, { status: 405 });
       return new Response(
-        JSON.stringify(tunnel?.status() ?? { url: null, active: false }),
+        request.method === "HEAD"
+          ? null
+          : JSON.stringify(tunnel?.status() ?? { url: null, active: false }),
         { headers: { "Content-Type": "application/json" } },
       );
+    }
     const apiResponse = await localApiResponse(
       request,
       url,
@@ -1392,29 +1631,40 @@ export async function installLocalUiProtocol(
       return apiResponse;
     }
 
+    if (request.method !== "GET" && request.method !== "HEAD")
+      return new Response(null, { status: 405 });
+
     const requested = resolveInside(absoluteRoot, url.pathname);
     if (!requested) return new Response(null, { status: 403 });
-    const candidate = (await regularFile(requested))
-      ? requested
-      : path.join(absoluteRoot, "index.html");
-    const patchedAsset = patchedAssets.get(path.resolve(candidate));
+    const regularFile = await canonicalRegularFile(canonicalRoot, requested);
+    // A missing versioned asset is a packaging error, not an SPA route. Do
+    // not answer it with index.html and a misleading 200/text-html response.
+    if (!regularFile && path.extname(url.pathname))
+      return new Response(null, { status: 404 });
+    const candidate = regularFile ?? canonicalIndex;
+    const patchedAsset =
+      patchedAssets.get(path.resolve(requested)) ??
+      patchedAssets.get(path.resolve(candidate));
     // Asset URLs keep the same version-hashed filenames across Open-Claude
     // releases while their patched contents change, so the renderer must
     // never revive them from its profile HTTP cache after an upgrade.
     if (patchedAsset) {
-      return new Response(patchedAsset.source, {
-        status: 200,
-        headers: {
-          "Content-Type": MIME_TYPES[".js"],
-          "Content-Security-Policy": csp,
-          "Cache-Control": "no-store",
-          "X-Content-Type-Options": "nosniff",
-          "X-Local-Claude-Patches": patchedAsset.ids.join(","),
+      return new Response(
+        request.method === "HEAD" ? null : patchedAsset.source,
+        {
+          status: 200,
+          headers: {
+            "Content-Type": MIME_TYPES[".js"],
+            "Content-Security-Policy": csp,
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "X-Local-Claude-Patches": patchedAsset.ids.join(","),
+          },
         },
-      });
+      );
     }
-    if (path.resolve(candidate) === path.resolve(indexPath)) {
-      return new Response(indexHtml, {
+    if (path.resolve(candidate) === path.resolve(canonicalIndex)) {
+      return new Response(request.method === "HEAD" ? null : indexHtml, {
         status: 200,
         headers: {
           "Content-Type": MIME_TYPES[".html"],
@@ -1424,13 +1674,20 @@ export async function installLocalUiProtocol(
         },
       });
     }
-    const response = await net.fetch(pathToFileURL(candidate).href);
-    const headers = new Headers(response.headers);
+    const source = await readLocalUiAsset(candidate, canonicalRoot);
+    if (!source) return new Response(null, { status: 404 });
+    const headers = new Headers();
     const mime = MIME_TYPES[path.extname(candidate).toLowerCase()];
     if (mime) headers.set("Content-Type", mime);
     headers.set("Cache-Control", "no-store");
     headers.set("X-Content-Type-Options", "nosniff");
     headers.set("Content-Security-Policy", csp);
-    return new Response(response.body, { status: response.status, headers });
+    return new Response(
+      request.method === "HEAD" ? null : Uint8Array.from(source).buffer,
+      {
+        status: 200,
+        headers,
+      },
+    );
   });
 }

@@ -2,7 +2,7 @@
   "name": "open-claude",
   "productName": "Open-Claude",
   "desktopName": "Open-Claude.desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "main": "dist-electron/main.cjs",
@@ -15,10 +15,11 @@
     "reference:signatures": "node tools/extract-ipc-signatures.mjs",
     "reference:generate": "node tools/generate-contracts.mjs",
     "reference:coverage": "node tools/report-implementation.mjs",
+    "directory:snapshot": "node tools/snapshot-plugin-directory.mjs && node tools/snapshot-connector-directory.mjs",
     "reference:recover": "npm run reference:extract && npm run reference:analyze && npm run reference:preloads && npm run reference:signatures && npm run reference:generate && npm run reference:coverage",
     "build": "npm run typecheck && node tools/build-electron.mjs && vite build",
     "dist:win": "npm run build && node tools/prepare-package-assets.mjs && electron-builder --win nsis --x64",
-    "dist:linux": "npm run build && node tools/prepare-package-assets.mjs && electron-builder --linux AppImage --x64",
+    "dist:linux": "npm run build && node tools/prepare-package-assets.mjs && node tools/build-linux-package.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "format": "prettier --write --ignore-unknown .",
@@ -53,11 +54,16 @@
     "probe:connectors": "node tools/probe-connectors.mjs",
     "probe:mcp-settings": "node tools/probe-mcp-settings.mjs",
     "probe:scheduled-sidebar": "node tools/probe-scheduled-sidebar.mjs",
+    "probe:scheduled-run": "node tools/probe-scheduled-run.mjs",
+    "probe:search-proxy": "node tools/probe-search-proxy.mjs",
+    "probe:desktop-settings": "node tools/probe-desktop-settings.mjs",
     "probe:real-settings": "node tools/probe-real-settings.mjs",
+    "probe:settings-directory": "node tools/probe-settings-directory.mjs",
     "probe:real-chat-navigation": "node tools/probe-real-chat-navigation.mjs",
     "probe:real-navigation": "node tools/probe-real-navigation.mjs",
     "probe:real-file-preview": "node tools/probe-real-file-preview.mjs",
     "probe:real-launch-preview": "node tools/probe-real-launch-preview.mjs",
+    "probe:real-code-browser": "node tools/probe-real-code-browser.mjs",
     "probe:real-code-artifact-selection": "node tools/probe-real-code-artifact-selection.mjs",
     "probe:real-artifact-gallery": "node tools/probe-real-artifact-gallery.mjs",
     "smoke:real-chat": "node tools/probe-real-chat.mjs",
@@ -135,8 +141,12 @@
         }
       ],
       "executableName": "Open-Claude",
-      "icon": ".package-assets/icon.png",
+      "icon": ".package-assets/icon.ico",
       "extraResources": [
+        {
+          "from": ".package-assets/icon.ico",
+          "to": "icon.ico"
+        },
         {
           "from": "assets/whisper/win",
           "to": "whisper/bin",
@@ -178,20 +188,24 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Open-Claude",
       "uninstallDisplayName": "Open-Claude",
+      "installerIcon": ".package-assets/icon.ico",
+      "uninstallerIcon": ".package-assets/icon.ico",
+      "installerHeaderIcon": ".package-assets/icon.ico",
       "deleteAppDataOnUninstall": false,
       "perMachine": false
     }
   },
   "dependencies": {
-    "localtunnel": "^2.0.2",
-    "mermaid": "11.16.0",
     "node-pty": "1.2.0-beta.13",
     "pdfjs-dist": "^6.1.200",
     "playwright-core": "^1.55.0",
     "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "overrides": {
+    "localtunnel": {
+      "axios": "1.18.1"
+    }
   },
   "devDependencies": {
     "@babel/parser": "^7.29.7",
@@ -200,9 +214,14 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.7.0",
+    "cross-spawn": "^7.0.6",
     "electron": "42.5.1",
     "electron-builder": "^26.15.3",
+    "localtunnel": "^2.0.2",
+    "mermaid": "11.16.0",
     "prettier": "^3.6.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
     "typescript": "^5.8.3",
     "vite": "^7.0.5",
     "vitest": "^3.2.4"

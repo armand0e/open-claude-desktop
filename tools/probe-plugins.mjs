@@ -1,6 +1,6 @@
 // Probe: the LocalPlugins bridge round-trips against the local manager —
 // upload a plugin zip through the page bridge, list it, and check the
-// enabled plugin's skill reaches the chat system prompt via the skill list.
+// enabled plugin's skill reaches both Chat and Code system prompts.
 import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
@@ -198,6 +198,9 @@ await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve));
 const providerPort = provider.address().port;
 const debuggerPort = await unusedPort();
 const profile = await mkdtemp(path.join(os.tmpdir(), "claude-plugins-"));
+const workspace = await mkdtemp(
+  path.join(os.tmpdir(), "claude-plugins-code-workspace-"),
+);
 const output = [];
 const child = spawn(
   electron,
@@ -271,12 +274,49 @@ try {
     ?.messages?.find((message) => message.role === "system")?.content;
   assert(
     typeof systemPrompt === "string" &&
-      systemPrompt.includes("prober (probe-plugin)"),
+      systemPrompt.includes("probe-plugin:prober"),
     "Plugin skill missing from the chat system prompt skill list",
   );
 
+  const code = await evaluateEventually(
+    debuggerPort,
+    `(async () => {
+      const sessions = window["claude.web"]?.LocalSessions;
+      if (!sessions?.start) return { failed: "no-code-bridge" };
+      const started = await sessions.start({
+        cwd: ${JSON.stringify(workspace)},
+        message: "Use the installed plugin in Code",
+        permissionMode: "bypassPermissions"
+      });
+      if (!started?.sessionId) return { failed: "no-code-session" };
+      const deadline = Date.now() + 20000;
+      let transcript = [];
+      while (Date.now() < deadline) {
+        transcript = await sessions.getTranscript(started.sessionId);
+        if (transcript.some(message => message.type === "result")) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return {
+        sessionId: started.sessionId,
+        completed: transcript.some(message => message.type === "result")
+      };
+    })()`,
+  );
+  assert(!code.failed, code.failed);
+  assert(code.completed, "Code completion did not finish");
+  const codeSystemPrompt = requests
+    .at(-1)
+    ?.messages?.filter((message) => message.role === "system")
+    .map((message) => String(message.content))
+    .join("\n");
+  assert(
+    typeof codeSystemPrompt === "string" &&
+      codeSystemPrompt.includes("probe-plugin:prober"),
+    "Plugin skill missing from the Code system prompt skill list",
+  );
+
   console.log(
-    "PROBE PASS: plugins install through the bridge and their skills reach chat",
+    "PROBE PASS: plugins install through the bridge and their skills reach Chat and Code",
   );
 } catch (error) {
   console.error("PROBE FAIL:", error.message);
@@ -285,6 +325,10 @@ try {
 } finally {
   child.kill();
   await new Promise((resolve) => setTimeout(resolve, 1500));
-  await rm(profile, { recursive: true, force: true }).catch(() => undefined);
+  await Promise.all(
+    [profile, workspace].map((directory) =>
+      rm(directory, { recursive: true, force: true }).catch(() => undefined),
+    ),
+  );
   provider.close();
 }

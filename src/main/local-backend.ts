@@ -1,6 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import {
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
+import connectorDirectorySnapshot from "../shared/connector-directory-snapshot.json";
 import {
   compactionSummaryText,
   estimateTokens,
@@ -13,10 +25,19 @@ import { extractRichText } from "./local-extract";
 import { WEB_TOOLS, type WebToolRunner } from "./local-web-tools";
 import { runtimePromptContext } from "./runtime-prompt";
 import {
+  assertBoundedJson,
+  readRecoverableBoundedJsonFile,
+} from "./bounded-json-file";
+import {
   DEFAULT_THINKING_END_TAG,
   DEFAULT_THINKING_START_TAG,
   ThinkingTagParser,
 } from "./thinking-tags";
+import {
+  CONNECTOR_OAUTH_PRESETS,
+  type ConnectorOAuthPresetId,
+  type ConnectorOAuthPublicState,
+} from "./local-mcp-oauth";
 
 export interface LocalProviderConfig {
   baseUrl: string;
@@ -244,6 +265,7 @@ interface LocalRemoteMcpServer {
   uuid: string;
   name: string;
   url: string;
+  preset?: ConnectorOAuthPresetId;
   created_at: string;
   updated_at: string;
 }
@@ -259,6 +281,46 @@ interface LocalData {
   memory: LocalMemoryState;
   projects: LocalProject[];
   mcpRemoteServers: LocalRemoteMcpServer[];
+}
+
+interface LocalArtifactWorkspace {
+  artifacts: LocalArtifact[];
+  // null marks an artifact created by this completion. Existing artifacts
+  // retain their original ordered version ids for optimistic conflict checks.
+  baseVersions: Map<string, string[] | null>;
+}
+
+async function readBoundedRegularFile(
+  filePath: string,
+  maxBytes: number,
+): Promise<{ bytes: Buffer | null; tooLarge: boolean }> {
+  const expected = await realpath(filePath).catch(() => null);
+  if (!expected) return { bytes: null, tooLarge: false };
+  const handle = await open(
+    filePath,
+    constants.O_RDONLY |
+      (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
+  ).catch(() => null);
+  if (!handle) return { bytes: null, tooLarge: false };
+  try {
+    const info = await handle.stat();
+    if (!info.isFile()) return { bytes: null, tooLarge: false };
+    if (info.size > maxBytes) return { bytes: null, tooLarge: true };
+    const confirmed = await realpath(filePath);
+    if (path.relative(expected, confirmed) !== "")
+      return { bytes: null, tooLarge: false };
+    const confirmedInfo = await stat(confirmed);
+    if (confirmedInfo.dev !== info.dev || confirmedInfo.ino !== info.ino)
+      return { bytes: null, tooLarge: false };
+    const bytes = await handle.readFile();
+    return bytes.byteLength > maxBytes
+      ? { bytes: null, tooLarge: true }
+      : { bytes, tooLarge: false };
+  } catch {
+    return { bytes: null, tooLarge: false };
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
 }
 
 const DEFAULT_MEMORY_STATE: LocalMemoryState = {
@@ -289,8 +351,40 @@ const CONTEXT_SUMMARY_MESSAGE_UUID = "local-context-summary";
 const PROVIDER_DISCOVERY_TIMEOUT_MS = 10_000;
 const MAX_PROVIDER_STREAM_BYTES = 32 * 1024 * 1024;
 const MAX_PROVIDER_JSON_BYTES = 8 * 1024 * 1024;
+const MAX_PROVIDER_REQUEST_BYTES = 32 * 1024 * 1024;
+const MAX_LOCAL_JSON_BYTES = 8 * 1024 * 1024;
+const MAX_CHAT_PROMPT_CHARS = 2_000_000;
+const MAX_PROVIDER_MESSAGE_CHARS = 4_000_000;
+const MAX_EXTRACTED_TEXT_CHARS = 2_000_000;
+const MAX_ARTIFACT_CONTENT_CHARS = 4_000_000;
+const MAX_ACCOUNT_INSTRUCTIONS_CHARS = 200_000;
+const MAX_ACCOUNT_STATE_BYTES = 1024 * 1024;
+const MAX_SETTINGS_BYTES = 1024 * 1024;
+const MAX_CONVERSATIONS = 10_000;
+const MAX_MESSAGES_PER_CONVERSATION = 20_000;
+const MAX_STORED_MESSAGE_BYTES = 8 * 1024 * 1024;
+const MAX_CONVERSATION_MESSAGE_BYTES = 64 * 1024 * 1024;
+const MAX_CONTENT_BLOCKS_PER_MESSAGE = 1_000;
+const MAX_ATTACHMENTS_PER_MESSAGE = 1_000;
+const MAX_FILES_PER_MESSAGE = 1_000;
+const MAX_TOOL_PAYLOAD_BYTES = 4 * 1024 * 1024;
+const MAX_ARTIFACTS = 20_000;
+const MAX_ARTIFACT_VERSIONS = 5_000;
+const MAX_ARTIFACT_VERSION_BYTES = 64 * 1024 * 1024;
+const MAX_PROJECTS = 10_000;
+const MAX_PROJECT_ENTRIES = 5_000;
+const MAX_STORED_FILES = 100_000;
+const MAX_REMOTE_MCP_SERVERS = 1_000;
 
 const MAX_LOCAL_FILE_BYTES = 50 * 1024 * 1024;
+const MAX_MULTIPART_REQUEST_BYTES = MAX_LOCAL_FILE_BYTES + 2 * 1024 * 1024;
+const MAX_PROJECT_KB_BYTES = 200 * 1024 * 1024;
+const MAX_MEMORY_CHARS = 1_000_000;
+const MAX_MEMORY_CONTROLS = 100;
+const MAX_MEMORY_CONTROL_CHARS = 10_000;
+const MAX_PROJECT_NAME_CHARS = 256;
+const MAX_PROJECT_DESCRIPTION_CHARS = 20_000;
+const MAX_PROJECT_PROMPT_CHARS = 200_000;
 const TEXT_FILE_EXTENSIONS = new Set([
   ".c",
   ".cpp",
@@ -353,7 +447,7 @@ const BROWSER_USE_PROMPT = `Browser use is enabled for this conversation.
 - Read the page before clicking or typing so your targets come from actual page content. Never claim an action succeeded unless its tool result confirms it. The user can see the window; narrate significant steps briefly.`;
 
 const COMPUTER_USE_PROMPT = `Computer use is enabled for this conversation.
-- The computer_* tools control the user's actual machine: computer_screenshot captures the primary display (returns a markdown image link and the screen size), computer_click clicks at pixel coordinates, computer_type types at the current focus, computer_key presses a key or chord.
+- The computer_* tools control the user's actual machine: computer_screenshot captures the primary display (returns a markdown image link and the screen size), computer_click clicks at pixel coordinates, computer_scroll scrolls the focused view, computer_type types at the current focus, computer_key presses a key or chord.
 - ALWAYS take a fresh screenshot before clicking and derive coordinates from it. Prefer small, verifiable steps and re-screenshot after actions to confirm effects. Stop and ask the user rather than guessing when the screen state is unclear. Never claim an action succeeded unless a later screenshot confirms it.`;
 
 const CODE_EXECUTION_PROMPT = `Code execution is enabled for this conversation.
@@ -446,6 +540,20 @@ function plainJsonObject(value: unknown): JsonObject {
   );
 }
 
+function boundedJsonObject(
+  value: unknown,
+  maxBytes: number,
+): JsonObject | null {
+  if (!isObject(value)) return null;
+  try {
+    if (Buffer.byteLength(JSON.stringify(value), "utf8") > maxBytes)
+      return null;
+    return plainJsonObject(value);
+  } catch {
+    return null;
+  }
+}
+
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
@@ -461,7 +569,9 @@ function normalizeAttachment(value: unknown): LocalAttachment | null {
   if (!isObject(value)) return null;
   const extractedContent =
     typeof value.extracted_content === "string"
-      ? value.extracted_content.replaceAll("\0", "")
+      ? value.extracted_content
+          .replaceAll("\0", "")
+          .slice(0, MAX_EXTRACTED_TEXT_CHARS)
       : undefined;
   if (extractedContent === undefined) return null;
   return {
@@ -586,6 +696,7 @@ export interface LocalBrowserSource {
     conversationUuid: string,
     fileName: string,
   ): Promise<{ absolutePath: string; size_bytes: number } | null>;
+  removeConversation?(conversationUuid: string): Promise<void>;
 }
 
 // OS-level computer control (src/main/local-computer.ts); every session's
@@ -601,6 +712,7 @@ export interface LocalComputerSource {
     conversationUuid: string,
     fileName: string,
   ): Promise<{ absolutePath: string; size_bytes: number } | null>;
+  removeConversation?(conversationUuid: string): Promise<void>;
 }
 
 const CODE_EXECUTION_TOOL = {
@@ -731,6 +843,22 @@ const COMPUTER_TOOLS = [
           x: { type: "integer" },
           y: { type: "integer" },
           button: { enum: ["left", "right", "double"] },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "computer_scroll",
+      description:
+        "Scroll the focused OS view. Positive delta_y scrolls down and negative delta_y scrolls up.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["delta_y"],
+        properties: {
+          delta_y: { type: "integer", minimum: -10000, maximum: 10000 },
         },
       },
     },
@@ -889,16 +1017,23 @@ function extractLocalText(
   try {
     return new TextDecoder(encoding, { fatal: true })
       .decode(bytes)
-      .replaceAll("\0", "");
+      .replaceAll("\0", "")
+      .slice(0, MAX_EXTRACTED_TEXT_CHARS);
   } catch {
     return undefined;
   }
 }
 
 function normalizeBaseUrl(value: string): string {
+  if (value.length > 8_192) throw new Error("Provider URL is too long");
   const url = new URL(value);
   if (url.protocol !== "http:" && url.protocol !== "https:")
     throw new Error("Provider URL must use http or https");
+  if (url.username || url.password)
+    throw new Error("Provider URL must not contain credentials");
+  if (url.search || url.hash)
+    throw new Error("Provider URL must not contain a query or fragment");
+  url.pathname = url.pathname.replace(/\/+$/, "") || "/";
   return url.toString().replace(/\/$/, "");
 }
 
@@ -944,11 +1079,14 @@ function configuredProvider(
     ),
     model:
       process.env.CLAUDE_LOCAL_MODEL?.trim() ||
-      input?.model?.trim() ||
+      (input?.model?.trim() && input.model.trim().length <= 512
+        ? input.model.trim()
+        : "") ||
       DEFAULT_PROVIDER.model,
     contextWindow:
       Number.isFinite(configuredContextWindow) &&
-      configuredContextWindow >= 1024
+      configuredContextWindow >= 1024 &&
+      configuredContextWindow <= 10_000_000
         ? Math.floor(configuredContextWindow)
         : DEFAULT_PROVIDER.contextWindow,
     enableThinking:
@@ -959,7 +1097,8 @@ function configuredProvider(
         : (input?.enableThinking ?? DEFAULT_PROVIDER.enableThinking),
     thinkingStartTag,
     thinkingEndTag,
-    ...(process.env.CLAUDE_LOCAL_API_KEY?.trim() || input?.apiKey
+    ...(process.env.CLAUDE_LOCAL_API_KEY?.trim() ||
+    (input?.apiKey && input.apiKey.length <= 65_536)
       ? {
           apiKey:
             process.env.CLAUDE_LOCAL_API_KEY?.trim() || input?.apiKey?.trim(),
@@ -1021,6 +1160,13 @@ function publishedArtifactResponse(version: LocalArtifactVersion): JsonObject {
   };
 }
 
+function boundedProviderMessage(value: string): string {
+  if (value.length <= MAX_PROVIDER_MESSAGE_CHARS) return value;
+  const tail = Math.floor(MAX_PROVIDER_MESSAGE_CHARS / 4);
+  const head = MAX_PROVIDER_MESSAGE_CHARS - tail;
+  return `${value.slice(0, head)}\n\n[... message content omitted to fit the local provider safety limit ...]\n\n${value.slice(-tail)}`;
+}
+
 function messageText(
   message: LocalMessage,
   storedFiles: readonly LocalStoredFile[],
@@ -1037,7 +1183,7 @@ function messageText(
     })
     .filter(Boolean)
     .join("\n");
-  if (message.sender !== "human") return content;
+  if (message.sender !== "human") return boundedProviderMessage(content);
 
   const attachments = message.attachments.map(
     (attachment) =>
@@ -1051,7 +1197,9 @@ function messageText(
       ? `<attached_file name=${JSON.stringify(stored.file_name)} type=${JSON.stringify(stored.file_type)}>\n${stored.extracted_content}\n</attached_file>`
       : `<attached_file name=${JSON.stringify(file.file_name)} type=${JSON.stringify(stored?.file_type || file.file_kind)}>\n[Binary file: ${file.size_bytes} bytes]\n</attached_file>`;
   });
-  return [content, ...attachments, ...files].filter(Boolean).join("\n\n");
+  return boundedProviderMessage(
+    [content, ...attachments, ...files].filter(Boolean).join("\n\n"),
+  );
 }
 
 function createMessage(
@@ -1109,6 +1257,7 @@ function normalizeArtifactInput(value: unknown): ArtifactToolInput | null {
       ? value.command
       : "create";
   const id = stringValue(value.id) || `artifact-${randomUUID()}`;
+  if (id.length > 512 || id.includes("\0")) return null;
   const input: ArtifactToolInput = {
     command,
     id,
@@ -1123,7 +1272,17 @@ function normalizeArtifactInput(value: unknown): ArtifactToolInput | null {
     "new_str",
   ] as const) {
     const part = stringValue(value[key]);
-    if (part) input[key] = part;
+    if (!part) continue;
+    const limit =
+      key === "title"
+        ? 512
+        : key === "language"
+          ? 256
+          : key === "version_uuid"
+            ? 512
+            : MAX_ARTIFACT_CONTENT_CHARS;
+    if (part.length > limit || part.includes("\0")) return null;
+    input[key] = part;
   }
   if (value.source === "c" || value.source === "w") input.source = value.source;
   return input;
@@ -1177,6 +1336,629 @@ function normalizeArtifactMessage(message: LocalMessage): void {
   message.text = message.content
     .flatMap((block) => (block.type === "text" ? [block.text] : []))
     .join("\n\n");
+}
+
+function decodePathSegment(value: string): string | undefined {
+  try {
+    const decoded = decodeURIComponent(value);
+    return decoded && decoded.length <= 4_096 && !decoded.includes("\0")
+      ? decoded
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function storedDate(
+  value: unknown,
+  fallback = new Date(0).toISOString(),
+): string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value))
+    ? value
+    : fallback;
+}
+
+function uniqueRecords<T>(
+  values: readonly T[],
+  keys: (value: T) => readonly string[],
+): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+  for (const value of values) {
+    const recordKeys = keys(value);
+    if (recordKeys.some((key) => seen.has(key))) continue;
+    for (const key of recordKeys) seen.add(key);
+    unique.push(value);
+  }
+  return unique;
+}
+
+function safeStorageName(value: unknown): string | undefined {
+  const name = stringValue(value);
+  return name &&
+    name !== "." &&
+    name !== ".." &&
+    /^[a-zA-Z0-9._-]{1,255}$/.test(name)
+    ? name
+    : undefined;
+}
+
+function httpConnectorUrl(value: unknown): string | undefined {
+  const raw = stringValue(value);
+  if (!raw) return undefined;
+  try {
+    const parsed = new URL(raw);
+    if (
+      (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+      parsed.username ||
+      parsed.password ||
+      parsed.hash
+    )
+      return undefined;
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function connectorOAuthPreset(
+  value: unknown,
+): ConnectorOAuthPresetId | undefined {
+  return value === "gmail" || value === "google-drive" || value === "slack"
+    ? value
+    : undefined;
+}
+
+function presetMcpUrl(preset: ConnectorOAuthPresetId): string {
+  return CONNECTOR_OAUTH_PRESETS.find((entry) => entry.id === preset)!
+    .serverUrl;
+}
+
+function connectorOAuthPresetForUrl(
+  value: string,
+): ConnectorOAuthPresetId | undefined {
+  return CONNECTOR_OAUTH_PRESETS.find((entry) => entry.serverUrl === value)?.id;
+}
+
+function nativeConnectorPresetDirectoryEntry(
+  preset: (typeof CONNECTOR_OAUTH_PRESETS)[number],
+): JsonObject {
+  const slug = `local.open-claude/${preset.id}`;
+  return {
+    server: {
+      name: slug,
+      title: preset.name,
+      version: "local",
+      description: `Connect ${preset.name} to Chat and Code through its official remote MCP server.`,
+      websiteUrl: preset.docsUrl,
+      remotes: [{ type: "streamable-http", url: preset.serverUrl }],
+    },
+    _meta: {
+      "com.anthropic.api/mcp-registry": {
+        uuid: slug,
+        type: "remote",
+        oneLiner: `Use ${preset.name} in Chat and Code.`,
+        iconUrl: `https://www.google.com/s2/favicons?domain=${encodeURIComponent(new URL(preset.serverUrl).hostname)}&sz=48`,
+        documentation: preset.docsUrl,
+        support: preset.docsUrl,
+        privacyPolicy: preset.docsUrl,
+        author: { name: preset.name, url: preset.docsUrl },
+        worksWith: ["claude", "claude-code", "claude-desktop"],
+        isAuthless: false,
+        slug,
+        source_feed: "open-claude-local",
+      },
+    },
+  };
+}
+
+function normalizeStoredMessage(
+  value: unknown,
+  index: number,
+): LocalMessage | null {
+  if (!isObject(value)) return null;
+  try {
+    if (
+      Buffer.byteLength(JSON.stringify(value), "utf8") >
+      MAX_STORED_MESSAGE_BYTES
+    )
+      return null;
+  } catch {
+    return null;
+  }
+  const uuid = stringValue(value.uuid)?.slice(0, 256);
+  const sender = value.sender === "assistant" ? "assistant" : "human";
+  if (!uuid || uuid.includes("\0")) return null;
+  const content: LocalContentBlock[] = Array.isArray(value.content)
+    ? value.content
+        .slice(0, MAX_CONTENT_BLOCKS_PER_MESSAGE)
+        .flatMap<LocalContentBlock>((candidate): LocalContentBlock[] => {
+          if (!isObject(candidate)) return [];
+          if (candidate.type === "text")
+            return [
+              {
+                type: "text" as const,
+                text:
+                  typeof candidate.text === "string"
+                    ? candidate.text.slice(0, MAX_PROVIDER_MESSAGE_CHARS)
+                    : "",
+                citations: [],
+              },
+            ];
+          if (candidate.type === "thinking")
+            return [
+              {
+                type: "thinking" as const,
+                thinking:
+                  typeof candidate.thinking === "string"
+                    ? candidate.thinking.slice(0, MAX_PROVIDER_MESSAGE_CHARS)
+                    : "",
+                signature:
+                  stringValue(candidate.signature)?.slice(0, 512) ||
+                  "local-recovered",
+                summaries: [],
+                start_timestamp: storedDate(candidate.start_timestamp),
+                ...(typeof candidate.stop_timestamp === "string"
+                  ? { stop_timestamp: storedDate(candidate.stop_timestamp) }
+                  : {}),
+              },
+            ];
+          if (candidate.type === "tool_use") {
+            const id = stringValue(candidate.id)?.slice(0, 512);
+            const name = stringValue(candidate.name)?.slice(0, 512);
+            if (!id || !name) return [];
+            if (name === "artifacts") {
+              const input = normalizeArtifactInput(candidate.input);
+              return input
+                ? [
+                    {
+                      type: "tool_use" as const,
+                      id,
+                      name: "artifacts" as const,
+                      input,
+                    },
+                  ]
+                : [];
+            }
+            if (
+              ![
+                "web_search",
+                "web_fetch",
+                "skill",
+                "mcp_tool",
+                "save_memory",
+              ].includes(name)
+            )
+              return [];
+            const input = boundedJsonObject(
+              candidate.input,
+              MAX_TOOL_PAYLOAD_BYTES,
+            );
+            if (!input) return [];
+            return [
+              {
+                type: "tool_use" as const,
+                id,
+                name: name as LocalWebToolUseBlock["name"],
+                input,
+              },
+            ];
+          }
+          if (candidate.type === "tool_result") {
+            const id = stringValue(candidate.tool_use_id)?.slice(0, 512);
+            const name = stringValue(candidate.name)?.slice(0, 512);
+            if (
+              !id ||
+              !name ||
+              ![
+                "web_search",
+                "web_fetch",
+                "skill",
+                "mcp_tool",
+                "save_memory",
+              ].includes(name)
+            )
+              return [];
+            return [
+              {
+                type: "tool_result" as const,
+                tool_use_id: id,
+                name: name as LocalWebToolResultBlock["name"],
+                content: Array.isArray(candidate.content)
+                  ? candidate.content
+                      .slice(0, MAX_CONTENT_BLOCKS_PER_MESSAGE)
+                      .flatMap((entry) => {
+                        const bounded = boundedJsonObject(
+                          entry,
+                          MAX_TOOL_PAYLOAD_BYTES,
+                        );
+                        return bounded ? [bounded] : [];
+                      })
+                  : [],
+                ...(candidate.is_error === true ? { is_error: true } : {}),
+              },
+            ];
+          }
+          return [];
+        })
+    : [];
+  const text =
+    typeof value.text === "string"
+      ? value.text.slice(0, MAX_PROVIDER_MESSAGE_CHARS)
+      : content
+          .flatMap((block) => (block.type === "text" ? [block.text] : []))
+          .join("\n\n");
+  if (content.length === 0) content.push({ type: "text", text, citations: [] });
+  return {
+    uuid,
+    sender,
+    content,
+    text,
+    created_at: storedDate(value.created_at),
+    updated_at: storedDate(value.updated_at, storedDate(value.created_at)),
+    index:
+      typeof value.index === "number" && Number.isFinite(value.index)
+        ? Math.max(0, Math.floor(value.index))
+        : index,
+    ...(stringValue(value.parent_message_uuid)
+      ? {
+          parent_message_uuid: stringValue(value.parent_message_uuid)?.slice(
+            0,
+            256,
+          ),
+        }
+      : {}),
+    attachments: Array.isArray(value.attachments)
+      ? value.attachments
+          .slice(0, MAX_ATTACHMENTS_PER_MESSAGE)
+          .flatMap((entry) => {
+            const attachment = normalizeAttachment(entry);
+            return attachment ? [attachment] : [];
+          })
+      : [],
+    files: Array.isArray(value.files)
+      ? value.files.slice(0, MAX_FILES_PER_MESSAGE).flatMap((entry) => {
+          if (!isObject(entry)) return [];
+          const fileUuid = stringValue(entry.file_uuid)?.slice(0, 256);
+          if (!fileUuid) return [];
+          return [
+            {
+              ...plainJsonObject(entry),
+              file_uuid: fileUuid,
+              file_name: cleanFileName(
+                stringValue(entry.file_name) || "attachment",
+              ),
+              file_kind: stringValue(entry.file_kind)?.slice(0, 64) || "blob",
+              size_bytes: finiteNumber(entry.size_bytes) ?? 0,
+              ...(stringValue(entry.path)
+                ? { path: stringValue(entry.path)?.slice(0, 8_192) }
+                : {}),
+            },
+          ];
+        })
+      : [],
+  };
+}
+
+function normalizeStoredConversation(value: unknown): LocalConversation | null {
+  if (!isObject(value)) return null;
+  const uuid = stringValue(value.uuid)?.slice(0, 256);
+  if (!uuid || uuid.includes("\0")) return null;
+  const messages: LocalMessage[] = [];
+  const messageIds = new Set<string>();
+  let messageBytes = 0;
+  const candidates = Array.isArray(value.chat_messages)
+    ? value.chat_messages
+    : [];
+  for (
+    let index = candidates.length - 1;
+    index >= 0 && messages.length < MAX_MESSAGES_PER_CONVERSATION;
+    index -= 1
+  ) {
+    const candidate = candidates[index];
+    const message = normalizeStoredMessage(candidate, index);
+    if (!message || messageIds.has(message.uuid)) continue;
+    const size = Buffer.byteLength(JSON.stringify(message), "utf8");
+    if (messageBytes + size > MAX_CONVERSATION_MESSAGE_BYTES) break;
+    messageIds.add(message.uuid);
+    messageBytes += size;
+    messages.unshift(message);
+  }
+  messages.forEach((message, index) => {
+    message.index = index;
+  });
+  const requestedLeaf = stringValue(value.current_leaf_message_uuid);
+  const summary = isObject(value.context_summary) ? value.context_summary : {};
+  for (const message of messages)
+    if (
+      message.parent_message_uuid === message.uuid ||
+      (message.parent_message_uuid &&
+        !messageIds.has(message.parent_message_uuid))
+    )
+      delete message.parent_message_uuid;
+  const summaryBoundary = stringValue(summary.up_to_message_uuid);
+  return {
+    uuid,
+    name: typeof value.name === "string" ? value.name.slice(0, 512) : "",
+    summary:
+      typeof value.summary === "string"
+        ? value.summary.slice(0, MAX_PROVIDER_MESSAGE_CHARS)
+        : "",
+    model: stringValue(value.model)?.slice(0, 256) || DEFAULT_PROVIDER.model,
+    created_at: storedDate(value.created_at),
+    updated_at: storedDate(value.updated_at, storedDate(value.created_at)),
+    ...(requestedLeaf && messageIds.has(requestedLeaf)
+      ? { current_leaf_message_uuid: requestedLeaf }
+      : messages.length > 0
+        ? { current_leaf_message_uuid: messages.at(-1)!.uuid }
+        : {}),
+    is_starred: value.is_starred === true,
+    is_temporary: value.is_temporary === true,
+    settings: boundedJsonObject(value.settings, MAX_SETTINGS_BYTES) ?? {},
+    ...(stringValue(value.project_uuid)
+      ? { project_uuid: stringValue(value.project_uuid)?.slice(0, 256) }
+      : {}),
+    chat_messages: messages,
+    ...(stringValue(summary.summary) &&
+    stringValue(summary.summary)!.length <= MAX_PROVIDER_MESSAGE_CHARS &&
+    summaryBoundary &&
+    messageIds.has(summaryBoundary)
+      ? {
+          context_summary: {
+            summary: stringValue(summary.summary)!,
+            up_to_message_uuid: summaryBoundary,
+            created_at: storedDate(summary.created_at),
+          },
+        }
+      : {}),
+  };
+}
+
+function normalizeStoredFile(value: unknown): LocalStoredFile | null {
+  if (!isObject(value)) return null;
+  const uuid = stringValue(value.uuid)?.slice(0, 256);
+  const storageName = safeStorageName(value.storage_name);
+  const sizeBytes = finiteNumber(value.size_bytes);
+  if (
+    !uuid ||
+    uuid.includes("\0") ||
+    !storageName ||
+    sizeBytes === undefined ||
+    sizeBytes < 0 ||
+    sizeBytes > MAX_LOCAL_FILE_BYTES
+  )
+    return null;
+  return {
+    uuid,
+    file_name: cleanFileName(stringValue(value.file_name) || "attachment"),
+    file_type:
+      stringValue(value.file_type)?.slice(0, 256) || "application/octet-stream",
+    file_kind: value.file_kind === "image" ? "image" : "blob",
+    size_bytes: sizeBytes,
+    storage_name: storageName,
+    ...(typeof value.extracted_content === "string"
+      ? {
+          extracted_content: value.extracted_content.slice(
+            0,
+            MAX_EXTRACTED_TEXT_CHARS,
+          ),
+        }
+      : {}),
+    created_at: storedDate(value.created_at),
+  };
+}
+
+function normalizeStoredArtifact(value: unknown): LocalArtifact | null {
+  if (!isObject(value)) return null;
+  const uuid = stringValue(value.uuid)?.slice(0, 256);
+  const identifier = stringValue(value.artifact_identifier)?.slice(0, 512);
+  const conversationUuid = stringValue(value.conversation_uuid)?.slice(0, 256);
+  if (
+    !uuid ||
+    !identifier ||
+    !conversationUuid ||
+    uuid.includes("\0") ||
+    identifier.includes("\0") ||
+    conversationUuid.includes("\0")
+  )
+    return null;
+  const type = artifactType(value.artifact_type);
+  let versionBytes = 0;
+  const versions = uniqueRecords(
+    (Array.isArray(value.versions) ? value.versions : [])
+      .slice(-MAX_ARTIFACT_VERSIONS)
+      .reverse()
+      .flatMap((candidate): LocalArtifactVersion[] => {
+        if (!isObject(candidate)) return [];
+        const versionUuid = stringValue(candidate.uuid)?.slice(0, 256);
+        const messageUuid = stringValue(candidate.message_uuid)?.slice(0, 256);
+        if (!versionUuid || !messageUuid) return [];
+        const content =
+          typeof candidate.content === "string"
+            ? candidate.content.slice(0, MAX_ARTIFACT_CONTENT_CHARS)
+            : "";
+        const contentBytes = Buffer.byteLength(content, "utf8");
+        if (versionBytes + contentBytes > MAX_ARTIFACT_VERSION_BYTES) return [];
+        versionBytes += contentBytes;
+        return [
+          {
+            uuid: versionUuid,
+            artifact_uuid: uuid,
+            artifact_identifier: identifier,
+            conversation_uuid: conversationUuid,
+            message_uuid: messageUuid,
+            created_at: storedDate(candidate.created_at),
+            updated_at: storedDate(
+              candidate.updated_at,
+              storedDate(candidate.created_at),
+            ),
+            title: stringValue(candidate.title)?.slice(0, 512) || "Untitled",
+            artifact_type: artifactType(candidate.artifact_type ?? type),
+            ...(stringValue(candidate.language)
+              ? { language: stringValue(candidate.language)?.slice(0, 256) }
+              : {}),
+            content,
+            command:
+              candidate.command === "update" || candidate.command === "rewrite"
+                ? candidate.command
+                : "create",
+            visibility: "private",
+            published_artifact_uuid:
+              stringValue(candidate.published_artifact_uuid)?.slice(0, 256) ??
+              null,
+            published_artifact_deleted_at:
+              typeof candidate.published_artifact_deleted_at === "string"
+                ? storedDate(candidate.published_artifact_deleted_at)
+                : null,
+          },
+        ];
+      }),
+    (version) => [version.uuid],
+  ).reverse();
+  return {
+    uuid,
+    artifact_identifier: identifier,
+    conversation_uuid: conversationUuid,
+    created_at: storedDate(value.created_at),
+    updated_at: storedDate(value.updated_at, storedDate(value.created_at)),
+    title: stringValue(value.title)?.slice(0, 512) || "Untitled",
+    artifact_type: type,
+    ...(stringValue(value.language)
+      ? { language: stringValue(value.language)?.slice(0, 256) }
+      : {}),
+    versions,
+  };
+}
+
+function normalizeStoredProject(value: unknown): LocalProject | null {
+  if (!isObject(value)) return null;
+  const uuid = stringValue(value.uuid)?.slice(0, 256);
+  if (!uuid || uuid.includes("\0")) return null;
+  const docs: LocalProjectDoc[] = uniqueRecords(
+    (Array.isArray(value.docs) ? value.docs : [])
+      .slice(-MAX_PROJECT_ENTRIES)
+      .flatMap((candidate) => {
+        if (!isObject(candidate)) return [];
+        const docUuid = stringValue(candidate.uuid)?.slice(0, 256);
+        if (!docUuid || docUuid.includes("\0")) return [];
+        return [
+          {
+            uuid: docUuid,
+            file_name: cleanFileName(
+              stringValue(candidate.file_name) || "document.txt",
+            ),
+            content:
+              typeof candidate.content === "string"
+                ? candidate.content.slice(0, MAX_PROJECT_KB_BYTES)
+                : "",
+            created_at: storedDate(candidate.created_at),
+          },
+        ];
+      }),
+    (doc) => [doc.uuid],
+  );
+  const files: LocalProjectFile[] = uniqueRecords(
+    (Array.isArray(value.files) ? value.files : [])
+      .slice(-MAX_PROJECT_ENTRIES)
+      .flatMap((candidate) => {
+        if (!isObject(candidate)) return [];
+        const fileUuid = stringValue(candidate.uuid)?.slice(0, 256);
+        const storageName = safeStorageName(candidate.storage_name);
+        const sizeBytes = finiteNumber(candidate.size_bytes);
+        if (
+          !fileUuid ||
+          fileUuid.includes("\0") ||
+          !storageName ||
+          sizeBytes === undefined ||
+          sizeBytes < 0 ||
+          sizeBytes > MAX_LOCAL_FILE_BYTES
+        )
+          return [];
+        return [
+          {
+            uuid: fileUuid,
+            file_name: cleanFileName(
+              stringValue(candidate.file_name) || "document",
+            ),
+            file_type:
+              stringValue(candidate.file_type)?.slice(0, 256) ||
+              "application/octet-stream",
+            size_bytes: sizeBytes,
+            ...(typeof candidate.extracted_content === "string"
+              ? {
+                  extracted_content: candidate.extracted_content.slice(
+                    0,
+                    MAX_EXTRACTED_TEXT_CHARS,
+                  ),
+                }
+              : {}),
+            storage_name: storageName,
+            created_at: storedDate(candidate.created_at),
+          },
+        ];
+      }),
+    (file) => [file.uuid, `storage:${file.storage_name}`],
+  );
+  return {
+    uuid,
+    name:
+      (stringValue(value.name) ?? "").slice(0, MAX_PROJECT_NAME_CHARS) ||
+      "Untitled project",
+    description:
+      typeof value.description === "string"
+        ? value.description.slice(0, MAX_PROJECT_DESCRIPTION_CHARS)
+        : "",
+    is_private: value.is_private !== false,
+    is_starred: value.is_starred === true,
+    is_archived: value.is_archived === true,
+    prompt_template:
+      typeof value.prompt_template === "string"
+        ? value.prompt_template.slice(0, MAX_PROJECT_PROMPT_CHARS)
+        : "",
+    created_at: storedDate(value.created_at),
+    updated_at: storedDate(value.updated_at, storedDate(value.created_at)),
+    docs,
+    files,
+  };
+}
+
+function normalizeRemoteMcpServers(value: unknown): LocalRemoteMcpServer[] {
+  if (!Array.isArray(value)) return [];
+  const names = new Set<string>();
+  const uuids = new Set<string>();
+  return value.slice(-MAX_REMOTE_MCP_SERVERS).flatMap((candidate) => {
+    if (!isObject(candidate)) return [];
+    const uuid = stringValue(candidate.uuid)?.slice(0, 256);
+    const name = stringValue(candidate.name)?.trim();
+    const url = httpConnectorUrl(candidate.url);
+    if (
+      !uuid ||
+      uuid.includes("\0") ||
+      !name ||
+      name.length > 256 ||
+      !url ||
+      names.has(name) ||
+      uuids.has(uuid)
+    )
+      return [];
+    names.add(name);
+    uuids.add(uuid);
+    return [
+      {
+        uuid,
+        name,
+        url,
+        ...(connectorOAuthPreset(candidate.preset)
+          ? { preset: connectorOAuthPreset(candidate.preset) }
+          : {}),
+        created_at: storedDate(candidate.created_at),
+        updated_at: storedDate(
+          candidate.updated_at,
+          storedDate(candidate.created_at),
+        ),
+      },
+    ];
+  });
 }
 
 // Endpoints without function tools invoke skills through the documented
@@ -1367,21 +2149,94 @@ function errorResponse(message: string, status = 400): Response {
   );
 }
 
-function completionErrorResponse(message: string): Response {
+function attachmentDisposition(fileName: string): string {
+  const cleaned = cleanFileName(fileName).slice(0, 255);
+  const fallback =
+    cleaned
+      .replaceAll(/[^\x20-\x7e]/g, "_")
+      .replaceAll(/["\\]/g, "_")
+      .replaceAll(/[\r\n]/g, "_") || "download";
+  let encoded: string;
+  try {
+    encoded = encodeURIComponent(cleaned);
+  } catch {
+    encoded = encodeURIComponent(fallback);
+  }
+  // RFC 5987's attr-char excludes these characters even though
+  // encodeURIComponent normally leaves some of them unescaped.
+  encoded = encoded.replaceAll(
+    /[!'()*]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
+class LocalHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status = 400,
+  ) {
+    super(message);
+  }
+}
+
+function settingsWithinLimit(value: JsonObject): boolean {
+  return Buffer.byteLength(JSON.stringify(value), "utf8") <= MAX_SETTINGS_BYTES;
+}
+
+function completionErrorResponse(message: string, status = 502): Response {
   return new Response(
     JSON.stringify({
       error: { type: "api_error", message },
     }),
     {
-      status: 502,
+      status,
       headers: { "Content-Type": "application/json" },
     },
   );
 }
 
 async function jsonBody(request: Request): Promise<JsonObject> {
-  const value = await request.json();
-  if (!isObject(value)) throw new Error("Request body must be a JSON object");
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_LOCAL_JSON_BYTES)
+    throw new LocalHttpError(
+      "Request body exceeded the 8 MiB local safety limit",
+      413,
+    );
+  if (!request.body)
+    throw new LocalHttpError("Request body must be a JSON object");
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  let size = 0;
+  let serialized = "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        serialized += decoder.decode();
+        break;
+      }
+      size += value.byteLength;
+      if (size > MAX_LOCAL_JSON_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new LocalHttpError(
+          "Request body exceeded the 8 MiB local safety limit",
+          413,
+        );
+      }
+      serialized += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(serialized);
+  } catch {
+    throw new LocalHttpError("Request body is not valid JSON");
+  }
+  if (!isObject(value))
+    throw new LocalHttpError("Request body must be a JSON object");
   return value;
 }
 
@@ -1390,23 +2245,32 @@ async function limitedResponseText(
   limit = MAX_PROVIDER_JSON_BYTES,
 ): Promise<string> {
   const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > limit)
+  if (Number.isFinite(declared) && declared > limit) {
+    await response.body?.cancel().catch(() => undefined);
     throw new Error("Provider response exceeded the 8 MiB safety limit");
+  }
   if (!response.body) return "";
   const reader = response.body.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   let size = 0;
   let output = "";
+  let completed = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
       size += value?.byteLength ?? 0;
-      if (size > limit)
+      if (size > limit) {
+        await reader.cancel().catch(() => undefined);
         throw new Error("Provider response exceeded the 8 MiB safety limit");
+      }
       output += decoder.decode(value, { stream: !done });
-      if (done) return output;
+      if (done) {
+        completed = true;
+        return output;
+      }
     }
   } finally {
+    if (!completed) await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }
@@ -1416,11 +2280,78 @@ async function* openAiDeltas(
   thinkingTags: LocalProviderConfig,
 ): AsyncGenerator<OpenAiDelta, void, void> {
   if (!response.body) return;
+  const thinkingParser = new ThinkingTagParser(thinkingTags);
+  const contentDeltas = (value: unknown): OpenAiDelta[] => {
+    const text =
+      typeof value === "string"
+        ? value
+        : Array.isArray(value)
+          ? value
+              .flatMap((part) =>
+                isObject(part) ? [stringValue(part.text || part.content)] : [],
+              )
+              .filter(Boolean)
+              .join("")
+          : "";
+    return text
+      ? thinkingParser
+          .push(text)
+          .map((tagged) => ({ type: tagged.type, text: tagged.text }))
+      : [];
+  };
+  if (
+    !response.headers
+      .get("content-type")
+      ?.toLowerCase()
+      .includes("text/event-stream")
+  ) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await limitedResponseText(response));
+    } catch (error) {
+      if (error instanceof SyntaxError)
+        throw new Error("Provider returned an invalid chat completion");
+      throw error;
+    }
+    if (!isObject(parsed))
+      throw new Error("Provider returned an invalid chat completion");
+    if (isObject(parsed.error))
+      throw new Error(
+        stringValue(parsed.error.message) || "Provider completion failed",
+      );
+    const choices = Array.isArray(parsed.choices) ? parsed.choices : [];
+    const choice = isObject(choices[0]) ? choices[0] : undefined;
+    const message = choice && isObject(choice.message) ? choice.message : null;
+    if (!message)
+      throw new Error("Provider returned an invalid chat completion");
+    const reasoning = reasoningText(message);
+    if (reasoning) yield { type: "reasoning", text: reasoning };
+    for (const delta of contentDeltas(message.content)) yield delta;
+    const toolCalls = Array.isArray(message.tool_calls)
+      ? message.tool_calls
+      : [];
+    for (const [index, candidate] of toolCalls.entries()) {
+      if (!isObject(candidate)) continue;
+      const fn = isObject(candidate.function) ? candidate.function : {};
+      yield {
+        type: "tool",
+        index,
+        ...(stringValue(candidate.id) ? { id: stringValue(candidate.id) } : {}),
+        ...(stringValue(fn.name) ? { name: stringValue(fn.name) } : {}),
+        ...(typeof fn.arguments === "string"
+          ? { arguments: fn.arguments }
+          : {}),
+      };
+    }
+    for (const tagged of thinkingParser.finish())
+      yield { type: tagged.type, text: tagged.text };
+    return;
+  }
   const reader = response.body.getReader();
-  const decoder = new TextDecoder();
+  const decoder = new TextDecoder("utf-8", { fatal: true });
   let buffer = "";
   let receivedBytes = 0;
-  const thinkingParser = new ThinkingTagParser(thinkingTags);
+  let completed = false;
   const lineDeltas = (line: string): OpenAiDelta[] => {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) return [];
@@ -1433,10 +2364,7 @@ async function* openAiDeltas(
     const output: OpenAiDelta[] = [];
     const reasoning = reasoningText(delta);
     if (reasoning) output.push({ type: "reasoning", text: reasoning });
-    const text = stringValue(delta.content);
-    if (text)
-      for (const tagged of thinkingParser.push(text))
-        output.push({ type: tagged.type, text: tagged.text });
+    output.push(...contentDeltas(delta.content));
     const toolCalls = Array.isArray(delta.tool_calls) ? delta.tool_calls : [];
     for (const [fallbackIndex, candidate] of toolCalls.entries()) {
       if (!isObject(candidate)) continue;
@@ -1459,8 +2387,10 @@ async function* openAiDeltas(
     while (true) {
       const { done, value } = await reader.read();
       receivedBytes += value?.byteLength ?? 0;
-      if (receivedBytes > MAX_PROVIDER_STREAM_BYTES)
+      if (receivedBytes > MAX_PROVIDER_STREAM_BYTES) {
+        await reader.cancel().catch(() => undefined);
         throw new Error("Provider stream exceeded the 32 MiB safety limit");
+      }
       buffer += decoder.decode(value, { stream: !done });
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? "";
@@ -1471,7 +2401,9 @@ async function* openAiDeltas(
     for (const delta of lineDeltas(buffer)) yield delta;
     for (const tagged of thinkingParser.finish())
       yield { type: tagged.type, text: tagged.text };
+    completed = true;
   } finally {
+    if (!completed) await reader.cancel().catch(() => undefined);
     reader.releaseLock();
   }
 }
@@ -1483,10 +2415,17 @@ export class LocalBackend {
   readonly #secretCodec?: LocalSecretCodec;
   #skillSource?: LocalSkillSource;
   #writeChain = Promise.resolve();
+  #mutationChain = Promise.resolve();
   // One in-flight completion per conversation: a retry, edit, or new send
   // during generation supersedes (and aborts) the previous provider stream,
   // exactly like the Stop button's fetch cancellation.
   readonly #activeCompletions = new Map<string, AbortController>();
+  readonly #activeCompletionRuns = new Set<Promise<void>>();
+  // A superseding turn waits for the aborted turn's tool/provider cleanup.
+  // Merely replacing #activeCompletions allows both runs to mutate the same
+  // conversation and sandbox concurrently while abort propagates.
+  readonly #completionBarriers = new Map<string, Promise<void>>();
+  #disposed = false;
 
   private constructor(
     filePath: string,
@@ -1506,38 +2445,50 @@ export class LocalBackend {
     secretCodec?: LocalSecretCodec,
   ): Promise<LocalBackend> {
     const filePath = path.join(userDataPath, "local-backend.json");
-    let value: unknown;
-    try {
-      value = JSON.parse(await readFile(filePath, "utf8"));
-    } catch {
-      value = null;
-    }
+    const value = await readRecoverableBoundedJsonFile(
+      filePath,
+      256 * 1024 * 1024,
+      "local backend store",
+    );
     const input = isObject(value) ? value : {};
     const provider = isObject(input.provider) ? input.provider : {};
-    const conversations = Array.isArray(input.conversations)
-      ? (input.conversations as LocalConversation[])
-      : [];
-    const artifacts = Array.isArray(input.artifacts)
-      ? (input.artifacts as LocalArtifact[]).map((artifact) => ({
-          ...artifact,
-          versions: Array.isArray(artifact.versions)
-            ? artifact.versions.map((version) => ({
-                ...version,
-                published_artifact_uuid:
-                  typeof version.published_artifact_uuid === "string"
-                    ? version.published_artifact_uuid
-                    : null,
-                published_artifact_deleted_at:
-                  typeof version.published_artifact_deleted_at === "string"
-                    ? version.published_artifact_deleted_at
-                    : null,
-              }))
-            : [],
-        }))
-      : [];
-    const files = Array.isArray(input.files)
-      ? (input.files as LocalStoredFile[])
-      : [];
+    const conversations = uniqueRecords(
+      (Array.isArray(input.conversations) ? input.conversations : [])
+        .slice(-MAX_CONVERSATIONS)
+        .flatMap((candidate) => {
+          const conversation = normalizeStoredConversation(candidate);
+          return conversation ? [conversation] : [];
+        }),
+      (conversation) => [conversation.uuid],
+    );
+    const artifacts = uniqueRecords(
+      (Array.isArray(input.artifacts) ? input.artifacts : [])
+        .slice(-MAX_ARTIFACTS)
+        .flatMap((candidate) => {
+          const artifact = normalizeStoredArtifact(candidate);
+          return artifact ? [artifact] : [];
+        }),
+      (artifact) => [
+        artifact.uuid,
+        `conversation:${artifact.conversation_uuid}:${artifact.artifact_identifier}`,
+      ],
+    );
+    const versionIds = new Set<string>();
+    for (const artifact of artifacts)
+      artifact.versions = artifact.versions.filter((version) => {
+        if (versionIds.has(version.uuid)) return false;
+        versionIds.add(version.uuid);
+        return true;
+      });
+    const files = uniqueRecords(
+      (Array.isArray(input.files) ? input.files : [])
+        .slice(-MAX_STORED_FILES)
+        .flatMap((candidate) => {
+          const file = normalizeStoredFile(candidate);
+          return file ? [file] : [];
+        }),
+      (file) => [file.uuid, `storage:${file.storage_name}`],
+    );
     // Builds before v0.0.1 persisted artifact tool_use blocks without the
     // version_uuid the retained UI needs to select a version when a stored
     // conversation is reopened; without it the artifact card renders but the
@@ -1577,8 +2528,25 @@ export class LocalBackend {
         normalizeArtifactMessage(message);
       }
     }
-    const accountProfile = plainJsonObject(input.accountProfile);
-    const accountSettings = plainJsonObject(input.accountSettings);
+    const accountProfile =
+      boundedJsonObject(input.accountProfile, MAX_ACCOUNT_STATE_BYTES) ?? {};
+    const accountSettings =
+      boundedJsonObject(input.accountSettings, MAX_ACCOUNT_STATE_BYTES) ?? {};
+    // Older combined account updates duplicated `settings` inside the profile.
+    // localAccount then applied that stale copy after accountSettings, making
+    // later capability toggles appear not to save. Migrate it into the single
+    // authoritative settings record, with explicit accountSettings winning.
+    const legacyProfileSettings = plainJsonObject(accountProfile.settings);
+    delete accountProfile.settings;
+    const migratedAccountSettings = boundedJsonObject(
+      { ...legacyProfileSettings, ...accountSettings },
+      MAX_ACCOUNT_STATE_BYTES,
+    );
+    if (migratedAccountSettings) {
+      for (const key of Object.keys(accountSettings))
+        delete accountSettings[key];
+      Object.assign(accountSettings, migratedAccountSettings);
+    }
     const storedApiKey = stringValue(provider.apiKey) ?? "";
     let apiKey = storedApiKey;
     if (storedApiKey.startsWith("safe:v1:")) {
@@ -1588,65 +2556,155 @@ export class LocalBackend {
         apiKey = "";
       }
     }
-    return new LocalBackend(
+    let providerConfig: LocalProviderConfig;
+    try {
+      providerConfig = configuredProvider({
+        baseUrl: stringValue(provider.baseUrl),
+        model: stringValue(provider.model),
+        contextWindow: Number(provider.contextWindow),
+        enableThinking:
+          typeof provider.enableThinking === "boolean"
+            ? provider.enableThinking
+            : undefined,
+        apiKey,
+        thinkingStartTag:
+          typeof provider.thinkingStartTag === "string"
+            ? provider.thinkingStartTag
+            : undefined,
+        thinkingEndTag:
+          typeof provider.thinkingEndTag === "string"
+            ? provider.thinkingEndTag
+            : undefined,
+      });
+    } catch {
+      // A corrupt persisted provider must not make the whole desktop fail to
+      // boot. Environment overrides are still authoritative: if one is
+      // invalid this second call throws and surfaces the operator error.
+      providerConfig = configuredProvider();
+    }
+    const backend = new LocalBackend(
       filePath,
       {
         version: 3,
-        provider: configuredProvider({
-          baseUrl: stringValue(provider.baseUrl),
-          model: stringValue(provider.model),
-          contextWindow: Number(provider.contextWindow),
-          enableThinking:
-            typeof provider.enableThinking === "boolean"
-              ? provider.enableThinking
-              : undefined,
-          apiKey,
-          thinkingStartTag:
-            typeof provider.thinkingStartTag === "string"
-              ? provider.thinkingStartTag
-              : undefined,
-          thinkingEndTag:
-            typeof provider.thinkingEndTag === "string"
-              ? provider.thinkingEndTag
-              : undefined,
-        }),
+        provider: providerConfig,
         accountProfile,
         accountSettings,
         conversations,
         artifacts,
         files,
-        mcpRemoteServers: Array.isArray(input.mcpRemoteServers)
-          ? (input.mcpRemoteServers as LocalRemoteMcpServer[])
-          : [],
-        projects: Array.isArray(input.projects)
-          ? (input.projects as LocalProject[]).map((project) => ({
-              ...project,
-              docs: Array.isArray(project.docs) ? project.docs : [],
-              // Projects persisted before knowledge-base uploads existed.
-              files: Array.isArray(project.files) ? project.files : [],
-            }))
-          : [],
+        mcpRemoteServers: normalizeRemoteMcpServers(input.mcpRemoteServers),
+        projects: uniqueRecords(
+          (Array.isArray(input.projects) ? input.projects : [])
+            .slice(-MAX_PROJECTS)
+            .flatMap((candidate) => {
+              const project = normalizeStoredProject(candidate);
+              return project ? [project] : [];
+            }),
+          (project) => [project.uuid],
+        ),
         memory: (() => {
-          const stored = plainJsonObject(input.memory);
+          const stored = isObject(input.memory) ? input.memory : {};
           return {
-            memory: stringValue(stored.memory) ?? "",
+            memory: (stringValue(stored.memory) ?? "").slice(
+              0,
+              MAX_MEMORY_CHARS,
+            ),
             controls: Array.isArray(stored.controls)
-              ? stored.controls.filter(
-                  (entry): entry is string => typeof entry === "string",
-                )
+              ? stored.controls
+                  .filter((entry): entry is string => typeof entry === "string")
+                  .slice(0, MAX_MEMORY_CONTROLS)
+                  .map((entry) => entry.slice(0, MAX_MEMORY_CONTROL_CHARS))
               : [],
             updated_at:
               typeof stored.updated_at === "string" ? stored.updated_at : null,
-            settings: {
-              ...structuredClone(DEFAULT_MEMORY_STATE.settings),
-              ...plainJsonObject(stored.settings),
-            },
+            settings:
+              boundedJsonObject(
+                {
+                  ...structuredClone(DEFAULT_MEMORY_STATE.settings),
+                  ...(boundedJsonObject(stored.settings, MAX_SETTINGS_BYTES) ??
+                    {}),
+                },
+                MAX_SETTINGS_BYTES,
+              ) ?? structuredClone(DEFAULT_MEMORY_STATE.settings),
           };
         })(),
       },
       webTools,
       secretCodec,
     );
+    await backend.#reconcileStoredFiles();
+    return backend;
+  }
+
+  async #reconcileStoredFiles(): Promise<void> {
+    const root = path.join(path.dirname(this.filePath), "local-files");
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    const entries = await readdir(root, { withFileTypes: true });
+    const available = new Map<string, number>();
+    for (const entry of entries) {
+      if (!entry.isFile() || !safeStorageName(entry.name)) continue;
+      const info = await lstat(path.join(root, entry.name)).catch(() => null);
+      if (info?.isFile() && !info.isSymbolicLink())
+        available.set(entry.name, info.size);
+    }
+
+    let changed = false;
+    const claimed = new Set<string>();
+    const retainedFiles = this.#data.files.filter((file) => {
+      const actualSize = available.get(file.storage_name);
+      if (
+        actualSize === undefined ||
+        actualSize > MAX_LOCAL_FILE_BYTES ||
+        claimed.has(file.storage_name)
+      ) {
+        changed = true;
+        return false;
+      }
+      claimed.add(file.storage_name);
+      if (file.size_bytes !== actualSize) {
+        file.size_bytes = actualSize;
+        changed = true;
+      }
+      return true;
+    });
+    if (retainedFiles.length !== this.#data.files.length)
+      this.#data.files = retainedFiles;
+    const retainedFileIds = new Set(retainedFiles.map((file) => file.uuid));
+    for (const conversation of this.#data.conversations) {
+      for (const message of conversation.chat_messages) {
+        const retained = message.files.filter((file) =>
+          retainedFileIds.has(file.file_uuid),
+        );
+        if (retained.length !== message.files.length) {
+          message.files = retained;
+          changed = true;
+        }
+      }
+    }
+    for (const project of this.#data.projects) {
+      const retained = project.files.filter((file) => {
+        const actualSize = available.get(file.storage_name);
+        if (
+          actualSize === undefined ||
+          actualSize > MAX_LOCAL_FILE_BYTES ||
+          claimed.has(file.storage_name)
+        ) {
+          changed = true;
+          return false;
+        }
+        claimed.add(file.storage_name);
+        if (file.size_bytes !== actualSize) {
+          file.size_bytes = actualSize;
+          changed = true;
+        }
+        return true;
+      });
+      if (retained.length !== project.files.length) {
+        project.files = retained;
+        project.updated_at = new Date().toISOString();
+      }
+    }
+    if (changed) await this.#persist();
   }
 
   provider(): LocalProviderConfig {
@@ -1654,8 +2712,16 @@ export class LocalBackend {
   }
 
   async setThinkingEnabled(enableThinking: boolean): Promise<void> {
-    this.#data.provider.enableThinking = enableThinking;
-    await this.#persist();
+    await this.#serializeMutation(async () => {
+      const previous = this.#data.provider.enableThinking;
+      this.#data.provider.enableThinking = enableThinking;
+      try {
+        await this.#persist();
+      } catch (error) {
+        this.#data.provider.enableThinking = previous;
+        throw error;
+      }
+    });
   }
 
   accountProfile(): JsonObject {
@@ -1684,14 +2750,18 @@ export class LocalBackend {
     };
   }
 
-  #memorySynthesisActive = false;
+  #memoryRevision = 0;
+  #memorySynthesisPromise: Promise<void> | null = null;
+  #memorySynthesisAbort: AbortController | null = null;
 
   // Rebuilds the synthesized memory document from recent non-temporary
   // conversations. Incognito chats can read memory but never feed it.
   async synthesizeMemory(): Promise<void> {
-    if (this.#memorySynthesisActive) return;
-    this.#memorySynthesisActive = true;
-    try {
+    if (this.#memorySynthesisPromise) return this.#memorySynthesisPromise;
+    const revision = this.#memoryRevision;
+    const synthesisAbort = new AbortController();
+    this.#memorySynthesisAbort = synthesisAbort;
+    const pending = (async () => {
       const sources = this.#data.conversations
         .filter(
           (conversation) =>
@@ -1745,12 +2815,38 @@ export class LocalBackend {
         ]
           .filter(Boolean)
           .join("\n\n"),
+        synthesisAbort.signal,
       );
-      this.#data.memory.memory = summary;
-      this.#data.memory.updated_at = new Date().toISOString();
-      await this.#persist();
+      await this.#serializeMutation(async () => {
+        // A manual edit, reset, setting change, or save_memory call made while
+        // the provider was summarizing is newer than this snapshot. Never let
+        // a late model response overwrite that user-visible mutation.
+        if (this.#disposed || this.#memoryRevision !== revision) return;
+        const previousMemory = this.#data.memory.memory;
+        const previousUpdatedAt = this.#data.memory.updated_at;
+        this.#data.memory.memory = summary.slice(0, MAX_MEMORY_CHARS);
+        this.#data.memory.updated_at = new Date().toISOString();
+        const ownRevision = ++this.#memoryRevision;
+        try {
+          await this.#persist();
+        } catch (error) {
+          if (this.#memoryRevision === ownRevision) {
+            this.#data.memory.memory = previousMemory;
+            this.#data.memory.updated_at = previousUpdatedAt;
+            this.#memoryRevision -= 1;
+          }
+          throw error;
+        }
+      });
+    })();
+    this.#memorySynthesisPromise = pending;
+    try {
+      await pending;
     } finally {
-      this.#memorySynthesisActive = false;
+      if (this.#memorySynthesisPromise === pending)
+        this.#memorySynthesisPromise = null;
+      if (this.#memorySynthesisAbort === synthesisAbort)
+        this.#memorySynthesisAbort = null;
     }
   }
 
@@ -1759,7 +2855,7 @@ export class LocalBackend {
   // Trailing debounce: a completed chat schedules one synthesis a minute
   // after the session goes quiet, and at most every 15 minutes overall.
   maybeSynthesizeMemory(): void {
-    if (!this.#memoryEnabled()) return;
+    if (this.#disposed || !this.#memoryEnabled()) return;
     const last = this.#data.memory.updated_at
       ? Date.parse(this.#data.memory.updated_at)
       : 0;
@@ -1791,21 +2887,78 @@ export class LocalBackend {
   }
 
   async updateAccountProfile(input: unknown): Promise<JsonObject> {
-    this.#data.accountProfile = {
-      ...this.#data.accountProfile,
-      ...plainJsonObject(input),
-    };
-    await this.#persist();
-    return this.accountProfile();
+    return this.#serializeMutation(async () => {
+      const previousProfile = this.#data.accountProfile;
+      const previousSettings = this.#data.accountSettings;
+      const patch = plainJsonObject(input);
+      const settingsPatch = plainJsonObject(patch.settings);
+      delete patch.settings;
+      const next = {
+        ...this.#data.accountProfile,
+        ...patch,
+      };
+      if (typeof next.conversation_preferences === "string")
+        next.conversation_preferences = next.conversation_preferences.slice(
+          0,
+          MAX_ACCOUNT_INSTRUCTIONS_CHARS,
+        );
+      assertBoundedJson(
+        JSON.stringify(next),
+        MAX_ACCOUNT_STATE_BYTES,
+        "local account profile",
+      );
+      const nextSettings = {
+        ...this.#data.accountSettings,
+        ...settingsPatch,
+      };
+      assertBoundedJson(
+        JSON.stringify(nextSettings),
+        MAX_ACCOUNT_STATE_BYTES,
+        "local account settings",
+      );
+      this.#data.accountProfile = next;
+      this.#data.accountSettings = nextSettings;
+      try {
+        await this.#persist();
+      } catch (error) {
+        this.#data.accountProfile = previousProfile;
+        this.#data.accountSettings = previousSettings;
+        throw error;
+      }
+      return this.accountProfile();
+    });
   }
 
   async updateAccountSettings(input: unknown): Promise<JsonObject> {
-    this.#data.accountSettings = {
-      ...this.#data.accountSettings,
-      ...plainJsonObject(input),
-    };
-    await this.#persist();
-    return this.accountSettings();
+    return this.#serializeMutation(async () => {
+      const previous = this.#data.accountSettings;
+      const next = {
+        ...this.#data.accountSettings,
+        ...plainJsonObject(input),
+      };
+      assertBoundedJson(
+        JSON.stringify(next),
+        MAX_ACCOUNT_STATE_BYTES,
+        "local account settings",
+      );
+      this.#data.accountSettings = next;
+      try {
+        await this.#persist();
+      } catch (error) {
+        this.#data.accountSettings = previous;
+        throw error;
+      }
+      return this.accountSettings();
+    });
+  }
+
+  #serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const pending = this.#mutationChain.catch(() => undefined).then(operation);
+    this.#mutationChain = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    return pending;
   }
 
   async #persist(): Promise<void> {
@@ -1829,6 +2982,7 @@ export class LocalBackend {
       else delete persisted.provider.apiKey;
     }
     const serialized = `${JSON.stringify(persisted, null, 2)}\n`;
+    assertBoundedJson(serialized, 256 * 1024 * 1024, "local backend store");
     const pending = this.#writeChain
       .catch(() => undefined)
       .then(async () => {
@@ -1938,6 +3092,11 @@ export class LocalBackend {
   }
 
   async #storeUploadedFile(file: File): Promise<LocalStoredFile> {
+    if (this.#data.files.length >= MAX_STORED_FILES)
+      throw new LocalHttpError(
+        `Local file storage is limited to ${MAX_STORED_FILES} files`,
+        409,
+      );
     if (file.size > MAX_LOCAL_FILE_BYTES)
       throw new Error("Uploaded file is larger than the 50 MB local limit");
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -1961,9 +3120,17 @@ export class LocalBackend {
     };
     const destination = this.#storedFilePath(stored);
     await mkdir(path.dirname(destination), { recursive: true });
-    await writeFile(destination, bytes, { mode: 0o600 });
+    await writeFile(destination, bytes, { mode: 0o600, flag: "wx" });
     this.#data.files.push(stored);
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      this.#data.files = this.#data.files.filter(
+        (candidate) => candidate !== stored,
+      );
+      await rm(destination, { force: true }).catch(() => undefined);
+      throw error;
+    }
     return stored;
   }
 
@@ -1981,9 +3148,45 @@ export class LocalBackend {
   }
 
   async #uploadedFile(request: Request): Promise<File> {
-    const form = await request.formData();
+    const contentType = request.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().startsWith("multipart/form-data"))
+      throw new Error("Multipart file is required");
+    const declared = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declared) && declared > MAX_MULTIPART_REQUEST_BYTES) {
+      await request.body?.cancel().catch(() => undefined);
+      throw new Error("Uploaded file is larger than the 50 MB local limit");
+    }
+    if (!request.body) throw new Error("Multipart file is required");
+    const reader = request.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > MAX_MULTIPART_REQUEST_BYTES) {
+          await reader.cancel().catch(() => undefined);
+          throw new Error("Uploaded file is larger than the 50 MB local limit");
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const form = await new Response(bytes, {
+      headers: { "Content-Type": contentType },
+    }).formData();
     const file = form.get("file");
     if (!(file instanceof File)) throw new Error("Multipart file is required");
+    if (file.size > MAX_LOCAL_FILE_BYTES)
+      throw new Error("Uploaded file is larger than the 50 MB local limit");
     return file;
   }
 
@@ -1991,9 +3194,49 @@ export class LocalBackend {
     conversation: LocalConversation,
     messageUuid: string,
     input: ArtifactToolInput,
+    workspace?: LocalArtifactWorkspace,
   ): ArtifactToolInput {
     const now = new Date().toISOString();
-    let artifact = this.#artifact(conversation.uuid, input.id);
+    let artifact = workspace?.artifacts.find(
+      (candidate) =>
+        candidate.conversation_uuid === conversation.uuid &&
+        (candidate.artifact_identifier === input.id ||
+          candidate.uuid === input.id),
+    );
+    if (!artifact) {
+      const persisted = this.#artifact(conversation.uuid, input.id);
+      if (persisted && workspace) {
+        artifact = structuredClone(persisted);
+        workspace.artifacts.push(artifact);
+        workspace.baseVersions.set(
+          artifact.uuid,
+          persisted.versions.map((version) => version.uuid),
+        );
+      } else artifact = persisted;
+    }
+    const createsArtifact = !artifact;
+    const stagedCreations = workspace
+      ? [...workspace.baseVersions.values()].filter((value) => value === null)
+          .length
+      : 0;
+    if (
+      createsArtifact &&
+      this.#data.artifacts.length + stagedCreations >= MAX_ARTIFACTS
+    )
+      throw new Error(`Local artifacts are limited to ${MAX_ARTIFACTS}`);
+    if (input.command === "update" && !input.content) {
+      if (!artifact)
+        throw new Error("Cannot update an artifact that does not exist");
+      const oldText = input.old_str ?? "";
+      if (!oldText)
+        throw new Error("Artifact update old_str must not be empty");
+      const previous = artifact.versions.at(-1)?.content ?? "";
+      const matches = previous.split(oldText).length - 1;
+      if (matches === 0)
+        throw new Error("Artifact update old_str was not found");
+      if (matches > 1)
+        throw new Error(`Artifact update old_str matched ${matches} times`);
+    }
     if (!artifact) {
       artifact = {
         uuid: randomUUID(),
@@ -2006,7 +3249,23 @@ export class LocalBackend {
         ...(input.language ? { language: input.language } : {}),
         versions: [],
       };
-      this.#data.artifacts.push(artifact);
+      (workspace?.artifacts ?? this.#data.artifacts).push(artifact);
+      workspace?.baseVersions.set(artifact.uuid, null);
+    }
+    if (artifact.versions.length >= MAX_ARTIFACT_VERSIONS) {
+      if (createsArtifact)
+        if (workspace)
+          workspace.artifacts = workspace.artifacts.filter(
+            (candidate) => candidate !== artifact,
+          );
+        else
+          this.#data.artifacts = this.#data.artifacts.filter(
+            (candidate) => candidate !== artifact,
+          );
+      if (createsArtifact) workspace?.baseVersions.delete(artifact.uuid);
+      throw new Error(
+        `An artifact is limited to ${MAX_ARTIFACT_VERSIONS} versions`,
+      );
     }
 
     const previous = artifact.versions.at(-1)?.content ?? "";
@@ -2014,12 +3273,27 @@ export class LocalBackend {
     if (input.command === "update" && !input.content) {
       const oldText = input.old_str ?? "";
       const newText = input.new_str ?? "";
-      content =
-        oldText && previous.includes(oldText)
-          ? previous.replace(oldText, newText)
-          : previous || newText;
+      content = previous.replace(oldText, newText);
     }
-    const versionUuid = input.version_uuid || randomUUID();
+    if (content.length > MAX_ARTIFACT_CONTENT_CHARS) {
+      if (createsArtifact)
+        if (workspace)
+          workspace.artifacts = workspace.artifacts.filter(
+            (candidate) => candidate !== artifact,
+          );
+        else
+          this.#data.artifacts = this.#data.artifacts.filter(
+            (candidate) => candidate !== artifact,
+          );
+      if (createsArtifact) workspace?.baseVersions.delete(artifact.uuid);
+      throw new Error(
+        `Artifact content exceeds ${MAX_ARTIFACT_CONTENT_CHARS} characters`,
+      );
+    }
+    // Provider-supplied ids are untrusted and can collide with an existing
+    // version. The local store owns identity; the generated id is returned to
+    // the UI in the normalized tool block.
+    const versionUuid = randomUUID();
     const title = input.title || artifact.title;
     const type = input.type || artifact.artifact_type;
     const language = input.language || artifact.language;
@@ -2054,6 +3328,46 @@ export class LocalBackend {
       ...(language ? { language } : {}),
       ...(input.command === "update" && !input.content ? {} : { content }),
     };
+  }
+
+  #mergedArtifacts(workspace: LocalArtifactWorkspace): LocalArtifact[] {
+    const merged = this.#data.artifacts.slice();
+    for (const staged of workspace.artifacts) {
+      const baseVersions = workspace.baseVersions.get(staged.uuid);
+      if (baseVersions === undefined) continue;
+      const currentIndex = merged.findIndex(
+        (artifact) => artifact.uuid === staged.uuid,
+      );
+      if (baseVersions === null) {
+        if (
+          currentIndex !== -1 ||
+          merged.some(
+            (artifact) =>
+              artifact.conversation_uuid === staged.conversation_uuid &&
+              artifact.artifact_identifier === staged.artifact_identifier,
+          )
+        )
+          throw new Error("Artifact changed while the response was generating");
+        if (merged.length >= MAX_ARTIFACTS)
+          throw new Error(`Local artifacts are limited to ${MAX_ARTIFACTS}`);
+        merged.push(staged);
+        continue;
+      }
+      if (currentIndex === -1)
+        throw new Error(
+          "Artifact was deleted while the response was generating",
+        );
+      const currentVersions = merged[currentIndex].versions.map(
+        (version) => version.uuid,
+      );
+      if (
+        currentVersions.length !== baseVersions.length ||
+        currentVersions.some((uuid, index) => uuid !== baseVersions[index])
+      )
+        throw new Error("Artifact changed while the response was generating");
+      merged[currentIndex] = staged;
+    }
+    return merged;
   }
 
   // The profile-level "Instructions for Claude" value and the available
@@ -2117,12 +3431,16 @@ export class LocalBackend {
     }
     const instructions = (
       stringValue(this.#data.accountProfile.conversation_preferences) ?? ""
-    ).trim();
+    )
+      .trim()
+      .slice(0, MAX_ACCOUNT_INSTRUCTIONS_CHARS);
     if (instructions)
       sections.push(
         `<user_instructions>\nThe user has set these preferences for how you should respond. Apply them whenever they are relevant:\n${instructions}\n</user_instructions>`,
       );
-    const memory = this.#data.memory.memory.trim();
+    const memory = this.#data.memory.memory
+      .trim()
+      .slice(0, MAX_ACCOUNT_INSTRUCTIONS_CHARS);
     if (memory && this.#memoryEnabled())
       sections.push(
         `<user_memory>\nWhat you remember about this user from previous conversations. Use it to personalize responses when relevant; never claim to remember something that is not written here:\n${memory}\n</user_memory>`,
@@ -2133,7 +3451,11 @@ export class LocalBackend {
         if (skills.length > 0)
           sections.push(
             `<available_skills>\nSkills are packaged expert instructions that markedly improve your results for the tasks they cover. Before starting ANY response, scan this list. If a skill's description plausibly covers the user's request — even partially — you MUST call the skill tool with its exact name FIRST, then follow the returned instructions while completing the request. When several skills match, load each relevant one. Loading a skill is cheap; skipping a relevant skill produces noticeably worse results, so when in doubt, load it. Never claim a skill was used without actually calling the tool.\n${skills
-              .map((skill) => `- ${skill.name}: ${skill.description}`)
+              .slice(0, 128)
+              .map(
+                (skill) =>
+                  `- ${skill.name.slice(0, 256)}: ${skill.description.slice(0, 2_000)}`,
+              )
               .join("\n")}\n</available_skills>`,
           );
       } catch {
@@ -2192,45 +3514,69 @@ export class LocalBackend {
   }
 
   // Custom connectors (remote MCP servers) for the MCP client.
-  remoteMcpServers(): Array<{ name: string; url: string }> {
+  remoteMcpServers(): Array<{ uuid: string; name: string; url: string }> {
     return this.#data.mcpRemoteServers.map((server) => ({
+      uuid: server.uuid,
       name: server.name,
       url: server.url,
     }));
   }
 
+  remoteMcpServer(
+    uuid: string,
+  ): { uuid: string; name: string; url: string; preset?: string } | null {
+    const server = this.#data.mcpRemoteServers.find(
+      (candidate) => candidate.uuid === uuid,
+    );
+    return server ? { ...server } : null;
+  }
+
   #remoteMcpStatus?: (name: string) => "connected" | "error" | null;
   #onRemoteMcpServersChanged?: () => void;
+  #remoteMcpAuthentication?: (uuid: string) => ConnectorOAuthPublicState | null;
+  #onRemoteMcpServerRemoved?: (uuid: string) => Promise<void> | void;
 
   setRemoteMcpHooks(hooks: {
     status: (name: string) => "connected" | "error" | null;
     changed: () => void;
+    authentication?: (uuid: string) => ConnectorOAuthPublicState | null;
+    removed?: (uuid: string) => Promise<void> | void;
   }): void {
     this.#remoteMcpStatus = hooks.status;
     this.#onRemoteMcpServersChanged = hooks.changed;
+    this.#remoteMcpAuthentication = hooks.authentication;
+    this.#onRemoteMcpServerRemoved = hooks.removed;
   }
 
   #remoteMcpRecord(
     server: LocalRemoteMcpServer,
     withConnection: boolean,
   ): JsonObject {
+    const authentication = this.#remoteMcpAuthentication?.(server.uuid);
     return {
       uuid: server.uuid,
       name: server.name,
       url: server.url,
+      preset: server.preset ?? null,
       created_at: server.created_at,
       updated_at: server.updated_at,
-      custom_oauth_client_id: null,
+      custom_oauth_client_id: authentication?.clientId ?? null,
       custom_oauth_client_secret_mask: null,
-      is_authenticated: false,
+      is_authenticated: authentication?.authenticated ?? false,
+      oauth_access: authentication?.access ?? null,
+      oauth_pending: authentication?.pending ?? false,
+      oauth_error: authentication?.error ?? null,
       id_jag_config: null,
       install_summary: null,
       install_inputs: null,
       ...(withConnection
         ? {
-            connection_state:
-              this.#remoteMcpStatus?.(server.name) ?? "initiated",
-            connection_auth_type: null,
+            connection_state: authentication?.pending
+              ? "authenticating"
+              : server.preset && !authentication?.authenticated
+                ? "requires_auth"
+                : (this.#remoteMcpStatus?.(server.name) ?? "initiated"),
+            connection_auth_type: server.preset ? "oauth" : null,
           }
         : {}),
     };
@@ -2327,10 +3673,23 @@ export class LocalBackend {
           ...branch.slice(boundary + 1),
         ];
     }
+    const reservedTools = [
+      ...(webSearchEnabled
+        ? CHAT_TOOLS
+        : [ARTIFACT_TOOL, SKILL_TOOL, SAVE_MEMORY_TOOL]),
+      ...(this.#codeExecutionEnabled() ? [CODE_EXECUTION_TOOL] : []),
+      ...(this.#browserUseEnabled() ? BROWSER_TOOLS : []),
+      ...(this.#computerUseEnabled() ? COMPUTER_TOOLS : []),
+      ...(await this.#mcpToolFunctions()),
+    ];
     const reservedTokens =
       estimateTokens(
-        chatSystemPrompt(true, webSearchEnabled, this.#codeExecutionEnabled()),
-      ) + estimateTokens(JSON.stringify(CHAT_TOOLS));
+        await this.#chatSystemPromptWithInstructions(
+          true,
+          webSearchEnabled,
+          conversation,
+        ),
+      ) + estimateTokens(JSON.stringify(reservedTools));
     const providerMessages = effective.map((message) => ({
       role: message.sender === "human" ? "user" : "assistant",
       content: messageText(message, this.#data.files),
@@ -2351,12 +3710,18 @@ export class LocalBackend {
         providerMessages.slice(0, plan.prefixLength),
         signal,
       );
+      const previousSummary = conversation.context_summary;
       conversation.context_summary = {
         summary,
         up_to_message_uuid: lastCovered.uuid,
         created_at: new Date().toISOString(),
       };
-      await this.#persist();
+      try {
+        await this.#persist();
+      } catch (error) {
+        conversation.context_summary = previousSummary;
+        throw error;
+      }
       traceCompaction("chat", {
         conversation: conversation.uuid,
         folded: plan.prefixLength,
@@ -2408,8 +3773,38 @@ export class LocalBackend {
         webSearchEnabled,
         conversation,
       );
-    const send = (withTools: boolean) =>
-      fetch(`${provider.baseUrl}/chat/completions`, {
+    const send = (withTools: boolean) => {
+      const serialized = JSON.stringify({
+        model: provider.model,
+        stream: true,
+        messages: [
+          {
+            role: "system",
+            content: withTools
+              ? systemContentWithTools
+              : systemContentWithoutTools,
+          },
+          ...history.map((message) => ({
+            role: message.sender === "human" ? "user" : "assistant",
+            content: messageText(message, this.#data.files),
+          })),
+          ...(emptyRetry
+            ? [
+                {
+                  role: "user",
+                  content:
+                    "Your previous turn contained reasoning but no visible answer or artifact call. Reply visibly now, or call the artifacts tool if the request requires an artifact.",
+                },
+              ]
+            : []),
+          ...continuation,
+        ],
+        ...(withTools ? { tools: availableTools, tool_choice: "auto" } : {}),
+        ...requestOptions,
+      });
+      if (Buffer.byteLength(serialized, "utf8") > MAX_PROVIDER_REQUEST_BYTES)
+        throw new Error("Provider request exceeded the 32 MiB safety limit");
+      return fetch(`${provider.baseUrl}/chat/completions`, {
         method: "POST",
         // Long local generations remain valid as long as the provider keeps
         // the request open. Only the caller's cancellation signal may abort a
@@ -2422,35 +3817,9 @@ export class LocalBackend {
             ? { Authorization: `Bearer ${provider.apiKey}` }
             : {}),
         },
-        body: JSON.stringify({
-          model: provider.model,
-          stream: true,
-          messages: [
-            {
-              role: "system",
-              content: withTools
-                ? systemContentWithTools
-                : systemContentWithoutTools,
-            },
-            ...history.map((message) => ({
-              role: message.sender === "human" ? "user" : "assistant",
-              content: messageText(message, this.#data.files),
-            })),
-            ...(emptyRetry
-              ? [
-                  {
-                    role: "user",
-                    content:
-                      "Your previous turn contained reasoning but no visible answer or artifact call. Reply visibly now, or call the artifacts tool if the request requires an artifact.",
-                  },
-                ]
-              : []),
-            ...continuation,
-          ],
-          ...(withTools ? { tools: availableTools, tool_choice: "auto" } : {}),
-          ...requestOptions,
-        }),
+        body: serialized,
       });
+    };
     let response = await send(true);
     if ([400, 404, 422].includes(response.status)) {
       await response.body?.cancel().catch(() => undefined);
@@ -2485,1494 +3854,1708 @@ export class LocalBackend {
     conversationUuid: string,
     retryRequested = false,
   ): Promise<Response> {
+    const previousBarrier = this.#completionBarriers.get(conversationUuid);
     this.#abortActiveCompletion(conversationUuid);
     const completionAbort = new AbortController();
     this.#activeCompletions.set(conversationUuid, completionAbort);
+    let resolveBarrier!: () => void;
+    const barrier = new Promise<void>((resolve) => {
+      resolveBarrier = resolve;
+    });
+    this.#completionBarriers.set(conversationUuid, barrier);
+    let barrierResolved = false;
+    const finishCompletion = () => {
+      if (barrierResolved) return;
+      barrierResolved = true;
+      if (this.#completionBarriers.get(conversationUuid) === barrier)
+        this.#completionBarriers.delete(conversationUuid);
+      resolveBarrier();
+    };
     if (request.signal.aborted) completionAbort.abort();
     else
       request.signal.addEventListener("abort", () => completionAbort.abort(), {
         once: true,
       });
     const completionSignal = completionAbort.signal;
-    const body = await jsonBody(request);
-    let conversation = this.#conversation(conversationUuid);
-    const createsConversation = !conversation;
-    if (!conversation) {
-      const params = isObject(body.create_conversation_params)
-        ? body.create_conversation_params
+    try {
+      await previousBarrier;
+      if (completionSignal.aborted) throw new Error("Completion was cancelled");
+      const body = await jsonBody(request);
+      const prompt = stringValue(body.prompt) || stringValue(body.text) || "";
+      if (prompt.length > MAX_CHAT_PROMPT_CHARS)
+        throw new LocalHttpError(
+          "Chat prompt exceeds the 2,000,000 character limit",
+          413,
+        );
+      const turnUuids = isObject(body.turn_message_uuids)
+        ? body.turn_message_uuids
         : {};
-      conversation = await this.#createConversation({
-        ...params,
-        uuid: conversationUuid,
-      });
-    }
-    conversation.model = this.#data.provider.model;
-    // On a new chat the retained composer can send its pre-click value even
-    // after the Web search account mutation has completed. The persisted
-    // account setting is authoritative for creation; established chats keep
-    // using their per-conversation request value.
-    const accountWebSearch = this.#data.accountSettings.enabled_web_search;
-    if (createsConversation && typeof accountWebSearch === "boolean")
-      conversation.settings.enabled_web_search = accountWebSearch;
-    else if (typeof body.enabled_web_search === "boolean")
-      conversation.settings.enabled_web_search = body.enabled_web_search;
-    const webSearchEnabled = conversation.settings.enabled_web_search !== false;
-
-    const prompt = stringValue(body.prompt) || stringValue(body.text) || "";
-    const turnUuids = isObject(body.turn_message_uuids)
-      ? body.turn_message_uuids
-      : {};
-    const humanUuid = stringValue(turnUuids.human_message_uuid) || randomUUID();
-    const assistantUuid =
-      stringValue(turnUuids.assistant_message_uuid) || randomUUID();
-    let parentUuid =
-      stringValue(body.parent_message_uuid) ||
-      conversation.current_leaf_message_uuid;
-    const attachments = normalizeAttachments(body.attachments);
-    const files = normalizeMessageFiles(
-      Array.isArray(body.files_v2) && body.files_v2.length > 0
-        ? body.files_v2
-        : body.files,
-      this.#data.files,
-    );
-    let human = conversation.chat_messages.find(
-      (message) => message.uuid === humanUuid,
-    );
-    const currentLeafMessage = conversation.current_leaf_message_uuid
-      ? conversation.chat_messages.find(
-          (message) => message.uuid === conversation.current_leaf_message_uuid,
-        )
-      : undefined;
-    const matchingDanglingHuman =
-      currentLeafMessage?.sender === "human" &&
-      currentLeafMessage.content
-        .flatMap((block) => (block.type === "text" ? [block.text] : []))
-        .join("") === prompt
-        ? currentLeafMessage
-        : undefined;
-    const requestedParent = parentUuid
-      ? conversation.chat_messages.find(
-          (message) => message.uuid === parentUuid,
-        )
-      : undefined;
-    const retryHuman = matchingDanglingHuman
-      ? matchingDanglingHuman
-      : retryRequested || !prompt
-        ? requestedParent?.sender === "human"
-          ? requestedParent
-          : requestedParent?.sender === "assistant" &&
-              requestedParent.parent_message_uuid
-            ? conversation.chat_messages.find(
-                (message) =>
-                  message.uuid === requestedParent.parent_message_uuid &&
-                  message.sender === "human",
-              )
-            : undefined
-        : undefined;
-    if (!human && retryHuman) {
-      human = retryHuman;
-      parentUuid = human.parent_message_uuid;
-    }
-    if (!human) {
-      human = createMessage(
-        conversation,
-        "human",
-        prompt,
-        humanUuid,
-        parentUuid,
+      const humanUuid =
+        stringValue(turnUuids.human_message_uuid) || randomUUID();
+      const assistantUuid =
+        stringValue(turnUuids.assistant_message_uuid) || randomUUID();
+      if (
+        humanUuid.length > 512 ||
+        assistantUuid.length > 512 ||
+        humanUuid.includes("\0") ||
+        assistantUuid.includes("\0")
+      )
+        throw new LocalHttpError("Message UUID is invalid");
+      if (humanUuid === assistantUuid)
+        throw new LocalHttpError(
+          "Human and assistant message UUIDs must be different",
+        );
+      let conversation = this.#conversation(conversationUuid);
+      const createsConversation = !conversation;
+      if (!conversation) {
+        if (stringValue(body.parent_message_uuid))
+          throw new LocalHttpError("Parent message was not found");
+        const params = isObject(body.create_conversation_params)
+          ? body.create_conversation_params
+          : {};
+        conversation = await this.#createConversation({
+          ...params,
+          uuid: conversationUuid,
+        });
+      }
+      const existingHumanUuid = conversation.chat_messages.find(
+        (message) => message.uuid === humanUuid,
       );
-      human.attachments = attachments;
-      human.files = files;
-      conversation.chat_messages.push(human);
-      conversation.current_leaf_message_uuid = human.uuid;
-      conversation.updated_at = human.updated_at;
-      if (!conversation.name && prompt)
-        conversation.name = prompt.replace(/\s+/g, " ").trim().slice(0, 80);
-      await this.#persist();
-    } else {
-      conversation.current_leaf_message_uuid = human.uuid;
-    }
-
-    const branch = messageBranch(conversation, human.uuid);
-    const codeExecutionEnabled = this.#codeExecutionEnabled();
-    const browserUseEnabled = this.#browserUseEnabled();
-    const computerUseEnabled = this.#computerUseEnabled();
-    if (codeExecutionEnabled) {
-      // An incognito chat's workspace must not outlive the session.
-      if (conversation.is_temporary)
-        this.#sandbox?.markEphemeral?.(conversation.uuid);
-      await this.#stageSandboxUploads(conversation, branch);
-    }
-    const providerHistory = await this.#compactedChatHistory(
-      conversation,
-      branch,
-      webSearchEnabled,
-      completionSignal,
-    );
-    const providerOptions = reasoningRequest(
-      body,
-      this.#data.provider.enableThinking ?? false,
-    );
-    // Resolve upstream headers before committing the local SSE response. If
-    // the provider rejects the request, the retained Chat client must receive
-    // a failed completion request so it can render its retry card. Successful
-    // response bodies remain streaming and are consumed below without delay.
-    const firstProviderResponse = await this.#providerCompletion(
-      conversation,
-      providerHistory,
-      completionSignal,
-      webSearchEnabled,
-      false,
-      [],
-      providerOptions,
-    );
-
-    const backend = this;
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        let assistantText = "";
-        const assistantBlocks: LocalContentBlock[] = [];
-        let toolCalls = new Map<
-          number,
-          { id: string; name: string; arguments: string }
-        >();
+      if (existingHumanUuid && existingHumanUuid.sender !== "human")
+        throw new LocalHttpError(
+          "Human message UUID collides with an assistant message",
+        );
+      const existingAssistantUuid = conversation.chat_messages.find(
+        (message) => message.uuid === assistantUuid,
+      );
+      if (existingAssistantUuid && existingAssistantUuid.sender !== "assistant")
+        throw new LocalHttpError(
+          "Assistant message UUID collides with a human message",
+        );
+      let parentUuid =
+        stringValue(body.parent_message_uuid) ||
+        conversation.current_leaf_message_uuid;
+      const previousConversationState = {
+        current_leaf_message_uuid: conversation.current_leaf_message_uuid,
+        updated_at: conversation.updated_at,
+        name: conversation.name,
+        model: conversation.model,
+        settings: structuredClone(conversation.settings),
+      };
+      const attachments = normalizeAttachments(body.attachments);
+      const files = normalizeMessageFiles(
+        Array.isArray(body.files_v2) && body.files_v2.length > 0
+          ? body.files_v2
+          : body.files,
+        this.#data.files,
+      );
+      let human = conversation.chat_messages.find(
+        (message) => message.uuid === humanUuid,
+      );
+      const currentLeafMessage = conversation.current_leaf_message_uuid
+        ? conversation.chat_messages.find(
+            (message) =>
+              message.uuid === conversation.current_leaf_message_uuid,
+          )
+        : undefined;
+      const matchingDanglingHuman =
+        currentLeafMessage?.sender === "human" &&
+        currentLeafMessage.content
+          .flatMap((block) => (block.type === "text" ? [block.text] : []))
+          .join("") === prompt
+          ? currentLeafMessage
+          : undefined;
+      const requestedParent = parentUuid
+        ? conversation.chat_messages.find(
+            (message) => message.uuid === parentUuid,
+          )
+        : undefined;
+      if (parentUuid && !requestedParent)
+        throw new LocalHttpError("Parent message was not found");
+      conversation.model = this.#data.provider.model;
+      // On a new chat the retained composer can send its pre-click value even
+      // after the Web search account mutation has completed. The persisted
+      // account setting is authoritative for creation; established chats keep
+      // using their per-conversation request value.
+      const accountWebSearch = this.#data.accountSettings.enabled_web_search;
+      if (createsConversation && typeof accountWebSearch === "boolean")
+        conversation.settings.enabled_web_search = accountWebSearch;
+      else if (typeof body.enabled_web_search === "boolean")
+        conversation.settings.enabled_web_search = body.enabled_web_search;
+      const webSearchEnabled =
+        conversation.settings.enabled_web_search !== false;
+      const retryHuman = matchingDanglingHuman
+        ? matchingDanglingHuman
+        : retryRequested || !prompt
+          ? requestedParent?.sender === "human"
+            ? requestedParent
+            : requestedParent?.sender === "assistant" &&
+                requestedParent.parent_message_uuid
+              ? conversation.chat_messages.find(
+                  (message) =>
+                    message.uuid === requestedParent.parent_message_uuid &&
+                    message.sender === "human",
+                )
+              : undefined
+          : undefined;
+      if (!human && retryHuman) {
+        human = retryHuman;
+        parentUuid = human.parent_message_uuid;
+      }
+      const additionalMessages =
+        (human ? 0 : 1) + (existingAssistantUuid ? 0 : 1);
+      if (
+        conversation.chat_messages.length + additionalMessages >
+        MAX_MESSAGES_PER_CONVERSATION
+      )
+        throw new LocalHttpError(
+          `A conversation is limited to ${MAX_MESSAGES_PER_CONVERSATION} messages; start a new conversation to continue`,
+          409,
+        );
+      if (!human) {
+        human = createMessage(
+          conversation,
+          "human",
+          prompt,
+          humanUuid,
+          parentUuid,
+        );
+        human.attachments = attachments;
+        human.files = files;
+        conversation.chat_messages.push(human);
+        conversation.current_leaf_message_uuid = human.uuid;
+        conversation.updated_at = human.updated_at;
+        if (!conversation.name && prompt)
+          conversation.name = prompt.replace(/\s+/g, " ").trim().slice(0, 80);
         try {
-          controller.enqueue(
-            sse("message_start", {
-              type: "message_start",
-              message: {
-                uuid: assistantUuid,
-                parent_uuid: human.uuid,
-                role: "assistant",
-                model: conversation.model,
-                content: [],
-              },
-            }),
+          await this.#persist();
+        } catch (error) {
+          conversation.chat_messages = conversation.chat_messages.filter(
+            (message) => message !== human,
           );
-          if (createsConversation) {
-            controller.enqueue(
-              sse("conversation_ready", { type: "conversation_ready" }),
-            );
-          }
-          let nextBlockIndex = 0;
-          let textBlockIndex: number | undefined;
-          let activeTextBlock: LocalTextBlock | undefined;
-          const closeTextBlock = () => {
-            if (textBlockIndex === undefined) return;
-            controller.enqueue(
-              sse("content_block_stop", {
-                type: "content_block_stop",
-                index: textBlockIndex,
-              }),
-            );
-            textBlockIndex = undefined;
-            activeTextBlock = undefined;
-          };
-          const continuation: JsonObject[] = [];
-          // Live artifact cards: an artifacts tool call streams its tool_use
-          // block while the provider is still generating the arguments, so
-          // the retained client shows the generating (shimmering) card
-          // immediately instead of after the completion settles.
-          interface LiveToolCall {
-            id: string;
-            name: string;
-            arguments: string;
-          }
-          interface LiveArtifactBlock {
-            blockIndex: number;
-            sent: number;
-            closed: boolean;
-            toolCall: LiveToolCall;
-          }
-          const liveArtifactBlocks = new WeakMap<object, LiveArtifactBlock>();
-          const openLiveArtifacts: LiveArtifactBlock[] = [];
-          // A live block materializes its artifact when it closes so the
-          // final input_json_delta can carry version_uuid inside the streamed
-          // JSON — the drawer needs it to reopen without waiting for the
-          // post-completion tree refetch.
-          const materializedInputs = new Map<object, ArtifactToolInput>();
-          const closeLiveArtifactBlocks = () => {
-            for (const live of openLiveArtifacts) {
-              if (live.closed) continue;
-              const raw = live.toolCall.arguments;
-              let remainder = raw.slice(live.sent);
-              try {
-                const parsed = normalizeArtifactInput(JSON.parse(raw || "{}"));
-                if (parsed) {
-                  const input =
-                    (materializedInputs.get(live.toolCall) as
-                      ArtifactToolInput | undefined) ??
-                    backend.#materializeArtifact(
-                      conversation,
-                      assistantUuid,
-                      parsed,
-                    );
-                  materializedInputs.set(live.toolCall, input);
-                  const lastBrace = raw.lastIndexOf("}");
-                  if (
-                    typeof input.version_uuid === "string" &&
-                    lastBrace >= live.sent
-                  )
-                    remainder =
-                      raw.slice(live.sent, lastBrace) +
-                      `,"version_uuid":${JSON.stringify(input.version_uuid)}` +
-                      raw.slice(lastBrace);
-                }
-              } catch {
-                // Unparseable arguments close with the raw tail; the
-                // persisted message heals the input on reload.
-              }
-              if (remainder)
-                controller.enqueue(
-                  sse("content_block_delta", {
-                    type: "content_block_delta",
-                    index: live.blockIndex,
-                    delta: {
-                      type: "input_json_delta",
-                      partial_json: remainder,
-                    },
-                  }),
-                );
-              live.sent = raw.length;
+          conversation.current_leaf_message_uuid =
+            previousConversationState.current_leaf_message_uuid;
+          conversation.updated_at = previousConversationState.updated_at;
+          conversation.name = previousConversationState.name;
+          conversation.model = previousConversationState.model;
+          conversation.settings = previousConversationState.settings;
+          throw error;
+        }
+      } else {
+        conversation.current_leaf_message_uuid = human.uuid;
+      }
+
+      const branch = messageBranch(conversation, human.uuid);
+      const codeExecutionEnabled = this.#codeExecutionEnabled();
+      const browserUseEnabled = this.#browserUseEnabled();
+      const computerUseEnabled = this.#computerUseEnabled();
+      if (codeExecutionEnabled) {
+        // An incognito chat's workspace must not outlive the session.
+        if (conversation.is_temporary)
+          this.#sandbox?.markEphemeral?.(conversation.uuid);
+        await this.#stageSandboxUploads(conversation, branch);
+      }
+      const providerHistory = await this.#compactedChatHistory(
+        conversation,
+        branch,
+        webSearchEnabled,
+        completionSignal,
+      );
+      const providerOptions = reasoningRequest(
+        body,
+        this.#data.provider.enableThinking ?? false,
+      );
+      // Resolve upstream headers before committing the local SSE response. If
+      // the provider rejects the request, the retained Chat client must receive
+      // a failed completion request so it can render its retry card. Successful
+      // response bodies remain streaming and are consumed below without delay.
+      const firstProviderResponse = await this.#providerCompletion(
+        conversation,
+        providerHistory,
+        completionSignal,
+        webSearchEnabled,
+        false,
+        [],
+        providerOptions,
+      );
+
+      const backend = this;
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const run = (async () => {
+            let assistantText = "";
+            const assistantBlocks: LocalContentBlock[] = [];
+            let toolCalls = new Map<
+              number,
+              { id: string; name: string; arguments: string }
+            >();
+            const artifactWorkspace: LocalArtifactWorkspace = {
+              artifacts: [],
+              baseVersions: new Map(),
+            };
+            try {
               controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: live.blockIndex,
+                sse("message_start", {
+                  type: "message_start",
+                  message: {
+                    uuid: assistantUuid,
+                    parent_uuid: human.uuid,
+                    role: "assistant",
+                    model: conversation.model,
+                    content: [],
+                  },
                 }),
               );
-              live.closed = true;
-            }
-          };
-          const streamLiveArtifact = (toolCall: LiveToolCall) => {
-            let live = liveArtifactBlocks.get(toolCall);
-            if (live?.closed) return;
-            if (!live) {
-              closeTextBlock();
-              live = {
-                blockIndex: nextBlockIndex++,
-                sent: 0,
-                closed: false,
-                toolCall,
+              if (createsConversation) {
+                controller.enqueue(
+                  sse("conversation_ready", { type: "conversation_ready" }),
+                );
+              }
+              let nextBlockIndex = 0;
+              let textBlockIndex: number | undefined;
+              let activeTextBlock: LocalTextBlock | undefined;
+              const closeTextBlock = () => {
+                if (textBlockIndex === undefined) return;
+                controller.enqueue(
+                  sse("content_block_stop", {
+                    type: "content_block_stop",
+                    index: textBlockIndex,
+                  }),
+                );
+                textBlockIndex = undefined;
+                activeTextBlock = undefined;
               };
-              liveArtifactBlocks.set(toolCall, live);
-              openLiveArtifacts.push(live);
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: live.blockIndex,
-                  content_block: {
-                    type: "tool_use",
-                    id: toolCall.id,
-                    name: "artifacts",
-                    input: {},
-                  },
-                }),
-              );
-            }
-            // Hold the last byte back so the closing flush can splice
-            // version_uuid before the final brace of the streamed JSON.
-            const cap = Math.max(live.sent, toolCall.arguments.length - 1);
-            if (cap > live.sent) {
-              controller.enqueue(
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: live.blockIndex,
-                  delta: {
-                    type: "input_json_delta",
-                    partial_json: toolCall.arguments.slice(live.sent, cap),
-                  },
-                }),
-              );
-              live.sent = cap;
-            }
-          };
-          let prefetchedProviderResponse: Response | undefined =
-            firstProviderResponse;
-          let terminalTurn = false;
-          // Code execution and device control legitimately iterate (act →
-          // observe → act), so they get a far larger turn budget than the
-          // web-tool loop.
-          const maxProviderTurns =
-            codeExecutionEnabled || browserUseEnabled || computerUseEnabled
-              ? 24
-              : 8;
-          for (
-            let providerTurn = 0;
-            providerTurn < maxProviderTurns;
-            providerTurn += 1
-          ) {
-            const turnTextStart = assistantText.length;
-            let thinkingBlockIndex: number | undefined;
-            let activeThinkingBlock: LocalThinkingBlock | undefined;
-            const emitReasoning = (text: string) => {
-              if (!text) return;
-              if (thinkingBlockIndex === undefined) {
-                closeLiveArtifactBlocks();
-                thinkingBlockIndex = nextBlockIndex++;
-                const timestamp = new Date().toISOString();
-                activeThinkingBlock = {
-                  type: "thinking",
-                  thinking: "",
-                  signature: `local-openai:${randomUUID()}`,
-                  summaries: [],
-                  start_timestamp: timestamp,
-                  stop_timestamp: timestamp,
-                };
-                assistantBlocks.push(activeThinkingBlock);
-                controller.enqueue(
-                  sse("content_block_start", {
-                    type: "content_block_start",
-                    index: thinkingBlockIndex,
-                    content_block: {
-                      ...activeThinkingBlock,
-                      signature: "",
-                      stop_timestamp: undefined,
-                    },
-                  }),
-                );
+              const continuation: JsonObject[] = [];
+              // Live artifact cards: an artifacts tool call streams its tool_use
+              // block while the provider is still generating the arguments, so
+              // the retained client shows the generating (shimmering) card
+              // immediately instead of after the completion settles.
+              interface LiveToolCall {
+                id: string;
+                name: string;
+                arguments: string;
               }
-              activeThinkingBlock!.thinking += text;
-              controller.enqueue(
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: thinkingBlockIndex,
-                  delta: {
-                    type: "thinking_delta",
-                    thinking: text,
-                  },
-                }),
-              );
-            };
-            const closeThinkingBlock = () => {
-              if (
-                thinkingBlockIndex === undefined ||
-                activeThinkingBlock === undefined
-              )
-                return;
-              activeThinkingBlock.stop_timestamp = new Date().toISOString();
-              controller.enqueue(
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: thinkingBlockIndex,
-                  delta: {
-                    type: "signature_delta",
-                    signature: activeThinkingBlock.signature,
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: thinkingBlockIndex,
-                }),
-              );
-              thinkingBlockIndex = undefined;
-              activeThinkingBlock = undefined;
-            };
-            for (let attempt = 0; attempt < 3; attempt += 1) {
-              toolCalls = new Map();
-              const attemptTextStart = assistantText.length;
-              const providerResponse =
-                prefetchedProviderResponse ??
-                (await backend.#providerCompletion(
-                  conversation,
-                  providerHistory,
-                  completionSignal,
-                  webSearchEnabled,
-                  attempt > 0,
-                  continuation,
-                  providerOptions,
-                ));
-              prefetchedProviderResponse = undefined;
-              for await (const delta of openAiDeltas(
-                providerResponse,
-                backend.#data.provider,
-              )) {
-                if (delta.type === "reasoning") {
-                  emitReasoning(delta.text);
-                  continue;
-                }
-                if (delta.type === "text") {
-                  closeThinkingBlock();
-                  if (textBlockIndex === undefined) {
-                    // Trailing text after streamed artifact arguments starts
-                    // a fresh block; the client's reducer needs the open
-                    // artifact block closed first.
-                    closeLiveArtifactBlocks();
-                    textBlockIndex = nextBlockIndex++;
-                    activeTextBlock = {
-                      type: "text",
-                      text: "",
-                      citations: [],
-                    };
-                    assistantBlocks.push(activeTextBlock);
+              interface LiveArtifactBlock {
+                blockIndex: number;
+                sent: number;
+                closed: boolean;
+                toolCall: LiveToolCall;
+              }
+              const liveArtifactBlocks = new WeakMap<
+                object,
+                LiveArtifactBlock
+              >();
+              const openLiveArtifacts: LiveArtifactBlock[] = [];
+              // A live block materializes its artifact when it closes so the
+              // final input_json_delta can carry version_uuid inside the streamed
+              // JSON — the drawer needs it to reopen without waiting for the
+              // post-completion tree refetch.
+              const materializedInputs = new Map<object, ArtifactToolInput>();
+              const closeLiveArtifactBlocks = () => {
+                for (const live of openLiveArtifacts) {
+                  if (live.closed) continue;
+                  const raw = live.toolCall.arguments;
+                  let remainder = raw.slice(live.sent);
+                  try {
+                    const parsed = normalizeArtifactInput(
+                      JSON.parse(raw || "{}"),
+                    );
+                    if (parsed) {
+                      const input =
+                        (materializedInputs.get(live.toolCall) as
+                          ArtifactToolInput | undefined) ??
+                        backend.#materializeArtifact(
+                          conversation,
+                          assistantUuid,
+                          parsed,
+                          artifactWorkspace,
+                        );
+                      materializedInputs.set(live.toolCall, input);
+                      const lastBrace = raw.lastIndexOf("}");
+                      if (
+                        typeof input.version_uuid === "string" &&
+                        lastBrace >= live.sent
+                      )
+                        remainder =
+                          raw.slice(live.sent, lastBrace) +
+                          `,"version_uuid":${JSON.stringify(input.version_uuid)}` +
+                          raw.slice(lastBrace);
+                    }
+                  } catch {
+                    // Unparseable arguments close with the raw tail; the
+                    // persisted message heals the input on reload.
+                  }
+                  if (remainder)
                     controller.enqueue(
-                      sse("content_block_start", {
-                        type: "content_block_start",
-                        index: textBlockIndex,
-                        content_block: { type: "text", text: "" },
+                      sse("content_block_delta", {
+                        type: "content_block_delta",
+                        index: live.blockIndex,
+                        delta: {
+                          type: "input_json_delta",
+                          partial_json: remainder,
+                        },
                       }),
                     );
-                  }
-                  assistantText += delta.text;
-                  if (activeTextBlock) activeTextBlock.text += delta.text;
+                  live.sent = raw.length;
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: live.blockIndex,
+                    }),
+                  );
+                  live.closed = true;
+                }
+              };
+              const streamLiveArtifact = (toolCall: LiveToolCall) => {
+                let live = liveArtifactBlocks.get(toolCall);
+                if (live?.closed) return;
+                if (!live) {
+                  closeTextBlock();
+                  live = {
+                    blockIndex: nextBlockIndex++,
+                    sent: 0,
+                    closed: false,
+                    toolCall,
+                  };
+                  liveArtifactBlocks.set(toolCall, live);
+                  openLiveArtifacts.push(live);
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: live.blockIndex,
+                      content_block: {
+                        type: "tool_use",
+                        id: toolCall.id,
+                        name: "artifacts",
+                        input: {},
+                      },
+                    }),
+                  );
+                }
+                // Hold the last byte back so the closing flush can splice
+                // version_uuid before the final brace of the streamed JSON.
+                const cap = Math.max(live.sent, toolCall.arguments.length - 1);
+                if (cap > live.sent) {
                   controller.enqueue(
                     sse("content_block_delta", {
                       type: "content_block_delta",
-                      index: textBlockIndex,
-                      delta: { type: "text_delta", text: delta.text },
+                      index: live.blockIndex,
+                      delta: {
+                        type: "input_json_delta",
+                        partial_json: toolCall.arguments.slice(live.sent, cap),
+                      },
                     }),
                   );
-                  continue;
+                  live.sent = cap;
                 }
-                closeThinkingBlock();
-                const accumulated = toolCalls.get(delta.index) ?? {
-                  id: randomUUID(),
-                  name: "",
-                  arguments: "",
-                };
-                if (delta.id) accumulated.id = delta.id;
-                if (delta.name) accumulated.name += delta.name;
-                if (delta.arguments) accumulated.arguments += delta.arguments;
-                toolCalls.set(delta.index, accumulated);
-                if (accumulated.name === "artifacts")
-                  streamLiveArtifact(accumulated);
-              }
-              closeThinkingBlock();
-              const hasToolCall = [...toolCalls.values()].some(
-                (toolCall) => toolCall.name.trim() && toolCall.arguments.trim(),
-              );
-              if (assistantText.slice(attemptTextStart).trim() || hasToolCall)
-                break;
-              if (attempt === 2)
-                throw new Error(
-                  "Provider returned no visible assistant content after three attempts",
-                );
-            }
-
-            const requestedWebCalls = [...toolCalls.values()].filter(
-              (toolCall) =>
-                toolCall.name === "web_search" ||
-                toolCall.name === "visit_website",
-            );
-            const webCalls = webSearchEnabled ? requestedWebCalls : [];
-            if (
-              ![...toolCalls.values()].some(
-                (toolCall) => toolCall.name === "skill",
-              )
-            ) {
-              let inlineIndex = toolCalls.size;
-              for (const name of inlineSkillCalls(
-                assistantText.slice(turnTextStart),
-              ))
-                toolCalls.set(inlineIndex++, {
-                  id: randomUUID(),
-                  name: "skill",
-                  arguments: JSON.stringify({ name }),
-                });
-            }
-            const skillCalls = [...toolCalls.values()].filter(
-              (toolCall) => toolCall.name === "skill",
-            );
-            const mcpCalls = [...toolCalls.values()].filter((toolCall) =>
-              toolCall.name.startsWith("mcp__"),
-            );
-            const memorySaveCalls = [...toolCalls.values()].filter(
-              (toolCall) => toolCall.name === "save_memory",
-            );
-            const requestedCodeCalls = [...toolCalls.values()].filter(
-              (toolCall) => toolCall.name === "bash_code_execution",
-            );
-            const codeCalls = codeExecutionEnabled ? requestedCodeCalls : [];
-            const requestedDeviceCalls = [...toolCalls.values()].filter(
-              (toolCall) =>
-                toolCall.name.startsWith("browser_") ||
-                toolCall.name.startsWith("computer_"),
-            );
-            const deviceCalls = requestedDeviceCalls.filter((toolCall) =>
-              toolCall.name.startsWith("browser_")
-                ? browserUseEnabled
-                : computerUseEnabled,
-            );
-            if (
-              webCalls.length === 0 &&
-              ![...toolCalls.values()].some(
-                (toolCall) => toolCall.name === "artifacts",
-              )
-            ) {
-              let inlineIndex = toolCalls.size;
-              for (const input of inlineArtifactInputs(
-                assistantText.slice(turnTextStart),
-              )) {
-                toolCalls.set(inlineIndex++, {
-                  id: randomUUID(),
-                  name: "artifacts",
-                  arguments: JSON.stringify(input),
-                });
-              }
-            }
-            // A provider can still hallucinate a tool call that was not in
-            // the request schema. Fail closed: never execute it, and give the
-            // model a tool-protocol result so it can recover with a normal
-            // answer instead of leaving an empty assistant turn.
-            if (!webSearchEnabled && requestedWebCalls.length > 0) {
-              closeTextBlock();
-              continuation.push({
-                role: "assistant",
-                content: assistantText.slice(turnTextStart) || null,
-                tool_calls: requestedWebCalls.map((toolCall) => ({
-                  id: toolCall.id,
-                  type: "function",
-                  function: {
-                    name: toolCall.name,
-                    arguments: toolCall.arguments || "{}",
-                  },
-                })),
-              });
-              for (const toolCall of requestedWebCalls)
-                continuation.push({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  name: toolCall.name,
-                  content:
-                    "Web search is disabled for this conversation. Answer without browsing or ask the user to enable it.",
-                });
-              continue;
-            }
-            // Same fail-closed handling for a hallucinated code-execution
-            // call while the capability is off.
-            if (!codeExecutionEnabled && requestedCodeCalls.length > 0) {
-              closeTextBlock();
-              continuation.push({
-                role: "assistant",
-                content: assistantText.slice(turnTextStart) || null,
-                tool_calls: requestedCodeCalls.map((toolCall) => ({
-                  id: toolCall.id,
-                  type: "function",
-                  function: {
-                    name: toolCall.name,
-                    arguments: toolCall.arguments || "{}",
-                  },
-                })),
-              });
-              for (const toolCall of requestedCodeCalls)
-                continuation.push({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  name: toolCall.name,
-                  content:
-                    "Code execution is disabled. Answer without running code or ask the user to enable Code execution in settings.",
-                });
-              continue;
-            }
-            // Same fail-closed handling for browser/computer calls while
-            // their capabilities are off.
-            const refusedDeviceCalls = requestedDeviceCalls.filter(
-              (toolCall) => !deviceCalls.includes(toolCall),
-            );
-            if (refusedDeviceCalls.length > 0) {
-              closeTextBlock();
-              continuation.push({
-                role: "assistant",
-                content: assistantText.slice(turnTextStart) || null,
-                tool_calls: refusedDeviceCalls.map((toolCall) => ({
-                  id: toolCall.id,
-                  type: "function",
-                  function: {
-                    name: toolCall.name,
-                    arguments: toolCall.arguments || "{}",
-                  },
-                })),
-              });
-              for (const toolCall of refusedDeviceCalls)
-                continuation.push({
-                  role: "tool",
-                  tool_call_id: toolCall.id,
-                  name: toolCall.name,
-                  content: toolCall.name.startsWith("browser_")
-                    ? "Browser use is disabled. Answer without browsing or ask the user to enable Browser use in settings."
-                    : "Computer use is disabled. Ask the user to enable Computer use in settings before controlling the computer.",
-                });
-              continue;
-            }
-            if (
-              webCalls.length === 0 &&
-              skillCalls.length === 0 &&
-              mcpCalls.length === 0 &&
-              memorySaveCalls.length === 0 &&
-              codeCalls.length === 0 &&
-              deviceCalls.length === 0
-            ) {
-              terminalTurn = true;
-              break;
-            }
-            closeTextBlock();
-            continuation.push({
-              role: "assistant",
-              content: assistantText.slice(turnTextStart) || null,
-              tool_calls: [
-                ...webCalls,
-                ...skillCalls,
-                ...mcpCalls,
-                ...memorySaveCalls,
-                ...codeCalls,
-                ...deviceCalls,
-              ].map((toolCall) => ({
-                id: toolCall.id,
-                type: "function",
-                function: {
-                  name: toolCall.name,
-                  arguments: toolCall.arguments || "{}",
-                },
-              })),
-            });
-            for (const toolCall of memorySaveCalls) {
-              let topic = "";
-              let content = "";
-              try {
-                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
-                if (isObject(parsed)) {
-                  topic = stringValue(parsed.topic) ?? "";
-                  content = stringValue(parsed.content) ?? "";
-                }
-              } catch {
-                // The result below reports the invalid arguments.
-              }
-              let output = "Memory saved.";
-              let failed = false;
-              if (!content) {
-                failed = true;
-                output = "save_memory requires content to remember.";
-              } else if (conversation.is_temporary) {
-                // Incognito chats read memory but never write it.
-                output =
-                  "This is an incognito chat, so nothing was saved to memory.";
-              } else {
-                const entry = `- [${topic || "General"}] ${content}`;
-                backend.#data.memory.memory = backend.#data.memory.memory
-                  ? `${backend.#data.memory.memory}\n${entry}`
-                  : entry;
-                backend.#data.memory.updated_at = new Date().toISOString();
-                await backend.#persist();
-              }
-              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
-              // Displayed under the generic mcp_tool name: the retained
-              // renderer labels that path from input.description both while
-              // streaming and after the conversation settles, so the row
-              // renders exactly once, in chain position. The "save_memory"
-              // display name took a different settled path that re-rendered
-              // as a raw wrench "Save memory" pill with a Result chip and
-              // orphaned the preload-rebuilt native row at the chain top.
-              const callBlock: LocalWebToolUseBlock = {
-                type: "tool_use",
-                id: displayId,
-                name: "mcp_tool",
-                input: {
-                  topic,
-                  content,
-                  // U+2063 invisibly carries the content into the rendered
-                  // label so the preload can rebuild the native "Saved
-                  // memory" row without extra lookups.
-                  description: `Saved memory${topic ? ` · ${topic}` : ""}⁣${content}`,
-                },
               };
-              assistantBlocks.push(callBlock);
-              const callBlockIndex = nextBlockIndex++;
-              const resultBlock: LocalWebToolResultBlock = {
-                type: "tool_result",
-                tool_use_id: displayId,
-                name: "mcp_tool",
-                content: failed ? [{ type: "text", text: output }] : [],
-                ...(failed ? { is_error: true } : {}),
-              };
-              assistantBlocks.push(resultBlock);
-              const resultBlockIndex = nextBlockIndex++;
-              // The save already happened, so the call and result events
-              // flush as ONE stream chunk: a result-less mcp_tool block
-              // would paint a transient wrench "Using a MCP tool" row
-              // before the preload rebuilds the native Saved memory row.
-              const memoryEvents = [
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: callBlockIndex,
-                  // The row renderer labels from input.description, so the
-                  // full input must be present from the start event.
-                  content_block: {
-                    type: callBlock.type,
-                    id: callBlock.id,
-                    name: callBlock.name,
-                    input: callBlock.input,
-                  },
-                }),
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: callBlockIndex,
-                  delta: {
-                    type: "input_json_delta",
-                    partial_json: JSON.stringify(callBlock.input),
-                  },
-                }),
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: callBlockIndex,
-                }),
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: resultBlockIndex,
-                  content_block: resultBlock,
-                }),
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: resultBlockIndex,
-                }),
-              ];
-              const combined = new Uint8Array(
-                memoryEvents.reduce(
-                  (total, event) => total + event.byteLength,
-                  0,
-                ),
-              );
-              let eventOffset = 0;
-              for (const event of memoryEvents) {
-                combined.set(event, eventOffset);
-                eventOffset += event.byteLength;
-              }
-              controller.enqueue(combined);
-              continuation.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                name: toolCall.name,
-                content: output,
-              });
-            }
-            for (const toolCall of webCalls) {
-              const webName =
-                toolCall.name === "web_search" ? "web_search" : "visit_website";
-              let input: JsonObject = {};
-              try {
-                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
-                if (isObject(parsed)) input = parsed;
-              } catch {
-                // The tool receives an empty object and returns a clear error.
-              }
-              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
-              const displayInput: JsonObject =
-                webName === "web_search"
-                  ? { query: stringValue(input.query) || "" }
-                  : { url: stringValue(input.url) || "" };
-              const callBlock: LocalWebToolUseBlock = {
-                type: "tool_use",
-                id: displayId,
-                name: webName === "web_search" ? "web_search" : "web_fetch",
-                input: displayInput,
-              };
-              assistantBlocks.push(callBlock);
-              const callBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: callBlockIndex,
-                  content_block: {
-                    type: callBlock.type,
-                    id: callBlock.id,
-                    name: callBlock.name,
-                    input: {},
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: callBlockIndex,
-                  delta: {
-                    type: "input_json_delta",
-                    partial_json: JSON.stringify(callBlock.input),
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: callBlockIndex,
-                }),
-              );
-
-              let output: string;
-              let failed = !backend.#webTools;
-              try {
-                output = backend.#webTools
-                  ? await backend.#webTools.execute(
-                      toolCall.name,
-                      input,
-                      completionSignal,
-                    )
-                  : "Local web tools are not available in this runtime.";
-              } catch (error) {
-                failed = true;
-                output = `Web tool error: ${error instanceof Error ? error.message : String(error)}`;
-              }
-              const resultBlock = desktopWebResult(
-                webName,
-                displayId,
-                input,
-                output,
-                failed,
-              );
-              assistantBlocks.push(resultBlock);
-              const resultBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: resultBlockIndex,
-                  content_block: resultBlock,
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: resultBlockIndex,
-                }),
-              );
-              continuation.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                name: toolCall.name,
-                content: output,
-              });
-            }
-            for (const toolCall of skillCalls) {
-              let requestedName = "";
-              try {
-                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
-                if (isObject(parsed))
-                  requestedName = stringValue(parsed.name) ?? "";
-              } catch {
-                // The tool result below reports the invalid arguments.
-              }
-              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
-              const callBlock: LocalWebToolUseBlock = {
-                type: "tool_use",
-                id: displayId,
-                name: "skill",
-                // The retained row renderer uses input.description verbatim
-                // as the row label when present.
-                input: {
-                  name: requestedName,
-                  description: requestedName
-                    ? `Loaded ${requestedName} skill`
-                    : "Loaded skill",
-                },
-              };
-              assistantBlocks.push(callBlock);
-              const callBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: callBlockIndex,
-                  // The row renderer labels from input.description, so the
-                  // full input must be present from the start event.
-                  content_block: {
-                    type: callBlock.type,
-                    id: callBlock.id,
-                    name: callBlock.name,
-                    input: callBlock.input,
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: callBlockIndex,
-                  delta: {
-                    type: "input_json_delta",
-                    partial_json: JSON.stringify(callBlock.input),
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: callBlockIndex,
-                }),
-              );
-              let output: string;
-              let failed = false;
-              try {
-                if (!backend.#skillSource)
-                  throw new Error("Skills are not available in this runtime");
-                if (!requestedName)
-                  throw new Error("The skill tool requires a skill name");
-                output = await backend.#skillSource.read(requestedName);
-                if (
-                  codeExecutionEnabled &&
-                  backend.#sandbox &&
-                  backend.#skillSource.files
-                ) {
-                  try {
-                    await backend.#sandbox.stageSkillFiles(
-                      conversation.uuid,
-                      requestedName,
-                      await backend.#skillSource.files(requestedName),
+              let prefetchedProviderResponse: Response | undefined =
+                firstProviderResponse;
+              let terminalTurn = false;
+              // Code execution and device control legitimately iterate (act →
+              // observe → act), so they get a far larger turn budget than the
+              // web-tool loop.
+              const maxProviderTurns =
+                codeExecutionEnabled || browserUseEnabled || computerUseEnabled
+                  ? 24
+                  : 8;
+              for (
+                let providerTurn = 0;
+                providerTurn < maxProviderTurns;
+                providerTurn += 1
+              ) {
+                const turnTextStart = assistantText.length;
+                let thinkingBlockIndex: number | undefined;
+                let activeThinkingBlock: LocalThinkingBlock | undefined;
+                const emitReasoning = (text: string) => {
+                  if (!text) return;
+                  if (thinkingBlockIndex === undefined) {
+                    closeLiveArtifactBlocks();
+                    thinkingBlockIndex = nextBlockIndex++;
+                    const timestamp = new Date().toISOString();
+                    activeThinkingBlock = {
+                      type: "thinking",
+                      thinking: "",
+                      signature: `local-openai:${randomUUID()}`,
+                      summaries: [],
+                      start_timestamp: timestamp,
+                      stop_timestamp: timestamp,
+                    };
+                    assistantBlocks.push(activeThinkingBlock);
+                    controller.enqueue(
+                      sse("content_block_start", {
+                        type: "content_block_start",
+                        index: thinkingBlockIndex,
+                        content_block: {
+                          ...activeThinkingBlock,
+                          signature: "",
+                          stop_timestamp: undefined,
+                        },
+                      }),
                     );
-                    output += `\n\nThis skill's files are staged in the sandbox at /workspace/skills/${requestedName} for bash_code_execution.`;
-                  } catch {
-                    // Staging is best-effort; the inline copies above remain.
+                  }
+                  activeThinkingBlock!.thinking += text;
+                  controller.enqueue(
+                    sse("content_block_delta", {
+                      type: "content_block_delta",
+                      index: thinkingBlockIndex,
+                      delta: {
+                        type: "thinking_delta",
+                        thinking: text,
+                      },
+                    }),
+                  );
+                };
+                const closeThinkingBlock = () => {
+                  if (
+                    thinkingBlockIndex === undefined ||
+                    activeThinkingBlock === undefined
+                  )
+                    return;
+                  activeThinkingBlock.stop_timestamp = new Date().toISOString();
+                  controller.enqueue(
+                    sse("content_block_delta", {
+                      type: "content_block_delta",
+                      index: thinkingBlockIndex,
+                      delta: {
+                        type: "signature_delta",
+                        signature: activeThinkingBlock.signature,
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: thinkingBlockIndex,
+                    }),
+                  );
+                  thinkingBlockIndex = undefined;
+                  activeThinkingBlock = undefined;
+                };
+                for (let attempt = 0; attempt < 3; attempt += 1) {
+                  toolCalls = new Map();
+                  const attemptTextStart = assistantText.length;
+                  const providerResponse =
+                    prefetchedProviderResponse ??
+                    (await backend.#providerCompletion(
+                      conversation,
+                      providerHistory,
+                      completionSignal,
+                      webSearchEnabled,
+                      attempt > 0,
+                      continuation,
+                      providerOptions,
+                    ));
+                  prefetchedProviderResponse = undefined;
+                  for await (const delta of openAiDeltas(
+                    providerResponse,
+                    backend.#data.provider,
+                  )) {
+                    if (delta.type === "reasoning") {
+                      emitReasoning(delta.text);
+                      continue;
+                    }
+                    if (delta.type === "text") {
+                      closeThinkingBlock();
+                      if (textBlockIndex === undefined) {
+                        // Trailing text after streamed artifact arguments starts
+                        // a fresh block; the client's reducer needs the open
+                        // artifact block closed first.
+                        closeLiveArtifactBlocks();
+                        textBlockIndex = nextBlockIndex++;
+                        activeTextBlock = {
+                          type: "text",
+                          text: "",
+                          citations: [],
+                        };
+                        assistantBlocks.push(activeTextBlock);
+                        controller.enqueue(
+                          sse("content_block_start", {
+                            type: "content_block_start",
+                            index: textBlockIndex,
+                            content_block: { type: "text", text: "" },
+                          }),
+                        );
+                      }
+                      assistantText += delta.text;
+                      if (activeTextBlock) activeTextBlock.text += delta.text;
+                      controller.enqueue(
+                        sse("content_block_delta", {
+                          type: "content_block_delta",
+                          index: textBlockIndex,
+                          delta: { type: "text_delta", text: delta.text },
+                        }),
+                      );
+                      continue;
+                    }
+                    closeThinkingBlock();
+                    const accumulated = toolCalls.get(delta.index) ?? {
+                      id: randomUUID(),
+                      name: "",
+                      arguments: "",
+                    };
+                    if (delta.id) accumulated.id = delta.id;
+                    if (delta.name) accumulated.name += delta.name;
+                    if (delta.arguments)
+                      accumulated.arguments += delta.arguments;
+                    if (
+                      accumulated.id.length > 512 ||
+                      accumulated.name.length > 512 ||
+                      accumulated.arguments.length > MAX_PROVIDER_JSON_BYTES
+                    )
+                      throw new Error(
+                        "Provider tool call exceeded its local safety limit",
+                      );
+                    toolCalls.set(delta.index, accumulated);
+                    if (accumulated.name === "artifacts")
+                      streamLiveArtifact(accumulated);
+                  }
+                  closeThinkingBlock();
+                  const hasToolCall = [...toolCalls.values()].some(
+                    (toolCall) =>
+                      toolCall.name.trim() && toolCall.arguments.trim(),
+                  );
+                  if (
+                    assistantText.slice(attemptTextStart).trim() ||
+                    hasToolCall
+                  )
+                    break;
+                  if (attempt === 2)
+                    throw new Error(
+                      "Provider returned no visible assistant content after three attempts",
+                    );
+                }
+
+                const requestedWebCalls = [...toolCalls.values()].filter(
+                  (toolCall) =>
+                    toolCall.name === "web_search" ||
+                    toolCall.name === "visit_website",
+                );
+                const webCalls = webSearchEnabled ? requestedWebCalls : [];
+                if (
+                  ![...toolCalls.values()].some(
+                    (toolCall) => toolCall.name === "skill",
+                  )
+                ) {
+                  let inlineIndex = toolCalls.size;
+                  for (const name of inlineSkillCalls(
+                    assistantText.slice(turnTextStart),
+                  ))
+                    toolCalls.set(inlineIndex++, {
+                      id: randomUUID(),
+                      name: "skill",
+                      arguments: JSON.stringify({ name }),
+                    });
+                }
+                const skillCalls = [...toolCalls.values()].filter(
+                  (toolCall) => toolCall.name === "skill",
+                );
+                const mcpCalls = [...toolCalls.values()].filter((toolCall) =>
+                  toolCall.name.startsWith("mcp__"),
+                );
+                const memorySaveCalls = [...toolCalls.values()].filter(
+                  (toolCall) => toolCall.name === "save_memory",
+                );
+                const requestedCodeCalls = [...toolCalls.values()].filter(
+                  (toolCall) => toolCall.name === "bash_code_execution",
+                );
+                const codeCalls = codeExecutionEnabled
+                  ? requestedCodeCalls
+                  : [];
+                const requestedDeviceCalls = [...toolCalls.values()].filter(
+                  (toolCall) =>
+                    toolCall.name.startsWith("browser_") ||
+                    toolCall.name.startsWith("computer_"),
+                );
+                const deviceCalls = requestedDeviceCalls.filter((toolCall) =>
+                  toolCall.name.startsWith("browser_")
+                    ? browserUseEnabled
+                    : computerUseEnabled,
+                );
+                if (
+                  webCalls.length === 0 &&
+                  ![...toolCalls.values()].some(
+                    (toolCall) => toolCall.name === "artifacts",
+                  )
+                ) {
+                  let inlineIndex = toolCalls.size;
+                  for (const input of inlineArtifactInputs(
+                    assistantText.slice(turnTextStart),
+                  )) {
+                    toolCalls.set(inlineIndex++, {
+                      id: randomUUID(),
+                      name: "artifacts",
+                      arguments: JSON.stringify(input),
+                    });
                   }
                 }
-              } catch (error) {
-                failed = true;
-                output = `Skill error: ${error instanceof Error ? error.message : String(error)}`;
-              }
-              // The success row stays a single non-expandable line; only a
-              // failure carries visible result text.
-              const resultBlock: LocalWebToolResultBlock = {
-                type: "tool_result",
-                tool_use_id: displayId,
-                name: "skill",
-                content: failed ? [{ type: "text", text: output }] : [],
-                ...(failed ? { is_error: true } : {}),
-              };
-              assistantBlocks.push(resultBlock);
-              const resultBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: resultBlockIndex,
-                  content_block: resultBlock,
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: resultBlockIndex,
-                }),
-              );
-              continuation.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                name: toolCall.name,
-                content: output,
-              });
-            }
-            for (const toolCall of mcpCalls) {
-              let input: JsonObject = {};
-              try {
-                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
-                if (isObject(parsed)) input = parsed;
-              } catch {
-                // The tool receives an empty object and reports the problem.
-              }
-              const nameParts = toolCall.name.split("__");
-              const serverLabel = nameParts[1] ?? "connector";
-              const toolLabel = nameParts.slice(2).join("__") || toolCall.name;
-              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
-              const callBlock: LocalWebToolUseBlock = {
-                type: "tool_use",
-                id: displayId,
-                name: "mcp_tool",
-                input: {
-                  ...input,
-                  description: `Called ${serverLabel} · ${toolLabel}`,
-                },
-              };
-              assistantBlocks.push(callBlock);
-              const callBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: callBlockIndex,
-                  // The row renderer labels from input.description, so the
-                  // full input must be present from the start event.
-                  content_block: {
-                    type: callBlock.type,
-                    id: callBlock.id,
-                    name: callBlock.name,
-                    input: callBlock.input,
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: callBlockIndex,
-                  delta: {
-                    type: "input_json_delta",
-                    partial_json: JSON.stringify(callBlock.input),
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: callBlockIndex,
-                }),
-              );
-              let output: string;
-              let failed = false;
-              try {
-                if (!backend.#mcpSource)
-                  throw new Error("MCP connectors are not available");
-                output = await backend.#mcpSource.callTool(
-                  toolCall.name,
-                  input,
+                // A provider can still hallucinate a tool call that was not in
+                // the request schema. Fail closed: never execute it, and give the
+                // model a tool-protocol result so it can recover with a normal
+                // answer instead of leaving an empty assistant turn.
+                if (!webSearchEnabled && requestedWebCalls.length > 0) {
+                  closeTextBlock();
+                  continuation.push({
+                    role: "assistant",
+                    content: assistantText.slice(turnTextStart) || null,
+                    tool_calls: requestedWebCalls.map((toolCall) => ({
+                      id: toolCall.id,
+                      type: "function",
+                      function: {
+                        name: toolCall.name,
+                        arguments: toolCall.arguments || "{}",
+                      },
+                    })),
+                  });
+                  for (const toolCall of requestedWebCalls)
+                    continuation.push({
+                      role: "tool",
+                      tool_call_id: toolCall.id,
+                      name: toolCall.name,
+                      content:
+                        "Web search is disabled for this conversation. Answer without browsing or ask the user to enable it.",
+                    });
+                  continue;
+                }
+                // Same fail-closed handling for a hallucinated code-execution
+                // call while the capability is off.
+                if (!codeExecutionEnabled && requestedCodeCalls.length > 0) {
+                  closeTextBlock();
+                  continuation.push({
+                    role: "assistant",
+                    content: assistantText.slice(turnTextStart) || null,
+                    tool_calls: requestedCodeCalls.map((toolCall) => ({
+                      id: toolCall.id,
+                      type: "function",
+                      function: {
+                        name: toolCall.name,
+                        arguments: toolCall.arguments || "{}",
+                      },
+                    })),
+                  });
+                  for (const toolCall of requestedCodeCalls)
+                    continuation.push({
+                      role: "tool",
+                      tool_call_id: toolCall.id,
+                      name: toolCall.name,
+                      content:
+                        "Code execution is disabled. Answer without running code or ask the user to enable Code execution in settings.",
+                    });
+                  continue;
+                }
+                // Same fail-closed handling for browser/computer calls while
+                // their capabilities are off.
+                const refusedDeviceCalls = requestedDeviceCalls.filter(
+                  (toolCall) => !deviceCalls.includes(toolCall),
                 );
-              } catch (error) {
-                failed = true;
-                output = `MCP tool error: ${error instanceof Error ? error.message : String(error)}`;
-              }
-              const resultBlock: LocalWebToolResultBlock = {
-                type: "tool_result",
-                tool_use_id: displayId,
-                name: "mcp_tool",
-                content: [{ type: "text", text: output.slice(0, 8_000) }],
-                ...(failed ? { is_error: true } : {}),
-              };
-              assistantBlocks.push(resultBlock);
-              const resultBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: resultBlockIndex,
-                  content_block: resultBlock,
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: resultBlockIndex,
-                }),
-              );
-              continuation.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                name: toolCall.name,
-                content: output.slice(0, 50_000),
-              });
-            }
-            for (const toolCall of codeCalls) {
-              let command = "";
-              try {
-                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
-                if (isObject(parsed))
-                  command = stringValue(parsed.command) ?? "";
-              } catch {
-                // The sandbox rejects the empty command with a clear error.
-              }
-              const commandLabel = command.split("\n")[0].trim().slice(0, 80);
-              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
-              // Rendered through the same proven generic tool row as MCP
-              // calls: the retained renderer labels from input.description
-              // and shows the result text when expanded.
-              const callBlock: LocalWebToolUseBlock = {
-                type: "tool_use",
-                id: displayId,
-                name: "mcp_tool",
-                input: {
-                  command,
-                  description: `Ran code${commandLabel ? ` · ${commandLabel}` : ""}`,
-                },
-              };
-              assistantBlocks.push(callBlock);
-              const callBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: callBlockIndex,
-                  content_block: {
-                    type: callBlock.type,
-                    id: callBlock.id,
-                    name: callBlock.name,
-                    input: callBlock.input,
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: callBlockIndex,
-                  delta: {
-                    type: "input_json_delta",
-                    partial_json: JSON.stringify(callBlock.input),
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: callBlockIndex,
-                }),
-              );
-              let output: string;
-              let failed = false;
-              try {
-                if (!backend.#sandbox)
-                  throw new Error("Code execution is not available");
-                const result = await backend.#sandbox.runCommand(
-                  conversation.uuid,
-                  command,
-                  {
-                    allowNetwork: backend.#sandboxEgressEnabled(),
-                    signal: completionSignal,
-                  },
-                );
-                output = result.output;
-                if (result.generatedFiles.length > 0)
-                  output += `\n\nNew or changed files in /workspace:\n${result.generatedFiles
-                    .map(
-                      (file) =>
-                        `- ${file.path} (${file.size_bytes} bytes) — download link: /api/local/sandbox/files/${conversation.uuid}/${file.path
-                          .split("/")
-                          .map(encodeURIComponent)
-                          .join("/")}`,
-                    )
-                    .join("\n")}`;
-              } catch (error) {
-                failed = true;
-                output = `Code execution error: ${error instanceof Error ? error.message : String(error)}`;
-              }
-              const resultBlock: LocalWebToolResultBlock = {
-                type: "tool_result",
-                tool_use_id: displayId,
-                name: "mcp_tool",
-                content: [{ type: "text", text: output.slice(0, 8_000) }],
-                ...(failed ? { is_error: true } : {}),
-              };
-              assistantBlocks.push(resultBlock);
-              const resultBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: resultBlockIndex,
-                  content_block: resultBlock,
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: resultBlockIndex,
-                }),
-              );
-              continuation.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                name: toolCall.name,
-                content: output.slice(0, 50_000),
-              });
-            }
-            for (const toolCall of deviceCalls) {
-              let input: JsonObject = {};
-              try {
-                const parsed: unknown = JSON.parse(toolCall.arguments || "{}");
-                if (isObject(parsed)) input = parsed;
-              } catch {
-                // The tool reports the invalid arguments.
-              }
-              const isBrowser = toolCall.name.startsWith("browser_");
-              const action = toolCall.name.split("_").slice(1).join(" ");
-              const detail =
-                stringValue(input.url) ??
-                stringValue(input.target) ??
-                stringValue(input.combo) ??
-                (typeof input.x === "number" && typeof input.y === "number"
-                  ? `${input.x},${input.y}`
-                  : "");
-              const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
-              const callBlock: LocalWebToolUseBlock = {
-                type: "tool_use",
-                id: displayId,
-                name: "mcp_tool",
-                input: {
-                  ...input,
-                  description: `${isBrowser ? "Browser" : "Computer"} · ${action}${detail ? ` · ${detail.slice(0, 60)}` : ""}`,
-                },
-              };
-              assistantBlocks.push(callBlock);
-              const callBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: callBlockIndex,
-                  content_block: {
-                    type: callBlock.type,
-                    id: callBlock.id,
-                    name: callBlock.name,
-                    input: callBlock.input,
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_delta", {
-                  type: "content_block_delta",
-                  index: callBlockIndex,
-                  delta: {
-                    type: "input_json_delta",
-                    partial_json: JSON.stringify(callBlock.input),
-                  },
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: callBlockIndex,
-                }),
-              );
-              let output: string;
-              let failed = false;
-              try {
-                const source = isBrowser
-                  ? backend.#browserSource
-                  : backend.#computerSource;
-                if (!source)
-                  throw new Error(
-                    `${isBrowser ? "Browser" : "Computer"} use is not available`,
+                if (refusedDeviceCalls.length > 0) {
+                  closeTextBlock();
+                  continuation.push({
+                    role: "assistant",
+                    content: assistantText.slice(turnTextStart) || null,
+                    tool_calls: refusedDeviceCalls.map((toolCall) => ({
+                      id: toolCall.id,
+                      type: "function",
+                      function: {
+                        name: toolCall.name,
+                        arguments: toolCall.arguments || "{}",
+                      },
+                    })),
+                  });
+                  for (const toolCall of refusedDeviceCalls)
+                    continuation.push({
+                      role: "tool",
+                      tool_call_id: toolCall.id,
+                      name: toolCall.name,
+                      content: toolCall.name.startsWith("browser_")
+                        ? "Browser use is disabled. Answer without browsing or ask the user to enable Browser use in settings."
+                        : "Computer use is disabled. Ask the user to enable Computer use in settings before controlling the computer.",
+                    });
+                  continue;
+                }
+                if (
+                  webCalls.length === 0 &&
+                  skillCalls.length === 0 &&
+                  mcpCalls.length === 0 &&
+                  memorySaveCalls.length === 0 &&
+                  codeCalls.length === 0 &&
+                  deviceCalls.length === 0
+                ) {
+                  terminalTurn = true;
+                  break;
+                }
+                closeTextBlock();
+                continuation.push({
+                  role: "assistant",
+                  content: assistantText.slice(turnTextStart) || null,
+                  tool_calls: [
+                    ...webCalls,
+                    ...skillCalls,
+                    ...mcpCalls,
+                    ...memorySaveCalls,
+                    ...codeCalls,
+                    ...deviceCalls,
+                  ].map((toolCall) => ({
+                    id: toolCall.id,
+                    type: "function",
+                    function: {
+                      name: toolCall.name,
+                      arguments: toolCall.arguments || "{}",
+                    },
+                  })),
+                });
+                for (const toolCall of memorySaveCalls) {
+                  let topic = "";
+                  let content = "";
+                  try {
+                    const parsed: unknown = JSON.parse(
+                      toolCall.arguments || "{}",
+                    );
+                    if (isObject(parsed)) {
+                      topic = stringValue(parsed.topic) ?? "";
+                      content = stringValue(parsed.content) ?? "";
+                    }
+                  } catch {
+                    // The result below reports the invalid arguments.
+                  }
+                  let output = "Memory saved.";
+                  let failed = false;
+                  if (!content) {
+                    failed = true;
+                    output = "save_memory requires content to remember.";
+                  } else if (topic.length > 256 || content.length > 10_000) {
+                    failed = true;
+                    output =
+                      "Memory entries are limited to a 256-character topic and 10,000-character content.";
+                  } else if (conversation.is_temporary) {
+                    // Incognito chats read memory but never write it.
+                    output =
+                      "This is an incognito chat, so nothing was saved to memory.";
+                  } else {
+                    const entry = `- [${topic || "General"}] ${content}`;
+                    await backend.#serializeMutation(async () => {
+                      const previousMemory = backend.#data.memory.memory;
+                      const previousUpdatedAt = backend.#data.memory.updated_at;
+                      const nextMemory = previousMemory
+                        ? `${previousMemory}\n${entry}`
+                        : entry;
+                      if (nextMemory.length > MAX_MEMORY_CHARS) {
+                        failed = true;
+                        output =
+                          "Long-term memory is full; edit or reset it before saving more.";
+                      } else {
+                        backend.#data.memory.memory = nextMemory;
+                        backend.#data.memory.updated_at =
+                          new Date().toISOString();
+                        const ownRevision = ++backend.#memoryRevision;
+                        try {
+                          await backend.#persist();
+                        } catch (error) {
+                          if (backend.#memoryRevision === ownRevision) {
+                            backend.#data.memory.memory = previousMemory;
+                            backend.#data.memory.updated_at = previousUpdatedAt;
+                            backend.#memoryRevision -= 1;
+                          }
+                          failed = true;
+                          output = `Memory error: ${error instanceof Error ? error.message : String(error)}`;
+                        }
+                      }
+                    });
+                  }
+                  const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+                  // Displayed under the generic mcp_tool name: the retained
+                  // renderer labels that path from input.description both while
+                  // streaming and after the conversation settles, so the row
+                  // renders exactly once, in chain position. The "save_memory"
+                  // display name took a different settled path that re-rendered
+                  // as a raw wrench "Save memory" pill with a Result chip and
+                  // orphaned the preload-rebuilt native row at the chain top.
+                  const callBlock: LocalWebToolUseBlock = {
+                    type: "tool_use",
+                    id: displayId,
+                    name: "mcp_tool",
+                    input: {
+                      topic,
+                      content,
+                      // U+2063 invisibly carries the content into the rendered
+                      // label so the preload can rebuild the native "Saved
+                      // memory" row without extra lookups.
+                      description: `Saved memory${topic ? ` · ${topic}` : ""}⁣${content}`,
+                    },
+                  };
+                  assistantBlocks.push(callBlock);
+                  const callBlockIndex = nextBlockIndex++;
+                  const resultBlock: LocalWebToolResultBlock = {
+                    type: "tool_result",
+                    tool_use_id: displayId,
+                    name: "mcp_tool",
+                    content: failed ? [{ type: "text", text: output }] : [],
+                    ...(failed ? { is_error: true } : {}),
+                  };
+                  assistantBlocks.push(resultBlock);
+                  const resultBlockIndex = nextBlockIndex++;
+                  // The save already happened, so the call and result events
+                  // flush as ONE stream chunk: a result-less mcp_tool block
+                  // would paint a transient wrench "Using a MCP tool" row
+                  // before the preload rebuilds the native Saved memory row.
+                  const memoryEvents = [
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: callBlockIndex,
+                      // The row renderer labels from input.description, so the
+                      // full input must be present from the start event.
+                      content_block: {
+                        type: callBlock.type,
+                        id: callBlock.id,
+                        name: callBlock.name,
+                        input: callBlock.input,
+                      },
+                    }),
+                    sse("content_block_delta", {
+                      type: "content_block_delta",
+                      index: callBlockIndex,
+                      delta: {
+                        type: "input_json_delta",
+                        partial_json: JSON.stringify(callBlock.input),
+                      },
+                    }),
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: callBlockIndex,
+                    }),
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: resultBlockIndex,
+                      content_block: resultBlock,
+                    }),
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: resultBlockIndex,
+                    }),
+                  ];
+                  const combined = new Uint8Array(
+                    memoryEvents.reduce(
+                      (total, event) => total + event.byteLength,
+                      0,
+                    ),
                   );
-                output = (
-                  await source.run(
-                    conversation.uuid,
-                    toolCall.name,
+                  let eventOffset = 0;
+                  for (const event of memoryEvents) {
+                    combined.set(event, eventOffset);
+                    eventOffset += event.byteLength;
+                  }
+                  controller.enqueue(combined);
+                  continuation.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    name: toolCall.name,
+                    content: output,
+                  });
+                }
+                for (const toolCall of webCalls) {
+                  const webName =
+                    toolCall.name === "web_search"
+                      ? "web_search"
+                      : "visit_website";
+                  let input: JsonObject = {};
+                  try {
+                    const parsed: unknown = JSON.parse(
+                      toolCall.arguments || "{}",
+                    );
+                    if (isObject(parsed)) input = parsed;
+                  } catch {
+                    // The tool receives an empty object and returns a clear error.
+                  }
+                  const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+                  const displayInput: JsonObject =
+                    webName === "web_search"
+                      ? { query: stringValue(input.query) || "" }
+                      : { url: stringValue(input.url) || "" };
+                  const callBlock: LocalWebToolUseBlock = {
+                    type: "tool_use",
+                    id: displayId,
+                    name: webName === "web_search" ? "web_search" : "web_fetch",
+                    input: displayInput,
+                  };
+                  assistantBlocks.push(callBlock);
+                  const callBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: callBlockIndex,
+                      content_block: {
+                        type: callBlock.type,
+                        id: callBlock.id,
+                        name: callBlock.name,
+                        input: {},
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_delta", {
+                      type: "content_block_delta",
+                      index: callBlockIndex,
+                      delta: {
+                        type: "input_json_delta",
+                        partial_json: JSON.stringify(callBlock.input),
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: callBlockIndex,
+                    }),
+                  );
+
+                  let output: string;
+                  let failed = !backend.#webTools;
+                  try {
+                    output = backend.#webTools
+                      ? await backend.#webTools.execute(
+                          toolCall.name,
+                          input,
+                          completionSignal,
+                        )
+                      : "Local web tools are not available in this runtime.";
+                  } catch (error) {
+                    failed = true;
+                    output = `Web tool error: ${error instanceof Error ? error.message : String(error)}`;
+                  }
+                  const resultBlock = desktopWebResult(
+                    webName,
+                    displayId,
                     input,
-                    completionSignal,
-                  )
-                ).output;
-              } catch (error) {
-                failed = true;
-                output = `${isBrowser ? "Browser" : "Computer"} tool error: ${error instanceof Error ? error.message : String(error)}`;
+                    output,
+                    failed,
+                  );
+                  assistantBlocks.push(resultBlock);
+                  const resultBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: resultBlockIndex,
+                      content_block: resultBlock,
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: resultBlockIndex,
+                    }),
+                  );
+                  continuation.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    name: toolCall.name,
+                    content: output,
+                  });
+                }
+                for (const toolCall of skillCalls) {
+                  let requestedName = "";
+                  try {
+                    const parsed: unknown = JSON.parse(
+                      toolCall.arguments || "{}",
+                    );
+                    if (isObject(parsed))
+                      requestedName = stringValue(parsed.name) ?? "";
+                  } catch {
+                    // The tool result below reports the invalid arguments.
+                  }
+                  const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+                  const callBlock: LocalWebToolUseBlock = {
+                    type: "tool_use",
+                    id: displayId,
+                    name: "skill",
+                    // The retained row renderer uses input.description verbatim
+                    // as the row label when present.
+                    input: {
+                      name: requestedName,
+                      description: requestedName
+                        ? `Loaded ${requestedName} skill`
+                        : "Loaded skill",
+                    },
+                  };
+                  assistantBlocks.push(callBlock);
+                  const callBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: callBlockIndex,
+                      // The row renderer labels from input.description, so the
+                      // full input must be present from the start event.
+                      content_block: {
+                        type: callBlock.type,
+                        id: callBlock.id,
+                        name: callBlock.name,
+                        input: callBlock.input,
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_delta", {
+                      type: "content_block_delta",
+                      index: callBlockIndex,
+                      delta: {
+                        type: "input_json_delta",
+                        partial_json: JSON.stringify(callBlock.input),
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: callBlockIndex,
+                    }),
+                  );
+                  let output: string;
+                  let failed = false;
+                  try {
+                    if (!backend.#skillSource)
+                      throw new Error(
+                        "Skills are not available in this runtime",
+                      );
+                    if (!requestedName)
+                      throw new Error("The skill tool requires a skill name");
+                    output = await backend.#skillSource.read(requestedName);
+                    if (
+                      codeExecutionEnabled &&
+                      backend.#sandbox &&
+                      backend.#skillSource.files
+                    ) {
+                      try {
+                        await backend.#sandbox.stageSkillFiles(
+                          conversation.uuid,
+                          requestedName,
+                          await backend.#skillSource.files(requestedName),
+                        );
+                        output += `\n\nThis skill's files are staged in the sandbox at /workspace/skills/${requestedName} for bash_code_execution.`;
+                      } catch {
+                        // Staging is best-effort; the inline copies above remain.
+                      }
+                    }
+                  } catch (error) {
+                    failed = true;
+                    output = `Skill error: ${error instanceof Error ? error.message : String(error)}`;
+                  }
+                  // The success row stays a single non-expandable line; only a
+                  // failure carries visible result text.
+                  const resultBlock: LocalWebToolResultBlock = {
+                    type: "tool_result",
+                    tool_use_id: displayId,
+                    name: "skill",
+                    content: failed ? [{ type: "text", text: output }] : [],
+                    ...(failed ? { is_error: true } : {}),
+                  };
+                  assistantBlocks.push(resultBlock);
+                  const resultBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: resultBlockIndex,
+                      content_block: resultBlock,
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: resultBlockIndex,
+                    }),
+                  );
+                  continuation.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    name: toolCall.name,
+                    content: output,
+                  });
+                }
+                for (const toolCall of mcpCalls) {
+                  let input: JsonObject = {};
+                  try {
+                    const parsed: unknown = JSON.parse(
+                      toolCall.arguments || "{}",
+                    );
+                    if (isObject(parsed)) input = parsed;
+                  } catch {
+                    // The tool receives an empty object and reports the problem.
+                  }
+                  const nameParts = toolCall.name.split("__");
+                  const serverLabel = nameParts[1] ?? "connector";
+                  const toolLabel =
+                    nameParts.slice(2).join("__") || toolCall.name;
+                  const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+                  const callBlock: LocalWebToolUseBlock = {
+                    type: "tool_use",
+                    id: displayId,
+                    name: "mcp_tool",
+                    input: {
+                      ...input,
+                      description: `Called ${serverLabel} · ${toolLabel}`,
+                    },
+                  };
+                  assistantBlocks.push(callBlock);
+                  const callBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: callBlockIndex,
+                      // The row renderer labels from input.description, so the
+                      // full input must be present from the start event.
+                      content_block: {
+                        type: callBlock.type,
+                        id: callBlock.id,
+                        name: callBlock.name,
+                        input: callBlock.input,
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_delta", {
+                      type: "content_block_delta",
+                      index: callBlockIndex,
+                      delta: {
+                        type: "input_json_delta",
+                        partial_json: JSON.stringify(callBlock.input),
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: callBlockIndex,
+                    }),
+                  );
+                  let output: string;
+                  let failed = false;
+                  try {
+                    if (!backend.#mcpSource)
+                      throw new Error("MCP connectors are not available");
+                    output = await backend.#mcpSource.callTool(
+                      toolCall.name,
+                      input,
+                    );
+                  } catch (error) {
+                    failed = true;
+                    output = `MCP tool error: ${error instanceof Error ? error.message : String(error)}`;
+                  }
+                  const resultBlock: LocalWebToolResultBlock = {
+                    type: "tool_result",
+                    tool_use_id: displayId,
+                    name: "mcp_tool",
+                    content: [{ type: "text", text: output.slice(0, 8_000) }],
+                    ...(failed ? { is_error: true } : {}),
+                  };
+                  assistantBlocks.push(resultBlock);
+                  const resultBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: resultBlockIndex,
+                      content_block: resultBlock,
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: resultBlockIndex,
+                    }),
+                  );
+                  continuation.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    name: toolCall.name,
+                    content: output.slice(0, 50_000),
+                  });
+                }
+                for (const toolCall of codeCalls) {
+                  let command = "";
+                  try {
+                    const parsed: unknown = JSON.parse(
+                      toolCall.arguments || "{}",
+                    );
+                    if (isObject(parsed))
+                      command = stringValue(parsed.command) ?? "";
+                  } catch {
+                    // The sandbox rejects the empty command with a clear error.
+                  }
+                  const commandLabel = command
+                    .split("\n")[0]
+                    .trim()
+                    .slice(0, 80);
+                  const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+                  // Rendered through the same proven generic tool row as MCP
+                  // calls: the retained renderer labels from input.description
+                  // and shows the result text when expanded.
+                  const callBlock: LocalWebToolUseBlock = {
+                    type: "tool_use",
+                    id: displayId,
+                    name: "mcp_tool",
+                    input: {
+                      command,
+                      description: `Ran code${commandLabel ? ` · ${commandLabel}` : ""}`,
+                    },
+                  };
+                  assistantBlocks.push(callBlock);
+                  const callBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: callBlockIndex,
+                      content_block: {
+                        type: callBlock.type,
+                        id: callBlock.id,
+                        name: callBlock.name,
+                        input: callBlock.input,
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_delta", {
+                      type: "content_block_delta",
+                      index: callBlockIndex,
+                      delta: {
+                        type: "input_json_delta",
+                        partial_json: JSON.stringify(callBlock.input),
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: callBlockIndex,
+                    }),
+                  );
+                  let output: string;
+                  let failed = false;
+                  try {
+                    if (!backend.#sandbox)
+                      throw new Error("Code execution is not available");
+                    const result = await backend.#sandbox.runCommand(
+                      conversation.uuid,
+                      command,
+                      {
+                        allowNetwork: backend.#sandboxEgressEnabled(),
+                        signal: completionSignal,
+                      },
+                    );
+                    output = result.output;
+                    if (result.generatedFiles.length > 0)
+                      output += `\n\nNew or changed files in /workspace:\n${result.generatedFiles
+                        .map(
+                          (file) =>
+                            `- ${file.path} (${file.size_bytes} bytes) — download link: /api/local/sandbox/files/${conversation.uuid}/${file.path
+                              .split("/")
+                              .map(encodeURIComponent)
+                              .join("/")}`,
+                        )
+                        .join("\n")}`;
+                  } catch (error) {
+                    failed = true;
+                    output = `Code execution error: ${error instanceof Error ? error.message : String(error)}`;
+                  }
+                  const resultBlock: LocalWebToolResultBlock = {
+                    type: "tool_result",
+                    tool_use_id: displayId,
+                    name: "mcp_tool",
+                    content: [{ type: "text", text: output.slice(0, 8_000) }],
+                    ...(failed ? { is_error: true } : {}),
+                  };
+                  assistantBlocks.push(resultBlock);
+                  const resultBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: resultBlockIndex,
+                      content_block: resultBlock,
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: resultBlockIndex,
+                    }),
+                  );
+                  continuation.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    name: toolCall.name,
+                    content: output.slice(0, 50_000),
+                  });
+                }
+                for (const toolCall of deviceCalls) {
+                  let input: JsonObject = {};
+                  try {
+                    const parsed: unknown = JSON.parse(
+                      toolCall.arguments || "{}",
+                    );
+                    if (isObject(parsed)) input = parsed;
+                  } catch {
+                    // The tool reports the invalid arguments.
+                  }
+                  const isBrowser = toolCall.name.startsWith("browser_");
+                  const action = toolCall.name.split("_").slice(1).join(" ");
+                  const detail =
+                    stringValue(input.url) ??
+                    stringValue(input.target) ??
+                    stringValue(input.combo) ??
+                    (typeof input.x === "number" && typeof input.y === "number"
+                      ? `${input.x},${input.y}`
+                      : "");
+                  const displayId = `toolu_${randomUUID().replaceAll("-", "")}`;
+                  const callBlock: LocalWebToolUseBlock = {
+                    type: "tool_use",
+                    id: displayId,
+                    name: "mcp_tool",
+                    input: {
+                      ...input,
+                      description: `${isBrowser ? "Browser" : "Computer"} · ${action}${detail ? ` · ${detail.slice(0, 60)}` : ""}`,
+                    },
+                  };
+                  assistantBlocks.push(callBlock);
+                  const callBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: callBlockIndex,
+                      content_block: {
+                        type: callBlock.type,
+                        id: callBlock.id,
+                        name: callBlock.name,
+                        input: callBlock.input,
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_delta", {
+                      type: "content_block_delta",
+                      index: callBlockIndex,
+                      delta: {
+                        type: "input_json_delta",
+                        partial_json: JSON.stringify(callBlock.input),
+                      },
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: callBlockIndex,
+                    }),
+                  );
+                  let output: string;
+                  let failed = false;
+                  try {
+                    const source = isBrowser
+                      ? backend.#browserSource
+                      : backend.#computerSource;
+                    if (!source)
+                      throw new Error(
+                        `${isBrowser ? "Browser" : "Computer"} use is not available`,
+                      );
+                    output = (
+                      await source.run(
+                        conversation.uuid,
+                        toolCall.name,
+                        input,
+                        completionSignal,
+                      )
+                    ).output;
+                  } catch (error) {
+                    failed = true;
+                    output = `${isBrowser ? "Browser" : "Computer"} tool error: ${error instanceof Error ? error.message : String(error)}`;
+                  }
+                  const resultBlock: LocalWebToolResultBlock = {
+                    type: "tool_result",
+                    tool_use_id: displayId,
+                    name: "mcp_tool",
+                    content: [{ type: "text", text: output.slice(0, 8_000) }],
+                    ...(failed ? { is_error: true } : {}),
+                  };
+                  assistantBlocks.push(resultBlock);
+                  const resultBlockIndex = nextBlockIndex++;
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: resultBlockIndex,
+                      content_block: resultBlock,
+                    }),
+                  );
+                  controller.enqueue(
+                    sse("content_block_stop", {
+                      type: "content_block_stop",
+                      index: resultBlockIndex,
+                    }),
+                  );
+                  continuation.push({
+                    role: "tool",
+                    tool_call_id: toolCall.id,
+                    name: toolCall.name,
+                    content: output.slice(0, 50_000),
+                  });
+                }
               }
-              const resultBlock: LocalWebToolResultBlock = {
-                type: "tool_result",
-                tool_use_id: displayId,
-                name: "mcp_tool",
-                content: [{ type: "text", text: output.slice(0, 8_000) }],
-                ...(failed ? { is_error: true } : {}),
-              };
-              assistantBlocks.push(resultBlock);
-              const resultBlockIndex = nextBlockIndex++;
-              controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: resultBlockIndex,
-                  content_block: resultBlock,
-                }),
-              );
-              controller.enqueue(
-                sse("content_block_stop", {
-                  type: "content_block_stop",
-                  index: resultBlockIndex,
-                }),
-              );
-              continuation.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                name: toolCall.name,
-                content: output.slice(0, 50_000),
-              });
-            }
-          }
-          if (!terminalTurn)
-            throw new Error(
-              `The local tool loop exceeded ${maxProviderTurns} turns`,
-            );
-          const artifactToolCalls = [...toolCalls]
-            .sort(([left], [right]) => left - right)
-            .flatMap(([, toolCall]) => {
-              if (toolCall.name !== "artifacts") return [];
-              try {
-                const parsed = normalizeArtifactInput(
-                  JSON.parse(toolCall.arguments || "{}"),
+              if (!terminalTurn)
+                throw new Error(
+                  `The local tool loop exceeded ${maxProviderTurns} turns`,
                 );
-                return parsed ? [{ toolCall, parsed }] : [];
-              } catch {
-                return [];
+              const artifactToolCalls = [...toolCalls]
+                .sort(([left], [right]) => left - right)
+                .flatMap(([, toolCall]) => {
+                  if (toolCall.name !== "artifacts") return [];
+                  try {
+                    const parsed = normalizeArtifactInput(
+                      JSON.parse(toolCall.arguments || "{}"),
+                    );
+                    return parsed ? [{ toolCall, parsed }] : [];
+                  } catch {
+                    return [];
+                  }
+                });
+              // Close every live-streamed artifact block (materializing and
+              // splicing version_uuid into the streamed JSON) before opening any
+              // other block: the retained client's SSE reducer expects a strictly
+              // sequential block lifecycle.
+              closeLiveArtifactBlocks();
+              if (!assistantText.trim() && artifactToolCalls.length > 0) {
+                const first = artifactToolCalls[0].parsed;
+                const verb = first.command === "create" ? "Created" : "Updated";
+                const visibleStatus = first.title
+                  ? `${verb} “${first.title}”.`
+                  : `${verb} the requested artifact.`;
+                if (textBlockIndex === undefined) {
+                  textBlockIndex = nextBlockIndex++;
+                  activeTextBlock = {
+                    type: "text",
+                    text: "",
+                    citations: [],
+                  };
+                  assistantBlocks.push(activeTextBlock);
+                  controller.enqueue(
+                    sse("content_block_start", {
+                      type: "content_block_start",
+                      index: textBlockIndex,
+                      content_block: { type: "text", text: "" },
+                    }),
+                  );
+                }
+                assistantText += visibleStatus;
+                activeTextBlock!.text += visibleStatus;
+                controller.enqueue(
+                  sse("content_block_delta", {
+                    type: "content_block_delta",
+                    index: textBlockIndex,
+                    delta: { type: "text_delta", text: visibleStatus },
+                  }),
+                );
               }
-            });
-          // Close every live-streamed artifact block (materializing and
-          // splicing version_uuid into the streamed JSON) before opening any
-          // other block: the retained client's SSE reducer expects a strictly
-          // sequential block lifecycle.
-          closeLiveArtifactBlocks();
-          if (!assistantText.trim() && artifactToolCalls.length > 0) {
-            const first = artifactToolCalls[0].parsed;
-            const verb = first.command === "create" ? "Created" : "Updated";
-            const visibleStatus = first.title
-              ? `${verb} “${first.title}”.`
-              : `${verb} the requested artifact.`;
-            if (textBlockIndex === undefined) {
-              textBlockIndex = nextBlockIndex++;
-              activeTextBlock = {
-                type: "text",
-                text: "",
-                citations: [],
-              };
-              assistantBlocks.push(activeTextBlock);
+              closeTextBlock();
+
+              for (const { toolCall, parsed } of artifactToolCalls) {
+                // A live-streamed block already materialized on close; reuse it
+                // so a second artifact version is never minted for one call.
+                const input =
+                  materializedInputs.get(toolCall) ??
+                  backend.#materializeArtifact(
+                    conversation,
+                    assistantUuid,
+                    parsed,
+                    artifactWorkspace,
+                  );
+                const block: LocalArtifactToolUseBlock = {
+                  type: "tool_use",
+                  id: toolCall.id,
+                  name: "artifacts",
+                  input,
+                };
+                assistantBlocks.push(block);
+                // A live-streamed block already delivered its raw arguments and
+                // was closed above; re-emitting it here would duplicate the card.
+                // The persisted message carries the materialized input, exactly
+                // like claude.ai's post-stream refresh.
+                if (liveArtifactBlocks.has(toolCall)) continue;
+                const blockIndex = nextBlockIndex++;
+                const partialJson = JSON.stringify(input);
+                controller.enqueue(
+                  sse("content_block_start", {
+                    type: "content_block_start",
+                    index: blockIndex,
+                    content_block: {
+                      type: "tool_use",
+                      id: block.id,
+                      name: block.name,
+                      input: {},
+                    },
+                  }),
+                );
+                controller.enqueue(
+                  sse("content_block_delta", {
+                    type: "content_block_delta",
+                    index: blockIndex,
+                    delta: {
+                      type: "input_json_delta",
+                      partial_json: partialJson,
+                    },
+                  }),
+                );
+                controller.enqueue(
+                  sse("content_block_stop", {
+                    type: "content_block_stop",
+                    index: blockIndex,
+                  }),
+                );
+              }
+
+              if (assistantBlocks.length === 0) {
+                assistantBlocks.push({ type: "text", text: "", citations: [] });
+                controller.enqueue(
+                  sse("content_block_start", {
+                    type: "content_block_start",
+                    index: 0,
+                    content_block: { type: "text", text: "" },
+                  }),
+                );
+                controller.enqueue(
+                  sse("content_block_stop", {
+                    type: "content_block_stop",
+                    index: 0,
+                  }),
+                );
+              }
               controller.enqueue(
-                sse("content_block_start", {
-                  type: "content_block_start",
-                  index: textBlockIndex,
-                  content_block: { type: "text", text: "" },
+                sse("message_delta", {
+                  type: "message_delta",
+                  delta: {
+                    stop_reason: assistantBlocks.some(
+                      (block) =>
+                        block.type === "tool_use" && block.name === "artifacts",
+                    )
+                      ? "tool_use"
+                      : "end_turn",
+                    stop_details: null,
+                  },
                 }),
               );
+              controller.enqueue(sse("message_stop", { type: "message_stop" }));
+
+              const assistant = createMessage(
+                conversation,
+                "assistant",
+                assistantText,
+                assistantUuid,
+                human.uuid,
+              );
+              assistant.content = assistantBlocks;
+              normalizeArtifactMessage(assistant);
+              await backend.#serializeMutation(async () => {
+                const existingAssistantIndex =
+                  conversation.chat_messages.findIndex(
+                    (message) => message.uuid === assistant.uuid,
+                  );
+                const previousAssistant =
+                  existingAssistantIndex >= 0
+                    ? conversation.chat_messages[existingAssistantIndex]
+                    : undefined;
+                const previousLeaf = conversation.current_leaf_message_uuid;
+                const previousUpdatedAt = conversation.updated_at;
+                const previousArtifacts = backend.#data.artifacts;
+                if (existingAssistantIndex >= 0)
+                  conversation.chat_messages[existingAssistantIndex] =
+                    assistant;
+                else conversation.chat_messages.push(assistant);
+                conversation.current_leaf_message_uuid = assistant.uuid;
+                conversation.updated_at = assistant.updated_at;
+                try {
+                  backend.#data.artifacts =
+                    backend.#mergedArtifacts(artifactWorkspace);
+                  await backend.#persist();
+                } catch (error) {
+                  backend.#data.artifacts = previousArtifacts;
+                  if (existingAssistantIndex >= 0 && previousAssistant)
+                    conversation.chat_messages[existingAssistantIndex] =
+                      previousAssistant;
+                  else
+                    conversation.chat_messages =
+                      conversation.chat_messages.filter(
+                        (message) => message !== assistant,
+                      );
+                  conversation.current_leaf_message_uuid = previousLeaf;
+                  conversation.updated_at = previousUpdatedAt;
+                  throw error;
+                }
+              });
+              backend.#clearActiveCompletion(conversationUuid, completionAbort);
+              controller.close();
+              // Incognito chats read memory but never contribute to it.
+              if (!conversation.is_temporary) backend.maybeSynthesizeMemory();
+            } catch (error) {
+              backend.#clearActiveCompletion(conversationUuid, completionAbort);
+              const message =
+                error instanceof Error ? error.message : String(error);
+              try {
+                controller.enqueue(
+                  sse("error", {
+                    type: "error",
+                    error: { type: "api_error", message },
+                  }),
+                );
+                controller.close();
+              } catch {
+                // A superseded or client-aborted stream may already be closed.
+              }
             }
-            assistantText += visibleStatus;
-            activeTextBlock!.text += visibleStatus;
-            controller.enqueue(
-              sse("content_block_delta", {
-                type: "content_block_delta",
-                index: textBlockIndex,
-                delta: { type: "text_delta", text: visibleStatus },
-              }),
-            );
-          }
-          closeTextBlock();
-
-          for (const { toolCall, parsed } of artifactToolCalls) {
-            // A live-streamed block already materialized on close; reuse it
-            // so a second artifact version is never minted for one call.
-            const input =
-              materializedInputs.get(toolCall) ??
-              backend.#materializeArtifact(conversation, assistantUuid, parsed);
-            const block: LocalArtifactToolUseBlock = {
-              type: "tool_use",
-              id: toolCall.id,
-              name: "artifacts",
-              input,
-            };
-            assistantBlocks.push(block);
-            // A live-streamed block already delivered its raw arguments and
-            // was closed above; re-emitting it here would duplicate the card.
-            // The persisted message carries the materialized input, exactly
-            // like claude.ai's post-stream refresh.
-            if (liveArtifactBlocks.has(toolCall)) continue;
-            const blockIndex = nextBlockIndex++;
-            const partialJson = JSON.stringify(input);
-            controller.enqueue(
-              sse("content_block_start", {
-                type: "content_block_start",
-                index: blockIndex,
-                content_block: {
-                  type: "tool_use",
-                  id: block.id,
-                  name: block.name,
-                  input: {},
-                },
-              }),
-            );
-            controller.enqueue(
-              sse("content_block_delta", {
-                type: "content_block_delta",
-                index: blockIndex,
-                delta: { type: "input_json_delta", partial_json: partialJson },
-              }),
-            );
-            controller.enqueue(
-              sse("content_block_stop", {
-                type: "content_block_stop",
-                index: blockIndex,
-              }),
-            );
-          }
-
-          if (assistantBlocks.length === 0) {
-            assistantBlocks.push({ type: "text", text: "", citations: [] });
-            controller.enqueue(
-              sse("content_block_start", {
-                type: "content_block_start",
-                index: 0,
-                content_block: { type: "text", text: "" },
-              }),
-            );
-            controller.enqueue(
-              sse("content_block_stop", {
-                type: "content_block_stop",
-                index: 0,
-              }),
-            );
-          }
-          controller.enqueue(
-            sse("message_delta", {
-              type: "message_delta",
-              delta: {
-                stop_reason: assistantBlocks.some(
-                  (block) =>
-                    block.type === "tool_use" && block.name === "artifacts",
-                )
-                  ? "tool_use"
-                  : "end_turn",
-                stop_details: null,
-              },
-            }),
-          );
-          controller.enqueue(sse("message_stop", { type: "message_stop" }));
-
-          const assistant = createMessage(
-            conversation,
-            "assistant",
-            assistantText,
-            assistantUuid,
-            human.uuid,
-          );
-          assistant.content = assistantBlocks;
-          normalizeArtifactMessage(assistant);
-          const existingAssistantIndex = conversation.chat_messages.findIndex(
-            (message) => message.uuid === assistant.uuid,
-          );
-          if (existingAssistantIndex >= 0)
-            conversation.chat_messages[existingAssistantIndex] = assistant;
-          else conversation.chat_messages.push(assistant);
-          conversation.current_leaf_message_uuid = assistant.uuid;
-          conversation.updated_at = assistant.updated_at;
-          await backend.#persist();
+          })().finally(finishCompletion);
+          backend.#activeCompletionRuns.add(run);
+          void run.finally(() => backend.#activeCompletionRuns.delete(run));
+        },
+        cancel() {
+          completionAbort.abort();
           backend.#clearActiveCompletion(conversationUuid, completionAbort);
-          controller.close();
-          // Incognito chats read memory but never contribute to it.
-          if (!conversation.is_temporary) backend.maybeSynthesizeMemory();
-        } catch (error) {
-          backend.#clearActiveCompletion(conversationUuid, completionAbort);
-          const message =
-            error instanceof Error ? error.message : String(error);
-          try {
-            controller.enqueue(
-              sse("error", {
-                type: "error",
-                error: { type: "api_error", message },
-              }),
-            );
-            controller.close();
-          } catch {
-            // A superseded or client-aborted stream may already be closed.
-          }
-        }
-      },
-    });
-    return new Response(stream, {
-      headers: {
-        "Content-Type": "text/event-stream; charset=utf-8",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-        "request-id": randomUUID(),
-      },
-    });
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "request-id": randomUUID(),
+        },
+      });
+    } catch (error) {
+      this.#clearActiveCompletion(conversationUuid, completionAbort);
+      finishCompletion();
+      throw error;
+    }
   }
 
   async #createConversation(body: JsonObject): Promise<LocalConversation> {
     const now = new Date().toISOString();
     const uuid = stringValue(body.uuid) || randomUUID();
+    if (uuid.length > 512 || uuid.includes("\0") || uuid.includes("/"))
+      throw new LocalHttpError("Conversation UUID is invalid");
     const existing = this.#conversation(uuid);
     if (existing) return existing;
+    if (this.#data.conversations.length >= MAX_CONVERSATIONS)
+      throw new LocalHttpError(
+        `Local history is limited to ${MAX_CONVERSATIONS} conversations`,
+        409,
+      );
+    const projectUuid = stringValue(body.project_uuid);
+    if (
+      projectUuid &&
+      !this.#data.projects.some((project) => project.uuid === projectUuid)
+    )
+      throw new LocalHttpError("Project not found", 404);
     const requestedSettings = plainJsonObject(body.settings);
     if (typeof body.enabled_web_search === "boolean")
       requestedSettings.enabled_web_search = body.enabled_web_search;
     const conversation: LocalConversation = {
       uuid,
-      name: stringValue(body.name) || "",
+      name: (stringValue(body.name) || "").slice(0, 512),
       summary: "",
       model: this.#data.provider.model,
       created_at: now,
       updated_at: now,
       is_starred: false,
       is_temporary: body.is_temporary === true,
-      ...(stringValue(body.project_uuid)
-        ? { project_uuid: stringValue(body.project_uuid) }
-        : {}),
       settings: {
         enabled_web_search: true,
         ...requestedSettings,
@@ -3982,13 +5565,17 @@ export class LocalBackend {
             }
           : {}),
       },
-      ...(stringValue(body.project_uuid)
-        ? { project_uuid: stringValue(body.project_uuid) }
-        : {}),
+      ...(projectUuid ? { project_uuid: projectUuid } : {}),
       chat_messages: [],
     };
     this.#data.conversations.unshift(conversation);
-    await this.#persist();
+    try {
+      await this.#persist();
+    } catch (error) {
+      const index = this.#data.conversations.indexOf(conversation);
+      if (index >= 0) this.#data.conversations.splice(index, 1);
+      throw error;
+    }
     return conversation;
   }
 
@@ -3996,6 +5583,116 @@ export class LocalBackend {
     const pathname = url.pathname.startsWith("/edge-api/")
       ? `/api/${url.pathname.slice(10)}`
       : url.pathname;
+    const longRunning =
+      /\/(?:completion|retry_completion)$/.test(pathname) ||
+      pathname === "/api/local/models" ||
+      pathname.endsWith("/memory/synthesize");
+    return request.method === "GET" || request.method === "HEAD" || longRunning
+      ? this.#handle(request, url)
+      : this.#serializeMutation(() => this.#handle(request, url));
+  }
+
+  async #handle(request: Request, url: URL): Promise<Response | null> {
+    if (this.#disposed)
+      return errorResponse("Local backend is shutting down", 503);
+    const pathname = url.pathname.startsWith("/edge-api/")
+      ? `/api/${url.pathname.slice(10)}`
+      : url.pathname;
+
+    // The retained native Connectors Directory expects Anthropic's enriched
+    // MCP Registry envelope. Serve the bundled one-time official-registry
+    // snapshot with the same cursor contract; the runtime never polls a cloud
+    // directory and can still use the native cards, search, and details.
+    if (pathname === "/mcp-registry/v0/servers" && request.method === "GET") {
+      const presetEntries = CONNECTOR_OAUTH_PRESETS.map(
+        nativeConnectorPresetDirectoryEntry,
+      );
+      const presetUrls = new Set(
+        CONNECTOR_OAUTH_PRESETS.map((entry) => entry.serverUrl),
+      );
+      const all = [
+        ...presetEntries,
+        ...(connectorDirectorySnapshot.servers as JsonObject[]).filter(
+          (entry) => {
+            const server = isObject(entry.server) ? entry.server : {};
+            const remotes = Array.isArray(server.remotes) ? server.remotes : [];
+            return !remotes.some(
+              (remote) =>
+                isObject(remote) &&
+                typeof remote.url === "string" &&
+                presetUrls.has(remote.url),
+            );
+          },
+        ),
+      ];
+      const requestedLimit = Number(url.searchParams.get("limit") ?? 100);
+      const limit = Math.max(
+        1,
+        Math.min(500, Number.isFinite(requestedLimit) ? requestedLimit : 100),
+      );
+      const cursor = url.searchParams.get("cursor");
+      let offset = 0;
+      if (cursor) {
+        const index = all.findIndex((entry) => {
+          const server = isObject(entry.server) ? entry.server : {};
+          return (
+            `${stringValue(server.name) ?? ""}:${stringValue(server.version) ?? ""}` ===
+            cursor
+          );
+        });
+        if (index >= 0) offset = index + 1;
+      }
+      const servers = all.slice(offset, offset + limit);
+      const last = servers.at(-1);
+      const lastServer = last && isObject(last.server) ? last.server : {};
+      const nextCursor =
+        offset + servers.length < all.length && last
+          ? `${stringValue(lastServer.name) ?? ""}:${stringValue(lastServer.version) ?? ""}`
+          : undefined;
+      return new Response(
+        JSON.stringify({
+          servers,
+          metadata: {
+            count: servers.length,
+            ...(nextCursor ? { nextCursor } : {}),
+          },
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
+
+    // Skills use the native web Directory contract as well. The local skill
+    // source already merges built-ins, user skills, and installed plugin
+    // skills for Chat; expose that same catalog to the retained native cards.
+    if (
+      /^\/api\/organizations\/[^/]+\/skills\/list-skills$/.test(pathname) &&
+      request.method === "GET"
+    ) {
+      const skills = this.#skillSource
+        ? await this.#skillSource.list().catch(() => [])
+        : [];
+      return new Response(
+        JSON.stringify({
+          skills: skills.slice(0, 512).map((skill) => ({
+            id: `local:${skill.name}`,
+            name: skill.name,
+            description: skill.description,
+            creator_type: "anthropic",
+            updated_at: "2026-01-01T00:00:00.000Z",
+            enabled: true,
+            partition_by: "account",
+            is_public_provisioned: true,
+            user_invocable: true,
+            source: "local",
+            is_shared: false,
+            has_outgoing_shares: false,
+            enable_count: 0,
+            scan_requested: false,
+          })),
+        }),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    }
 
     if (pathname === "/api/local/config") {
       if (request.method === "GET") {
@@ -4008,37 +5705,76 @@ export class LocalBackend {
       if (request.method === "PUT") {
         try {
           const body = await jsonBody(request);
+          const current = this.#data.provider;
+          if ("model" in body && typeof body.model !== "string")
+            throw new LocalHttpError("model must be a string");
+          if (typeof body.model === "string" && !body.model.trim())
+            throw new LocalHttpError("model cannot be empty");
+          if (typeof body.model === "string" && body.model.length > 512)
+            throw new LocalHttpError("model exceeds 512 characters");
+          if ("baseUrl" in body && typeof body.baseUrl !== "string")
+            throw new LocalHttpError("baseUrl must be a string");
+          if (typeof body.apiKey === "string" && body.apiKey.length > 65_536)
+            throw new LocalHttpError("apiKey exceeds 65,536 characters");
           const apiKey =
             body.apiKey === null
               ? undefined
-              : stringValue(body.apiKey) || this.#data.provider.apiKey;
-          this.#data.provider = configuredProvider({
-            baseUrl: stringValue(body.baseUrl),
-            model: stringValue(body.model),
-            contextWindow: Number(body.contextWindow),
+              : typeof body.apiKey === "string"
+                ? body.apiKey.trim() || undefined
+                : current.apiKey;
+          const contextWindow =
+            typeof body.contextWindow === "number"
+              ? body.contextWindow
+              : (current.contextWindow ?? 128_000);
+          if (
+            !Number.isFinite(contextWindow) ||
+            contextWindow < 1_024 ||
+            contextWindow > 10_000_000
+          )
+            throw new LocalHttpError(
+              "contextWindow must be between 1,024 and 10,000,000",
+            );
+          const nextProvider = configuredProvider({
+            baseUrl:
+              typeof body.baseUrl === "string" ? body.baseUrl : current.baseUrl,
+            model: typeof body.model === "string" ? body.model : current.model,
+            contextWindow,
             enableThinking:
               typeof body.enableThinking === "boolean"
                 ? body.enableThinking
-                : this.#data.provider.enableThinking,
+                : current.enableThinking,
             apiKey,
             thinkingStartTag:
               typeof body.thinkingStartTag === "string"
                 ? body.thinkingStartTag
-                : undefined,
+                : current.thinkingStartTag,
             thinkingEndTag:
               typeof body.thinkingEndTag === "string"
                 ? body.thinkingEndTag
-                : undefined,
+                : current.thinkingEndTag,
           });
+          const previousModels = this.#data.conversations.map(
+            (conversation) => conversation.model,
+          );
+          this.#data.provider = nextProvider;
           for (const conversation of this.#data.conversations)
-            conversation.model = this.#data.provider.model;
-          await this.#persist();
+            conversation.model = nextProvider.model;
+          try {
+            await this.#persist();
+          } catch (error) {
+            this.#data.provider = current;
+            this.#data.conversations.forEach((conversation, index) => {
+              conversation.model = previousModels[index] ?? current.model;
+            });
+            throw error;
+          }
           return new Response(JSON.stringify({ ok: true }), {
             headers: { "Content-Type": "application/json" },
           });
         } catch (error) {
           return errorResponse(
             error instanceof Error ? error.message : String(error),
+            error instanceof LocalHttpError ? error.status : 400,
           );
         }
       }
@@ -4137,8 +5873,10 @@ export class LocalBackend {
         });
       const withConnection = mcpRemote[1] === "_with_connection";
       const serverUuid = mcpRemote[2]
-        ? decodeURIComponent(mcpRemote[2])
+        ? decodePathSegment(mcpRemote[2])
         : undefined;
+      if (mcpRemote[2] && !serverUuid)
+        return errorResponse("Invalid connector identifier");
       const sub = mcpRemote[3];
       const server = serverUuid
         ? this.#data.mcpRemoteServers.find((entry) => entry.uuid === serverUuid)
@@ -4157,27 +5895,50 @@ export class LocalBackend {
         );
       if (!serverUuid && request.method === "POST") {
         const body = await jsonBody(request);
-        const name = stringValue(body.name);
-        const serverUrl = stringValue(body.url);
+        const name = stringValue(body.name)?.trim();
+        const serverUrl = httpConnectorUrl(body.url);
+        const explicitPreset = connectorOAuthPreset(body.preset);
+        if (body.preset !== undefined && !explicitPreset)
+          return errorResponse("Unknown connector preset");
         if (!name || !serverUrl)
-          return errorResponse("A connector needs a name and URL");
-        try {
-          const parsed = new URL(serverUrl);
-          if (parsed.protocol !== "http:" && parsed.protocol !== "https:")
-            throw new Error("bad protocol");
-        } catch {
-          return errorResponse("The connector URL must be http(s)");
-        }
+          return errorResponse(
+            "A connector needs a name and an http(s) URL without embedded credentials",
+          );
+        const preset = explicitPreset ?? connectorOAuthPresetForUrl(serverUrl);
+        if (name.length > 256)
+          return errorResponse("Connector names are limited to 256 characters");
+        if (preset && serverUrl !== presetMcpUrl(preset))
+          return errorResponse(
+            "Preset connectors must use their official MCP endpoint",
+          );
+        if (this.#data.mcpRemoteServers.some((entry) => entry.name === name))
+          return errorResponse(
+            "A connector with that name already exists",
+            409,
+          );
+        if (this.#data.mcpRemoteServers.length >= MAX_REMOTE_MCP_SERVERS)
+          return errorResponse(
+            `Custom connectors are limited to ${MAX_REMOTE_MCP_SERVERS}`,
+            409,
+          );
         const now = new Date().toISOString();
         const created: LocalRemoteMcpServer = {
           uuid: randomUUID(),
           name,
           url: serverUrl,
+          ...(preset ? { preset } : {}),
           created_at: now,
           updated_at: now,
         };
         this.#data.mcpRemoteServers.push(created);
-        await this.#persist();
+        try {
+          await this.#persist();
+        } catch (error) {
+          this.#data.mcpRemoteServers = this.#data.mcpRemoteServers.filter(
+            (entry) => entry !== created,
+          );
+          throw error;
+        }
         this.#onRemoteMcpServersChanged?.();
         return json(this.#remoteMcpRecord(created, false));
       }
@@ -4186,18 +5947,64 @@ export class LocalBackend {
         return json(this.#remoteMcpRecord(server, false));
       if (request.method === "PUT") {
         const body = await jsonBody(request);
-        if (stringValue(body.name)) server.name = stringValue(body.name)!;
-        if (stringValue(body.url)) server.url = stringValue(body.url)!;
+        const nextName =
+          body.name === undefined
+            ? server.name
+            : stringValue(body.name)?.trim();
+        const nextUrl =
+          body.url === undefined ? server.url : httpConnectorUrl(body.url);
+        const hasPreset = Object.prototype.hasOwnProperty.call(body, "preset");
+        const nextPreset = hasPreset
+          ? connectorOAuthPreset(body.preset)
+          : server.preset;
+        if (hasPreset && body.preset !== null && !nextPreset)
+          return errorResponse("Unknown connector preset");
+        if (!nextName || nextName.length > 256 || !nextUrl)
+          return errorResponse(
+            "A connector needs a name and an http(s) URL without embedded credentials",
+          );
+        if (nextPreset && nextUrl !== presetMcpUrl(nextPreset))
+          return errorResponse(
+            "Preset connectors must use their official MCP endpoint",
+          );
+        if (
+          this.#data.mcpRemoteServers.some(
+            (entry) => entry !== server && entry.name === nextName,
+          )
+        )
+          return errorResponse(
+            "A connector with that name already exists",
+            409,
+          );
+        if (server.preset !== nextPreset || server.url !== nextUrl)
+          await this.#onRemoteMcpServerRemoved?.(server.uuid);
+        const previous = { ...server };
+        server.name = nextName;
+        server.url = nextUrl;
+        if (nextPreset) server.preset = nextPreset;
+        else delete server.preset;
         server.updated_at = new Date().toISOString();
-        await this.#persist();
+        try {
+          await this.#persist();
+        } catch (error) {
+          Object.assign(server, previous);
+          throw error;
+        }
         this.#onRemoteMcpServersChanged?.();
         return json(this.#remoteMcpRecord(server, false));
       }
       if (request.method === "DELETE") {
-        this.#data.mcpRemoteServers = this.#data.mcpRemoteServers.filter(
+        await this.#onRemoteMcpServerRemoved?.(server.uuid);
+        const previous = this.#data.mcpRemoteServers;
+        this.#data.mcpRemoteServers = previous.filter(
           (entry) => entry.uuid !== server.uuid,
         );
-        await this.#persist();
+        try {
+          await this.#persist();
+        } catch (error) {
+          this.#data.mcpRemoteServers = previous;
+          throw error;
+        }
         this.#onRemoteMcpServersChanged?.();
         return new Response(null, { status: 204 });
       }
@@ -4213,14 +6020,23 @@ export class LocalBackend {
       const source =
         shotRoute[1] === "browser" ? this.#browserSource : this.#computerSource;
       if (!source) return new Response(null, { status: 404 });
+      const shotSession = decodePathSegment(shotRoute[2]);
+      const shotName = decodePathSegment(shotRoute[3]);
+      if (!shotSession || !shotName) return errorResponse("Invalid shot path");
       const found = await source
-        .shotFile(
-          decodeURIComponent(shotRoute[2]),
-          decodeURIComponent(shotRoute[3]),
-        )
+        .shotFile(shotSession, shotName)
         .catch(() => null);
       if (!found) return new Response(null, { status: 404 });
-      return new Response(await readFile(found.absolutePath), {
+      if (found.size_bytes > MAX_LOCAL_FILE_BYTES)
+        return errorResponse("Screenshot exceeds the 50 MB local limit", 413);
+      const loaded = await readBoundedRegularFile(
+        found.absolutePath,
+        MAX_LOCAL_FILE_BYTES,
+      );
+      if (loaded.tooLarge)
+        return errorResponse("Screenshot exceeds the 50 MB local limit", 413);
+      if (!loaded.bytes) return new Response(null, { status: 404 });
+      return new Response(Uint8Array.from(loaded.bytes).buffer, {
         headers: {
           "Content-Type": "image/png",
           "Cache-Control": "no-store",
@@ -4247,14 +6063,18 @@ export class LocalBackend {
       if (!found) return new Response(null, { status: 404 });
       if (found.size_bytes > 200 * 1024 * 1024)
         return errorResponse("Sandbox file exceeds the 200 MB limit", 413);
-      const bytes = await readFile(found.absolutePath);
-      const downloadName = cleanFileName(
-        relativePath.split("/").at(-1) || "download",
-      ).replaceAll('"', "");
-      return new Response(bytes, {
+      const loaded = await readBoundedRegularFile(
+        found.absolutePath,
+        200 * 1024 * 1024,
+      );
+      if (loaded.tooLarge)
+        return errorResponse("Sandbox file exceeds the 200 MB limit", 413);
+      if (!loaded.bytes) return new Response(null, { status: 404 });
+      const downloadName = relativePath.split("/").at(-1) || "download";
+      return new Response(Uint8Array.from(loaded.bytes).buffer, {
         headers: {
           "Content-Type": "application/octet-stream",
-          "Content-Disposition": `attachment; filename="${downloadName}"`,
+          "Content-Disposition": attachmentDisposition(downloadName),
         },
       });
     }
@@ -4333,7 +6153,9 @@ export class LocalBackend {
       /^\/api\/organizations\/[^/]+\/files\/([^/]+)(?:\/(download|content_preview))?$/,
     );
     if (fileRoute && request.method === "GET") {
-      const file = this.#storedFile(decodeURIComponent(fileRoute[1]));
+      const fileUuid = decodePathSegment(fileRoute[1]);
+      if (!fileUuid) return errorResponse("Invalid file identifier");
+      const file = this.#storedFile(fileUuid);
       if (!file) return errorResponse("File not found", 404);
       if (fileRoute[2] === "content_preview") {
         return new Response(
@@ -4346,12 +6168,26 @@ export class LocalBackend {
         );
       }
       try {
-        const bytes = await readFile(this.#storedFilePath(file));
-        return new Response(bytes, {
+        const storedPath = this.#storedFilePath(file);
+        const info = await lstat(storedPath);
+        if (info.isSymbolicLink() || !info.isFile())
+          return errorResponse("Stored file is unavailable", 404);
+        const loaded = await readBoundedRegularFile(
+          storedPath,
+          MAX_LOCAL_FILE_BYTES,
+        );
+        if (loaded.tooLarge)
+          return errorResponse(
+            "Stored file exceeds the 50 MB local limit",
+            413,
+          );
+        if (!loaded.bytes)
+          return errorResponse("Stored file is unavailable", 404);
+        return new Response(Uint8Array.from(loaded.bytes).buffer, {
           headers: {
             "Content-Type": file.file_type,
-            "Content-Length": String(file.size_bytes),
-            "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.file_name)}`,
+            "Content-Length": String(loaded.bytes.byteLength),
+            "Content-Disposition": attachmentDisposition(file.file_name),
           },
         });
       } catch {
@@ -4385,10 +6221,20 @@ export class LocalBackend {
               !messageUuid || candidate.message_uuid === messageUuid,
           );
       if (!version) return errorResponse("Artifact version not found", 404);
+      const previous = {
+        published_artifact_uuid: version.published_artifact_uuid,
+        published_artifact_deleted_at: version.published_artifact_deleted_at,
+        updated_at: version.updated_at,
+      };
       version.published_artifact_uuid ??= this.#publishedSlug(version.title);
       version.published_artifact_deleted_at = null;
       version.updated_at = new Date().toISOString();
-      await this.#persist();
+      try {
+        await this.#persist();
+      } catch (error) {
+        Object.assign(version, previous);
+        throw error;
+      }
       return new Response(
         JSON.stringify({
           published_artifact_uuid: version.published_artifact_uuid,
@@ -4441,12 +6287,21 @@ export class LocalBackend {
       /^\/api\/organizations\/[^/]+\/published_artifacts\/([^/]+)$/,
     );
     if (organizationPublishedArtifact && request.method === "DELETE") {
-      const slug = decodeURIComponent(organizationPublishedArtifact[1]);
+      const slug = decodePathSegment(organizationPublishedArtifact[1]);
+      if (!slug) return errorResponse("Invalid published artifact identifier");
       const version = this.#publishedArtifact(slug);
       if (!version) return errorResponse("Published artifact not found", 404);
+      const previousDeletedAt = version.published_artifact_deleted_at;
+      const previousUpdatedAt = version.updated_at;
       version.published_artifact_deleted_at = new Date().toISOString();
       version.updated_at = version.published_artifact_deleted_at;
-      await this.#persist();
+      try {
+        await this.#persist();
+      } catch (error) {
+        version.published_artifact_deleted_at = previousDeletedAt;
+        version.updated_at = previousUpdatedAt;
+        throw error;
+      }
       return new Response(null, { status: 204 });
     }
 
@@ -4482,12 +6337,17 @@ export class LocalBackend {
         },
       });
       const projectUuid = projectsRoute[2]
-        ? decodeURIComponent(projectsRoute[2])
+        ? decodePathSegment(projectsRoute[2])
         : undefined;
       const section = projectsRoute[3];
       const sectionId = projectsRoute[4]
-        ? decodeURIComponent(projectsRoute[4])
+        ? decodePathSegment(projectsRoute[4])
         : undefined;
+      if (
+        (projectsRoute[2] && !projectUuid) ||
+        (projectsRoute[4] && !sectionId)
+      )
+        return errorResponse("Invalid project path");
       const project = projectUuid
         ? this.#data.projects.find((entry) => entry.uuid === projectUuid)
         : undefined;
@@ -4506,23 +6366,43 @@ export class LocalBackend {
           );
         }
         if (request.method === "POST") {
+          if (this.#data.projects.length >= MAX_PROJECTS)
+            return errorResponse(
+              `Local projects are limited to ${MAX_PROJECTS}`,
+              409,
+            );
           const body = await jsonBody(request);
           const now = new Date().toISOString();
           const created: LocalProject = {
             uuid: randomUUID(),
-            name: stringValue(body.name) ?? "Untitled project",
-            description: stringValue(body.description) ?? "",
+            name:
+              (stringValue(body.name) ?? "").slice(0, MAX_PROJECT_NAME_CHARS) ||
+              "Untitled project",
+            description: (stringValue(body.description) ?? "").slice(
+              0,
+              MAX_PROJECT_DESCRIPTION_CHARS,
+            ),
             is_private: body.is_private !== false,
             is_starred: false,
             is_archived: false,
-            prompt_template: stringValue(body.prompt_template) ?? "",
+            prompt_template: (stringValue(body.prompt_template) ?? "").slice(
+              0,
+              MAX_PROJECT_PROMPT_CHARS,
+            ),
             created_at: now,
             updated_at: now,
             docs: [],
             files: [],
           };
           this.#data.projects.push(created);
-          await this.#persist();
+          try {
+            await this.#persist();
+          } catch (error) {
+            this.#data.projects = this.#data.projects.filter(
+              (candidate) => candidate !== created,
+            );
+            throw error;
+          }
           return json(summary(created));
         }
       }
@@ -4531,24 +6411,50 @@ export class LocalBackend {
         if (request.method === "GET") return json(summary(project));
         if (request.method === "PUT") {
           const body = await jsonBody(request);
-          if (typeof body.name === "string") project.name = body.name;
+          const previous = { ...project };
+          if (typeof body.name === "string")
+            project.name = body.name.slice(0, MAX_PROJECT_NAME_CHARS);
           if (typeof body.description === "string")
-            project.description = body.description;
+            project.description = body.description.slice(
+              0,
+              MAX_PROJECT_DESCRIPTION_CHARS,
+            );
           if (typeof body.prompt_template === "string")
-            project.prompt_template = body.prompt_template;
+            project.prompt_template = body.prompt_template.slice(
+              0,
+              MAX_PROJECT_PROMPT_CHARS,
+            );
           if (typeof body.is_starred === "boolean")
             project.is_starred = body.is_starred;
           if (typeof body.is_archived === "boolean")
             project.is_archived = body.is_archived;
           project.updated_at = new Date().toISOString();
-          await this.#persist();
+          try {
+            await this.#persist();
+          } catch (error) {
+            Object.assign(project, previous);
+            throw error;
+          }
           return json(summary(project));
         }
         if (request.method === "DELETE") {
+          const projectIndex = this.#data.projects.indexOf(project);
+          const affectedConversations = this.#data.conversations.filter(
+            (conversation) => conversation.project_uuid === project.uuid,
+          );
           this.#data.projects = this.#data.projects.filter(
             (entry) => entry.uuid !== project.uuid,
           );
-          await this.#persist();
+          for (const conversation of affectedConversations)
+            delete conversation.project_uuid;
+          try {
+            await this.#persist();
+          } catch (error) {
+            this.#data.projects.splice(projectIndex, 0, project);
+            for (const conversation of affectedConversations)
+              conversation.project_uuid = project.uuid;
+            throw error;
+          }
           await Promise.all(
             project.files.map((file) =>
               rm(this.#storedFilePath(file), { force: true }).catch(
@@ -4570,12 +6476,39 @@ export class LocalBackend {
         created_at: file.created_at,
         creator_uuid: localAccountUuid,
       });
+      // The retained project page hydrates its knowledge list from /docs even
+      // though multipart uploads must also keep their original bytes in the
+      // project file store. Project uploaded files into the same list shape so
+      // they do not disappear when the mutation cache is replaced on reload.
+      const projectKnowledgeResponse = () => [
+        ...project.docs,
+        ...project.files.map((file) => ({
+          ...projectFileResponse(file),
+          content: file.extracted_content ?? "",
+        })),
+      ];
       if (section === "upload" && request.method === "POST") {
         try {
+          if (project.files.length >= MAX_PROJECT_ENTRIES)
+            return errorResponse(
+              `A project is limited to ${MAX_PROJECT_ENTRIES} uploaded files`,
+              409,
+            );
           const uploaded = await this.#uploadedFile(request);
           if (uploaded.size > MAX_LOCAL_FILE_BYTES)
             return errorResponse(
               "Uploaded file exceeds the 50 MB local limit",
+              413,
+            );
+          const currentBytes =
+            project.files.reduce((total, file) => total + file.size_bytes, 0) +
+            project.docs.reduce(
+              (total, doc) => total + Buffer.byteLength(doc.content, "utf8"),
+              0,
+            );
+          if (currentBytes + uploaded.size > MAX_PROJECT_KB_BYTES)
+            return errorResponse(
+              "Project knowledge exceeds the 200 MB local limit",
               413,
             );
           const bytes = new Uint8Array(await uploaded.arrayBuffer());
@@ -4597,10 +6530,20 @@ export class LocalBackend {
           };
           const destination = this.#storedFilePath(file);
           await mkdir(path.dirname(destination), { recursive: true });
-          await writeFile(destination, bytes, { mode: 0o600 });
+          await writeFile(destination, bytes, { mode: 0o600, flag: "wx" });
           project.files.push(file);
+          const previousUpdatedAt = project.updated_at;
           project.updated_at = file.created_at;
-          await this.#persist();
+          try {
+            await this.#persist();
+          } catch (error) {
+            project.files = project.files.filter(
+              (candidate) => candidate !== file,
+            );
+            project.updated_at = previousUpdatedAt;
+            await rm(destination, { force: true }).catch(() => undefined);
+            throw error;
+          }
           return json(projectFileResponse(file));
         } catch (error) {
           return errorResponse(
@@ -4618,10 +6561,20 @@ export class LocalBackend {
           const removed = project.files.filter((file) =>
             targets.has(file.uuid),
           );
+          const previousFiles = project.files;
+          const previousUpdatedAt = project.updated_at;
           project.files = project.files.filter(
             (file) => !targets.has(file.uuid),
           );
-          await this.#persist();
+          if (project.files.length !== previousFiles.length)
+            project.updated_at = new Date().toISOString();
+          try {
+            await this.#persist();
+          } catch (error) {
+            project.files = previousFiles;
+            project.updated_at = previousUpdatedAt;
+            throw error;
+          }
           await Promise.all(
             removed.map((file) =>
               rm(this.#storedFilePath(file), { force: true }).catch(
@@ -4633,10 +6586,19 @@ export class LocalBackend {
         }
         if (sectionId && request.method === "DELETE") {
           const removed = project.files.find((file) => file.uuid === sectionId);
+          const previousFiles = project.files;
+          const previousUpdatedAt = project.updated_at;
           project.files = project.files.filter(
             (file) => file.uuid !== sectionId,
           );
-          await this.#persist();
+          if (removed) project.updated_at = new Date().toISOString();
+          try {
+            await this.#persist();
+          } catch (error) {
+            project.files = previousFiles;
+            project.updated_at = previousUpdatedAt;
+            throw error;
+          }
           if (removed)
             await rm(this.#storedFilePath(removed), { force: true }).catch(
               () => undefined,
@@ -4649,30 +6611,116 @@ export class LocalBackend {
       if (section === "docs") {
         if (sectionId === "delete_many" && request.method === "POST") {
           const body = await jsonBody(request);
-          const targets = new Set(
-            Array.isArray(body.doc_uuids) ? body.doc_uuids : [],
+          const targets = new Set([
+            ...(Array.isArray(body.doc_uuids) ? body.doc_uuids : []),
+            ...(Array.isArray(body.file_uuids) ? body.file_uuids : []),
+            ...(Array.isArray(body.uuids) ? body.uuids : []),
+          ]);
+          const previousDocs = project.docs;
+          const previousFiles = project.files;
+          const previousUpdatedAt = project.updated_at;
+          const removedFiles = project.files.filter((file) =>
+            targets.has(file.uuid),
           );
           project.docs = project.docs.filter((doc) => !targets.has(doc.uuid));
-          await this.#persist();
+          project.files = project.files.filter(
+            (file) => !targets.has(file.uuid),
+          );
+          if (
+            project.docs.length !== previousDocs.length ||
+            project.files.length !== previousFiles.length
+          )
+            project.updated_at = new Date().toISOString();
+          try {
+            await this.#persist();
+          } catch (error) {
+            project.docs = previousDocs;
+            project.files = previousFiles;
+            project.updated_at = previousUpdatedAt;
+            throw error;
+          }
+          await Promise.all(
+            removedFiles.map((file) =>
+              rm(this.#storedFilePath(file), { force: true }).catch(
+                () => undefined,
+              ),
+            ),
+          );
           return json({ ok: true });
         }
         if (sectionId && request.method === "DELETE") {
+          const previousDocs = project.docs;
+          const previousFiles = project.files;
+          const previousUpdatedAt = project.updated_at;
+          const removedFile = project.files.find(
+            (file) => file.uuid === sectionId,
+          );
           project.docs = project.docs.filter((doc) => doc.uuid !== sectionId);
-          await this.#persist();
+          project.files = project.files.filter(
+            (file) => file.uuid !== sectionId,
+          );
+          if (
+            project.docs.length !== previousDocs.length ||
+            project.files.length !== previousFiles.length
+          )
+            project.updated_at = new Date().toISOString();
+          try {
+            await this.#persist();
+          } catch (error) {
+            project.docs = previousDocs;
+            project.files = previousFiles;
+            project.updated_at = previousUpdatedAt;
+            throw error;
+          }
+          if (removedFile)
+            await rm(this.#storedFilePath(removedFile), { force: true }).catch(
+              () => undefined,
+            );
           return new Response(null, { status: 204 });
         }
-        if (request.method === "GET") return json(project.docs);
+        if (request.method === "GET") return json(projectKnowledgeResponse());
         if (request.method === "POST") {
+          if (project.docs.length >= MAX_PROJECT_ENTRIES)
+            return errorResponse(
+              `A project is limited to ${MAX_PROJECT_ENTRIES} documents`,
+              409,
+            );
           const body = await jsonBody(request);
+          const content = stringValue(body.content) ?? "";
+          const currentBytes =
+            project.files.reduce((total, file) => total + file.size_bytes, 0) +
+            project.docs.reduce(
+              (total, doc) => total + Buffer.byteLength(doc.content, "utf8"),
+              0,
+            );
+          if (
+            currentBytes + Buffer.byteLength(content, "utf8") >
+            MAX_PROJECT_KB_BYTES
+          )
+            return errorResponse(
+              "Project knowledge exceeds the 200 MB local limit",
+              413,
+            );
           const doc: LocalProjectDoc = {
             uuid: randomUUID(),
-            file_name: stringValue(body.file_name) ?? "document.txt",
-            content: stringValue(body.content) ?? "",
+            file_name: cleanFileName(
+              stringValue(body.file_name) || "document.txt",
+            ),
+            content,
             created_at: new Date().toISOString(),
           };
           project.docs.push(doc);
+          const previousUpdatedAt = project.updated_at;
           project.updated_at = doc.created_at;
-          await this.#persist();
+          try {
+            await this.#persist();
+          } catch (error) {
+            project.docs = project.docs.filter(
+              (candidate) => candidate !== doc,
+            );
+            project.updated_at = previousUpdatedAt;
+            throw error;
+          }
           return json(doc);
         }
       }
@@ -4703,7 +6751,7 @@ export class LocalBackend {
           doc_count: project.docs.length,
           file_count: project.files.length,
           total_size_bytes: docBytes + fileBytes,
-          max_size_bytes: 200 * 1024 * 1024,
+          max_size_bytes: MAX_PROJECT_KB_BYTES,
         });
       }
       if (section === "report") return json({ ok: true });
@@ -4742,27 +6790,87 @@ export class LocalBackend {
         });
       const sub = memoryRoute[1];
       if (!sub && request.method === "GET") return json(this.#memoryResponse());
+      if (!sub && request.method === "PUT") {
+        const body = await jsonBody(request);
+        const memory = stringValue(body.memory);
+        if (memory === undefined)
+          return errorResponse("memory must be a string", 400);
+        if (memory.length > MAX_MEMORY_CHARS)
+          return errorResponse(
+            `memory exceeds ${MAX_MEMORY_CHARS} characters`,
+            413,
+          );
+        const previous = structuredClone(this.#data.memory);
+        this.#data.memory.memory = memory.trim();
+        this.#data.memory.updated_at = new Date().toISOString();
+        const ownRevision = ++this.#memoryRevision;
+        try {
+          await this.#persist();
+        } catch (error) {
+          if (this.#memoryRevision === ownRevision) {
+            this.#data.memory = previous;
+            this.#memoryRevision -= 1;
+          }
+          throw error;
+        }
+        return json(this.#memoryResponse());
+      }
       if (sub === "settings") {
         if (request.method === "GET")
           return json(structuredClone(this.#data.memory.settings));
         if (request.method === "POST") {
-          this.#data.memory.settings = {
+          const previous = structuredClone(this.#data.memory);
+          const settings = {
             ...this.#data.memory.settings,
             ...plainJsonObject(await jsonBody(request)),
           };
-          await this.#persist();
+          if (!settingsWithinLimit(settings))
+            return errorResponse(
+              "Settings exceed the 1 MiB local safety limit",
+              413,
+            );
+          this.#data.memory.settings = settings;
+          const ownRevision = ++this.#memoryRevision;
+          try {
+            await this.#persist();
+          } catch (error) {
+            if (this.#memoryRevision === ownRevision) {
+              this.#data.memory = previous;
+              this.#memoryRevision -= 1;
+            }
+            throw error;
+          }
           return json(structuredClone(this.#data.memory.settings));
         }
       }
       if (sub === "controls" && request.method === "PUT") {
         const body = await jsonBody(request);
-        this.#data.memory.controls = Array.isArray(body.controls)
+        const controls = Array.isArray(body.controls)
           ? body.controls.filter(
               (entry): entry is string => typeof entry === "string",
             )
           : [];
+        if (
+          controls.length > MAX_MEMORY_CONTROLS ||
+          controls.some((entry) => entry.length > MAX_MEMORY_CONTROL_CHARS)
+        )
+          return errorResponse(
+            "Memory controls exceed the local safety limit",
+            413,
+          );
+        const previous = structuredClone(this.#data.memory);
+        this.#data.memory.controls = controls;
         this.#data.memory.updated_at = new Date().toISOString();
-        await this.#persist();
+        const ownRevision = ++this.#memoryRevision;
+        try {
+          await this.#persist();
+        } catch (error) {
+          if (this.#memoryRevision === ownRevision) {
+            this.#data.memory = previous;
+            this.#memoryRevision -= 1;
+          }
+          throw error;
+        }
         return json(this.#memoryResponse());
       }
       if (sub === "synthesize" && request.method === "POST") {
@@ -4776,10 +6884,20 @@ export class LocalBackend {
         return json(this.#memoryResponse());
       }
       if (sub === "reset" && request.method === "POST") {
+        const previous = structuredClone(this.#data.memory);
         this.#data.memory.memory = "";
         this.#data.memory.controls = [];
         this.#data.memory.updated_at = null;
-        await this.#persist();
+        const ownRevision = ++this.#memoryRevision;
+        try {
+          await this.#persist();
+        } catch (error) {
+          if (this.#memoryRevision === ownRevision) {
+            this.#data.memory = previous;
+            this.#memoryRevision -= 1;
+          }
+          throw error;
+        }
         return json(this.#memoryResponse());
       }
       if (sub === "themes" && request.method === "GET")
@@ -4787,30 +6905,13 @@ export class LocalBackend {
       return new Response(null, { status: 405 });
     }
 
-    if (
-      /^\/api\/organizations\/[^/]+\/published_artifacts$/.test(pathname) &&
-      request.method === "GET"
-    ) {
-      const published_artifacts = this.#data.artifacts
-        .flatMap((artifact) => artifact.versions)
-        .filter(
-          (version) =>
-            version.published_artifact_uuid &&
-            version.published_artifact_deleted_at === null,
-        )
-        .map(publishedArtifactResponse);
-      return new Response(JSON.stringify({ published_artifacts }), {
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
     const publicArtifactJson = pathname.match(
       /^\/public\/artifacts\/([^/]+)\/json$/,
     );
     if (publicArtifactJson && request.method === "GET") {
-      const version = this.#publishedArtifact(
-        decodeURIComponent(publicArtifactJson[1]),
-      );
+      const slug = decodePathSegment(publicArtifactJson[1]);
+      if (!slug) return errorResponse("Invalid published artifact identifier");
+      const version = this.#publishedArtifact(slug);
       return version
         ? new Response(JSON.stringify(publishedArtifactResponse(version)), {
             headers: { "Content-Type": "application/json" },
@@ -4822,9 +6923,9 @@ export class LocalBackend {
       /^\/api\/published_artifacts\/([^/]+)\/meta$/,
     );
     if (publishedArtifactMeta && request.method === "GET") {
-      const version = this.#publishedArtifact(
-        decodeURIComponent(publishedArtifactMeta[1]),
-      );
+      const slug = decodePathSegment(publishedArtifactMeta[1]);
+      if (!slug) return errorResponse("Invalid published artifact identifier");
+      const version = this.#publishedArtifact(slug);
       return version
         ? new Response(
             JSON.stringify({
@@ -4840,9 +6941,9 @@ export class LocalBackend {
       /^\/api\/published_artifacts\/([^/]+)\/record_view$/,
     );
     if (publishedArtifactView && request.method === "POST") {
-      const version = this.#publishedArtifact(
-        decodeURIComponent(publishedArtifactView[1]),
-      );
+      const slug = decodePathSegment(publishedArtifactView[1]);
+      if (!slug) return errorResponse("Invalid published artifact identifier");
+      const version = this.#publishedArtifact(slug);
       return version
         ? new Response(
             JSON.stringify({ status: "view successfully recorded" }),
@@ -4857,9 +6958,9 @@ export class LocalBackend {
       /^\/api\/published_artifacts\/([^/]+)$/,
     );
     if (publishedArtifact && request.method === "GET") {
-      const version = this.#publishedArtifact(
-        decodeURIComponent(publishedArtifact[1]),
-      );
+      const slug = decodePathSegment(publishedArtifact[1]);
+      if (!slug) return errorResponse("Invalid published artifact identifier");
+      const version = this.#publishedArtifact(slug);
       return version
         ? new Response(JSON.stringify(publishedArtifactResponse(version)), {
             headers: { "Content-Type": "application/json" },
@@ -4875,9 +6976,11 @@ export class LocalBackend {
       /^\/api\/organizations\/[^/]+\/artifacts\/([^/]+)\/versions$/,
     );
     if (conversationArtifactVersions && request.method === "GET") {
-      const conversationUuid = decodeURIComponent(
+      const conversationUuid = decodePathSegment(
         conversationArtifactVersions[1],
       );
+      if (!conversationUuid)
+        return errorResponse("Invalid conversation identifier");
       const artifactVersions = this.#data.artifacts
         .filter((artifact) => artifact.conversation_uuid === conversationUuid)
         .flatMap((artifact) => artifact.versions)
@@ -4891,7 +6994,8 @@ export class LocalBackend {
     }
 
     if (artifactVersion && request.method === "GET") {
-      const uuid = decodeURIComponent(artifactVersion[1]);
+      const uuid = decodePathSegment(artifactVersion[1]);
+      if (!uuid) return errorResponse("Invalid artifact version identifier");
       const version = this.#data.artifacts
         .flatMap((artifact) => artifact.versions)
         .find((candidate) => candidate.uuid === uuid);
@@ -4906,7 +7010,8 @@ export class LocalBackend {
       /^\/api\/organizations\/[^/]+\/artifact-versions\/by-artifact\/([^/]+)$/,
     );
     if (latestArtifactVersion && request.method === "GET") {
-      const uuid = decodeURIComponent(latestArtifactVersion[1]);
+      const uuid = decodePathSegment(latestArtifactVersion[1]);
+      if (!uuid) return errorResponse("Invalid artifact identifier");
       const artifact = this.#data.artifacts.find(
         (candidate) =>
           candidate.uuid === uuid || candidate.artifact_identifier === uuid,
@@ -4990,8 +7095,14 @@ export class LocalBackend {
       if (request.method === "GET") {
         const starred = url.searchParams.get("starred");
         const search = url.searchParams.get("searchQuery")?.toLowerCase();
-        const offset = Number(url.searchParams.get("offset") || 0);
-        const limit = Number(url.searchParams.get("limit") || 30);
+        const requestedOffset = Number(url.searchParams.get("offset") || 0);
+        const requestedLimit = Number(url.searchParams.get("limit") || 30);
+        const offset = Number.isFinite(requestedOffset)
+          ? Math.max(0, Math.floor(requestedOffset))
+          : 0;
+        const limit = Number.isFinite(requestedLimit)
+          ? Math.min(100, Math.max(1, Math.floor(requestedLimit)))
+          : 30;
         const filtered = this.#data.conversations.filter(
           (conversation) =>
             // Temporary (incognito) chats never surface in Recents/search.
@@ -5001,6 +7112,9 @@ export class LocalBackend {
             (!search || conversation.name.toLowerCase().includes(search)),
         );
         const data = filtered
+          .toSorted((left, right) =>
+            right.updated_at.localeCompare(left.updated_at),
+          )
           .slice(offset, offset + limit)
           .map(conversationSummary);
         return new Response(
@@ -5014,7 +7128,8 @@ export class LocalBackend {
       /^\/api\/organizations\/[^/]+\/chat_conversations\/([^/]+)$/,
     );
     if (item) {
-      const uuid = decodeURIComponent(item[1]);
+      const uuid = decodePathSegment(item[1]);
+      if (!uuid) return errorResponse("Invalid conversation identifier");
       const conversation = this.#conversation(uuid);
       if (!conversation) return errorResponse("Conversation not found", 404);
       if (request.method === "GET")
@@ -5023,7 +7138,8 @@ export class LocalBackend {
         });
       if (request.method === "DELETE") {
         this.#abortActiveCompletion(uuid);
-        void this.#sandbox?.removeWorkspace?.(uuid).catch(() => undefined);
+        const conversationIndex =
+          this.#data.conversations.indexOf(conversation);
         const candidateFiles = new Set(
           conversation.chat_messages.flatMap((message) =>
             message.files.map((file) => file.file_uuid),
@@ -5031,6 +7147,9 @@ export class LocalBackend {
         );
         this.#data.conversations = this.#data.conversations.filter(
           (candidate) => candidate.uuid !== uuid,
+        );
+        const removedArtifacts = this.#data.artifacts.filter(
+          (artifact) => artifact.conversation_uuid === uuid,
         );
         this.#data.artifacts = this.#data.artifacts.filter(
           (artifact) => artifact.conversation_uuid !== uuid,
@@ -5049,12 +7168,35 @@ export class LocalBackend {
         this.#data.files = this.#data.files.filter(
           (file) => !removedFiles.includes(file),
         );
-        await this.#persist();
+        try {
+          await this.#persist();
+        } catch (error) {
+          this.#data.conversations.splice(conversationIndex, 0, conversation);
+          this.#data.artifacts.push(
+            ...removedArtifacts.filter(
+              (artifact) => !this.#data.artifacts.includes(artifact),
+            ),
+          );
+          this.#data.files.push(
+            ...removedFiles.filter((file) => !this.#data.files.includes(file)),
+          );
+          throw error;
+        }
+        const cleanup = [
+          this.#sandbox?.removeWorkspace?.(uuid),
+          this.#browserSource?.removeConversation?.(uuid),
+          this.#computerSource?.removeConversation?.(uuid),
+        ];
         await Promise.all(
           removedFiles.map((file) =>
             rm(this.#storedFilePath(file), { force: true }).catch(
               () => undefined,
             ),
+          ),
+        );
+        await Promise.allSettled(
+          cleanup.filter((pending): pending is Promise<void> =>
+            Boolean(pending),
           ),
         );
         return new Response(JSON.stringify({ ok: true }), {
@@ -5063,21 +7205,53 @@ export class LocalBackend {
       }
       if (request.method === "PUT") {
         const body = await jsonBody(request);
-        if (typeof body.name === "string") conversation.name = body.name;
+        const previous = {
+          name: conversation.name,
+          is_starred: conversation.is_starred,
+          project_uuid: conversation.project_uuid,
+          settings: structuredClone(conversation.settings),
+          updated_at: conversation.updated_at,
+        };
+        if (typeof body.name === "string")
+          conversation.name = body.name.slice(0, 512);
         if (typeof body.is_starred === "boolean")
           conversation.is_starred = body.is_starred;
         // The composer's project chip assigns or removes the chat's project
         // (null clears it).
-        if (typeof body.project_uuid === "string" && body.project_uuid)
+        if (typeof body.project_uuid === "string" && body.project_uuid) {
+          if (
+            !this.#data.projects.some(
+              (project) => project.uuid === body.project_uuid,
+            )
+          )
+            return errorResponse("Project not found", 404);
           conversation.project_uuid = body.project_uuid;
-        else if (body.project_uuid === null) delete conversation.project_uuid;
-        if (isObject(body.settings))
-          conversation.settings = {
+        } else if (body.project_uuid === null) delete conversation.project_uuid;
+        if (isObject(body.settings)) {
+          const settings = {
             ...conversation.settings,
-            ...body.settings,
+            ...plainJsonObject(body.settings),
           };
+          if (!settingsWithinLimit(settings))
+            return errorResponse(
+              "Settings exceed the 1 MiB local safety limit",
+              413,
+            );
+          conversation.settings = settings;
+        }
         conversation.updated_at = new Date().toISOString();
-        await this.#persist();
+        try {
+          await this.#persist();
+        } catch (error) {
+          conversation.name = previous.name;
+          conversation.is_starred = previous.is_starred;
+          conversation.settings = previous.settings;
+          conversation.updated_at = previous.updated_at;
+          if (previous.project_uuid)
+            conversation.project_uuid = previous.project_uuid;
+          else delete conversation.project_uuid;
+          throw error;
+        }
         return new Response(JSON.stringify(conversationSummary(conversation)), {
           headers: { "Content-Type": "application/json" },
         });
@@ -5089,14 +7263,18 @@ export class LocalBackend {
     );
     if (completion && request.method === "POST") {
       try {
+        const conversationUuid = decodePathSegment(completion[1]);
+        if (!conversationUuid)
+          throw new LocalHttpError("Invalid conversation identifier");
         return await this.#completion(
           request,
-          decodeURIComponent(completion[1]),
+          conversationUuid,
           /\/retry_completion2?$/.test(pathname),
         );
       } catch (error) {
         return completionErrorResponse(
           error instanceof Error ? error.message : String(error),
+          error instanceof LocalHttpError ? error.status : 502,
         );
       }
     }
@@ -5105,7 +7283,9 @@ export class LocalBackend {
       /^\/api\/organizations\/[^/]+\/chat_conversations\/([^/]+)\/title2?$/,
     );
     if (title && request.method === "POST") {
-      const conversation = this.#conversation(decodeURIComponent(title[1]));
+      const uuid = decodePathSegment(title[1]);
+      if (!uuid) return errorResponse("Invalid conversation identifier");
+      const conversation = this.#conversation(uuid);
       if (!conversation) return errorResponse("Conversation not found", 404);
       return new Response(JSON.stringify({ title: conversation.name }), {
         headers: { "Content-Type": "application/json" },
@@ -5113,5 +7293,23 @@ export class LocalBackend {
     }
 
     return null;
+  }
+
+  async dispose(): Promise<void> {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    clearTimeout(this.#memorySynthesisTimer);
+    this.#memorySynthesisTimer = undefined;
+    this.#memorySynthesisAbort?.abort();
+    for (const controller of this.#activeCompletions.values())
+      controller.abort();
+    this.#activeCompletions.clear();
+    await Promise.allSettled([
+      this.#memorySynthesisPromise ?? Promise.resolve(),
+      this.#mutationChain,
+      this.#writeChain,
+      ...this.#completionBarriers.values(),
+      ...this.#activeCompletionRuns,
+    ]);
   }
 }

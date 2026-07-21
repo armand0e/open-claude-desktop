@@ -245,18 +245,28 @@ try {
       shellResult.internalUi === 3,
     "Shell contract counts differ",
   );
+  // The retained reference exposes 44 web services. Open-Claude intentionally
+  // removes the ten Cowork/VM services at the preload boundary, leaving 34.
   assert(
-    viewResult.web === 44 &&
+    viewResult.web === 34 &&
       viewResult.settings === 15 &&
       viewResult.hybrid === 1 &&
       viewResult.electronWindow === 1,
-    "View contract counts differ",
+    `View contract counts differ: ${JSON.stringify({
+      web: viewResult.web,
+      settings: viewResult.settings,
+      hybrid: viewResult.hybrid,
+      electronWindow: viewResult.electronWindow,
+    })}`,
   );
   assert(
     viewResult.fileSystemMethods === 18,
     "FileSystem contract is incomplete",
   );
-  assert(viewResult.featureCount === 43, "Feature matrix is incomplete");
+  assert(
+    viewResult.featureCount === 33,
+    `Feature matrix is incomplete: expected 33, received ${viewResult.featureCount}`,
+  );
   if (mode === "local") {
     assert(
       viewResult.url.startsWith("app://localhost/"),

@@ -140,9 +140,11 @@ async function click(target, rect) {
   });
 }
 
-function nativeClick(processId, rect, devicePixelRatio = 1) {
-  const x = Math.round((rect.x + rect.width / 2) * devicePixelRatio);
-  const y = Math.round((rect.y + rect.height / 2) * devicePixelRatio);
+function nativeClick(processId, rect, viewport) {
+  const x = rect.x + rect.width / 2;
+  const y = rect.y + rect.height / 2;
+  const viewportWidth = Number(viewport?.width) || 1;
+  const viewportHeight = Number(viewport?.height) || 1;
   const script = `
 Add-Type -TypeDefinition @'
 using System;
@@ -156,6 +158,8 @@ public static class ClaudeLocalMouse {
   [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT point);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndAfter, int x, int y, int cx, int cy, uint flags);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int command);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint dx, uint dy, uint data, UIntPtr extraInfo);
 }
@@ -201,10 +205,19 @@ $old = New-Object ClaudeLocalMouse+POINT
 if (-not [ClaudeLocalMouse]::GetWindowRect($handle, [ref]$rect)) { throw "Could not read the Electron window bounds" }
 if (-not [ClaudeLocalMouse]::GetClientRect($handle, [ref]$client)) { throw "Could not read the Electron client bounds" }
 if (-not [ClaudeLocalMouse]::ClientToScreen($handle, [ref]$origin)) { throw "Could not locate the Electron client area" }
+$scaleX = $client.Right / ${viewportWidth}
+$scaleY = $client.Bottom / ${viewportHeight}
+if ($scaleX -lt 0.5 -or $scaleX -gt 4 -or $scaleY -lt 0.5 -or $scaleY -gt 4) { throw "Electron viewport and Win32 client bounds disagree" }
+$targetX = $origin.X + [Math]::Round(${x} * $scaleX)
+$targetY = $origin.Y + [Math]::Round(${y} * $scaleY)
 [void][ClaudeLocalMouse]::GetCursorPos([ref]$old)
 [void][ClaudeLocalMouse]::ShowWindow($handle, 9)
+[void][ClaudeLocalMouse]::SetWindowPos($handle, [IntPtr](-1), 0, 0, 0, 0, 0x0043)
+[void][ClaudeLocalMouse]::SetWindowPos($handle, [IntPtr](-2), 0, 0, 0, 0, 0x0043)
+[void][ClaudeLocalMouse]::BringWindowToTop($handle)
 [void][ClaudeLocalMouse]::SetForegroundWindow($handle)
-[void][ClaudeLocalMouse]::SetCursorPos($origin.X + ${x}, $origin.Y + ${y})
+Start-Sleep -Milliseconds 150
+[void][ClaudeLocalMouse]::SetCursorPos($targetX, $targetY)
 Start-Sleep -Milliseconds 80
 [ClaudeLocalMouse]::mouse_event(2, 0, 0, 0, [UIntPtr]::Zero)
 [ClaudeLocalMouse]::mouse_event(4, 0, 0, 0, [UIntPtr]::Zero)
@@ -216,8 +229,12 @@ Start-Sleep -Milliseconds 80
   title = $windowProcess.MainWindowTitle
   clientOriginX = $origin.X
   clientOriginY = $origin.Y
-  clickX = $origin.X + ${x}
-  clickY = $origin.Y + ${y}
+  clientWidth = $client.Right
+  clientHeight = $client.Bottom
+  scaleX = $scaleX
+  scaleY = $scaleY
+  clickX = $targetX
+  clickY = $targetY
 } | ConvertTo-Json -Compress
 `;
   const result = spawnSync(
@@ -230,6 +247,32 @@ Start-Sleep -Milliseconds 80
       `Native Windows click failed: ${result.stderr || result.stdout}`,
     );
   return JSON.parse(result.stdout.trim());
+}
+
+async function verifiedNativeClick({
+  name,
+  processId,
+  rect,
+  viewport,
+  verify,
+  fallbacks,
+}) {
+  let nativeDetail;
+  let nativeError;
+  try {
+    nativeDetail = nativeClick(processId, rect, viewport);
+    return await eventually(debuggerPort, verify, 2_500);
+  } catch (error) {
+    nativeError = String(error);
+  }
+  // SendInput/Win32 coordinates are virtualized inconsistently on some
+  // mixed-DPI desktops. Preserve that diagnostic, then verify the actual
+  // Chromium hit target with a browser input event so navigation coverage is
+  // not lost to the outer harness.
+  fallbacks.push({ name, nativeDetail, nativeError });
+  const activeTarget = await targetAt(debuggerPort);
+  await click(activeTarget, rect);
+  return eventually(debuggerPort, verify);
 }
 
 async function pressEscape(target) {
@@ -324,7 +367,11 @@ try {
           .then(response => response.json()).catch(error => ({ error: String(error) }));
         return {
           path: location.pathname + location.search,
-          devicePixelRatio: window.devicePixelRatio,
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            devicePixelRatio: window.devicePixelRatio
+          },
           headings: [...document.querySelectorAll("h1,h2,h3")].filter(visible).map(element => element.textContent?.trim()).filter(Boolean),
           greeting,
           promptChips: [...document.querySelectorAll("button")].filter(visible).map(button => button.textContent?.trim()).filter(text => /^(Write|Learn|Code|Life stuff|Claude.?s choice)$/i.test(text || "")),
@@ -360,24 +407,24 @@ try {
     );
 
   let target = await targetAt(debuggerPort);
-  const nativeSidebarClick = nativeClick(
-    child.pid,
-    landing.rects.sidebar,
-    landing.devicePixelRatio,
-  );
-  const collapsed = await eventually(debuggerPort, async (activeTarget) => {
-    const result = await evaluate(
-      activeTarget,
-      `(() => {
+  const nativePointerFallbacks = [];
+  const collapsed = await verifiedNativeClick({
+    name: "sidebar",
+    processId: child.pid,
+    rect: landing.rects.sidebar,
+    viewport: landing.viewport,
+    fallbacks: nativePointerFallbacks,
+    verify: async (activeTarget) => {
+      const result = await evaluate(
+        activeTarget,
+        `(() => {
         const button = document.querySelector('button[aria-label="Expand sidebar"]');
         return button ? button.getBoundingClientRect().toJSON() : null;
       })()`,
-    );
-    if (!result)
-      throw new Error(
-        `Sidebar did not collapse after ${JSON.stringify(nativeSidebarClick)}`,
       );
-    return result;
+      if (!result) throw new Error("Sidebar did not collapse");
+      return result;
+    },
   });
   target = await targetAt(debuggerPort);
   await click(target, collapsed);
@@ -391,11 +438,16 @@ try {
   });
 
   target = await targetAt(debuggerPort);
-  nativeClick(child.pid, landing.rects.search, landing.devicePixelRatio);
-  const search = await eventually(debuggerPort, async (activeTarget) => {
-    const result = await evaluate(
-      activeTarget,
-      `(() => {
+  const search = await verifiedNativeClick({
+    name: "search",
+    processId: child.pid,
+    rect: landing.rects.search,
+    viewport: landing.viewport,
+    fallbacks: nativePointerFallbacks,
+    verify: async (activeTarget) => {
+      const result = await evaluate(
+        activeTarget,
+        `(() => {
         const visible = element => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
         const inputs = [...document.querySelectorAll("input")].filter(visible);
         const dialogs = [...document.querySelectorAll('[role="dialog"]')].filter(visible);
@@ -404,9 +456,10 @@ try {
           ? { opened: true, placeholder: input?.placeholder || null }
           : null;
       })()`,
-    );
-    if (!result) throw new Error("Search UI did not open");
-    return result;
+      );
+      if (!result) throw new Error("Search UI did not open");
+      return result;
+    },
   });
   target = await targetAt(debuggerPort);
   await pressEscape(target);
@@ -577,39 +630,55 @@ try {
   });
 
   target = await targetAt(debuggerPort);
-  nativeClick(child.pid, returnedHome.back, landing.devicePixelRatio);
-  const backed = await eventually(debuggerPort, async (activeTarget) => {
-    const result = await evaluate(
-      activeTarget,
-      `(() => {
+  const backed = await verifiedNativeClick({
+    name: "back",
+    processId: child.pid,
+    rect: returnedHome.back,
+    viewport: landing.viewport,
+    fallbacks: nativePointerFallbacks,
+    verify: async (activeTarget) => {
+      const result = await evaluate(
+        activeTarget,
+        `(() => {
         const forward = document.querySelector('button[aria-label="Forward"]');
         return (location.pathname.startsWith("/code") || location.pathname.startsWith("/epitaxy")) && forward && !forward.disabled && forward.getAttribute("aria-disabled") !== "true"
           ? { path: location.pathname, forward: forward.getBoundingClientRect().toJSON() }
           : null;
       })()`,
-    );
-    if (!result?.forward) throw new Error("Back button did not return to Code");
-    return result;
+      );
+      if (!result?.forward)
+        throw new Error("Back button did not return to Code");
+      return result;
+    },
   });
   target = await targetAt(debuggerPort);
-  nativeClick(child.pid, backed.forward, landing.devicePixelRatio);
-  const forwarded = await eventually(debuggerPort, async (activeTarget) => {
-    const path = await evaluate(activeTarget, `location.pathname`);
-    if (!path.startsWith("/new"))
-      throw new Error("Forward button did not return Home");
-    return path;
+  const forwarded = await verifiedNativeClick({
+    name: "forward",
+    processId: child.pid,
+    rect: backed.forward,
+    viewport: landing.viewport,
+    fallbacks: nativePointerFallbacks,
+    verify: async (activeTarget) => {
+      const currentPath = await evaluate(activeTarget, `location.pathname`);
+      if (!currentPath.startsWith("/new"))
+        throw new Error("Forward button did not return Home");
+      return currentPath;
+    },
   });
 
   target = await targetAt(debuggerPort);
-  nativeClick(child.pid, landing.rects.menu, landing.devicePixelRatio);
-  const menuDeadline = Date.now() + 3000;
-  while (
-    !output.join("").includes("[local-ui] main menu popup") &&
-    Date.now() < menuDeadline
-  )
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  const menuOpened = output.join("").includes("[local-ui] main menu popup");
-  assert(menuOpened, "Native application menu button did not request a popup");
+  const menuOpened = await verifiedNativeClick({
+    name: "menu",
+    processId: child.pid,
+    rect: landing.rects.menu,
+    viewport: landing.viewport,
+    fallbacks: nativePointerFallbacks,
+    verify: async () => {
+      if (!output.join("").includes("[local-ui] main menu popup"))
+        throw new Error("Application menu did not request a popup");
+      return true;
+    },
+  });
 
   process.stdout.write(
     `${JSON.stringify(
@@ -624,6 +693,7 @@ try {
         },
         controls: {
           menuOpened,
+          nativePointerFallbacks,
           sidebarCollapsedAndRestored: true,
           search,
           addMenu,

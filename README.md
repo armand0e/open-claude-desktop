@@ -1,19 +1,18 @@
 # Open-Claude
 
-An independent, evidence-backed reconstruction of the Claude Desktop shell for Windows. It targets the locally observed Claude Desktop `1.21459.0` runtime and supplies readable TypeScript for the Electron main process, isolated preloads, generated IPC contracts, persistence, protocol handling, and a small local window shell.
+An independent, evidence-backed reconstruction of the Claude Desktop shell for Windows and Linux. It targets the locally observed Claude Desktop `1.22209.0` runtime and supplies readable TypeScript for the Electron main process, isolated preloads, generated IPC contracts, persistence, protocol handling, and a small local window shell.
 
 This is not Anthropic's original repository. Minification removes identifiers and source maps were not shipped, so the original TypeScript, comments, build system, signing keys, and Git history cannot be recovered byte-for-byte. The goal here is observable compatibility with an auditable implementation.
 
 ## What is recovered
 
-- All 831 generated EIPC channels across 71 services.
+- All 842 generated EIPC channels across 71 services.
 - All public preload paths and their original preload membership.
-- 726 invoke methods, 91 event subscriptions, and 14 synchronous methods.
-- Generated argument/result guards for 737 channels: 1,146 named arguments and 526 result contracts.
+- Generated argument/result evidence for 747 channels: 1,168 named arguments and 533 result contracts.
 - The BrowserWindow plus WebContentsView architecture, trusted origins, navigation policy, permissions, single-instance behavior, deep links, local `app://` serving, and third-party API stubs.
 - The packaged Claude chat UX in account-free local mode, including its bootstrap, conversation-list/tree, create/update/delete, completion, title, attachment, artifact-pane, and SSE event contracts.
 - A persistent local backend and OpenAI-compatible provider adapter, with an in-app model/endpoint workbench, local files, and versioned artifacts.
-- The packaged native Code UX with account-free workspace launch, persistent sessions and transcripts, provider-backed agent turns, permissions, file/search/shell tools, SDK-style and desktop artifact tools, git/file/editor adapters, and an interactive multi-tab terminal.
+- The packaged native Code UX with account-free workspace launch, persistent sessions and transcripts, provider-backed agent turns, permissions, file/search/shell tools, SDK-style and desktop artifact tools, git/file/editor adapters, an interactive multi-tab terminal, and the visible model-drivable multi-tab Browser from Desktop 1.22209.3.
 - Functional settings, preferences, shortcuts, locale, window/navigation, notifications, downloads, capability-scoped files, MCP configuration, updater hooks, and selected desktop information services.
 - Safe deterministic defaults for the remaining contract so every recovered preload method exists while unsupported deep services fail closed or return an empty state.
 
@@ -46,7 +45,7 @@ $env:CLAUDE_LOCAL_API_KEY = "optional-key"
 npm start
 ```
 
-Ollama, LM Studio, vLLM, llama.cpp servers, and hosted gateways work when they implement OpenAI's `/models` and `/chat/completions` shapes. The same provider powers both Chat and Code. Code first uses OpenAI function tools and automatically falls back to an explicit `<tool_call>` protocol for endpoints that reject them. Claude-hosted features such as billing, remote connectors, and Anthropic inference remain unavailable. See [`docs/local-mode.md`](docs/local-mode.md) and [`docs/local-code.md`](docs/local-code.md) for the exact boundaries.
+Ollama, LM Studio, vLLM, llama.cpp servers, and hosted gateways work when they implement OpenAI's `/models` and `/chat/completions` shapes. The same provider powers both Chat and Code. Code first uses OpenAI function tools and automatically falls back to an explicit `<tool_call>` protocol for endpoints that reject them. Local streamable-HTTP MCP connectors are supported, including guided Gmail, Google Drive, and Slack presets that use user-owned OAuth clients and encrypted on-device tokens. Claude-hosted billing, Anthropic-managed connectors, and Anthropic inference remain unavailable. See [`docs/local-mode.md`](docs/local-mode.md) and [`docs/local-code.md`](docs/local-code.md) for the exact boundaries.
 
 ## Reproduce the analysis
 
@@ -61,7 +60,7 @@ That pipeline locates the newest install, extracts `app.asar`, fingerprints it, 
 Important outputs:
 
 - [`analysis/reference-metadata.json`](analysis/reference-metadata.json): exact observed package and ASAR fingerprint.
-- [`analysis/ipc-contract.json`](analysis/ipc-contract.json): 831-channel service inventory.
+- [`analysis/ipc-contract.json`](analysis/ipc-contract.json): 842-channel service inventory.
 - [`analysis/preload-api.json`](analysis/preload-api.json): preload files, operations, and public paths.
 - [`analysis/ipc-signatures.json`](analysis/ipc-signatures.json): named parameters and derived validator summaries.
 - [`analysis/implementation-coverage.json`](analysis/implementation-coverage.json): machine-readable service-specific and fallback dispatch coverage.
@@ -102,6 +101,7 @@ Strict derived result checks can be enabled while developing a service implement
 - [`docs/architecture.md`](docs/architecture.md) explains the process, view, preload, and security boundaries.
 - [`docs/reverse-engineering-report.md`](docs/reverse-engineering-report.md) records evidence and methodology.
 - [`docs/coverage.md`](docs/coverage.md) distinguishes exact contracts, functional reconstructions, and safe fallbacks.
+- [`docs/product-boundary.md`](docs/product-boundary.md) records what stays local, what is compatibility-only, what is trimmed, and where code belongs.
 - [`docs/local-mode.md`](docs/local-mode.md) explains the packaged UX patch layer, local API, provider configuration, and persistence.
 - [`docs/local-code.md`](docs/local-code.md) explains the local Code harness, native UI integration, tools, terminal, permissions, and current boundaries.
 - [`docs/streaming-and-context.md`](docs/streaming-and-context.md) documents the OpenAI-compatible stream translation, mock endpoint, native UI timing, and Chat/Code context construction.

@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import { PRELOAD_CHANNELS } from "../generated/ipc-contract";
 import { IPC_VALIDATION } from "../generated/ipc-validation";
 import { parseChannel } from "../shared/channels";
-import { isTrustedRendererUrl, originOf } from "../shared/security";
+import { isRemovedCoworkService } from "../shared/removed-product";
+import {
+  isRemoteWebRendererUrl,
+  isTrustedRendererUrl,
+  originOf,
+} from "../shared/security";
 import {
   assertContractArguments,
   contractValueMatches,
@@ -18,7 +23,7 @@ function senderUrl(event: IpcMainEvent | IpcMainInvokeEvent): string {
 const CODE_TRACE_SERVICES = new Set([
   "ClaudeCode",
   "LocalSessions",
-  "LocalAgentModeSessions",
+  "CCDScheduledTasks",
 ]);
 
 const REMOTE_RENDERER_SERVICES = new Set([
@@ -111,9 +116,8 @@ function assertServiceAvailableToSender(
   event: IpcMainEvent | IpcMainInvokeEvent,
   parsed: NonNullable<ReturnType<typeof parseChannel>>,
 ): void {
-  const origin = originOf(senderUrl(event));
   if (
-    origin?.startsWith("https://") &&
+    isRemoteWebRendererUrl(senderUrl(event)) &&
     !REMOTE_RENDERER_SERVICES.has(`${parsed.namespace}.${parsed.service}`)
   )
     throw new Error(
@@ -129,6 +133,7 @@ export function registerGeneratedIpc(
   for (const contract of PRELOAD_CHANNELS) {
     const parsed = parseChannel(contract.channel);
     if (!parsed) continue;
+    if (isRemovedCoworkService(parsed.namespace, parsed.service)) continue;
 
     if ((contract.rendererOperations as readonly string[]).includes("invoke")) {
       ipcMain.removeHandler(contract.channel);

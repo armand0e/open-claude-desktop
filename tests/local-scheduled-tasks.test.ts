@@ -29,6 +29,43 @@ describe("nextCronRun", () => {
     expect(nextCronRun("*/15 * * * *", base)! % (60_000 * 15)).toBeDefined();
     expect(nextCronRun("nonsense", base)).toBeNull();
     expect(nextCronRun("99 * * * *", base)).toBeNull();
+    expect(nextCronRun(`${"*".repeat(1_025)} * * * *`, base)).toBeNull();
+  });
+
+  it("accepts weekday ranges emitted by the native routine picker", () => {
+    const friday = new Date(2026, 6, 17, 12, 0, 0).getTime();
+    const next = new Date(nextCronRun("30 8 * * 1-5", friday)!);
+    expect(next.getDay()).toBe(1);
+    expect(next.getHours()).toBe(8);
+    expect(next.getMinutes()).toBe(30);
+  });
+
+  it("implements cron day-field and numeric-step semantics", () => {
+    const wednesday = new Date(2026, 6, 1, 0, 0, 0).getTime();
+    const mondayOrFifteenth = new Date(nextCronRun("0 9 15 * 1", wednesday)!);
+    expect(mondayOrFifteenth.getDay()).toBe(1);
+    expect(mondayOrFifteenth.getDate()).toBe(6);
+
+    const afterSix = new Date(2026, 6, 1, 10, 6, 0).getTime();
+    const stepped = new Date(nextCronRun("5/20 * * * *", afterSix)!);
+    expect(stepped.getMinutes()).toBe(25);
+
+    const tuesday = new Date(2026, 6, 7, 10, 0, 0).getTime();
+    const wildcardStepWithMonday = new Date(
+      nextCronRun("0 9 */1 * 1", tuesday)!,
+    );
+    expect(wildcardStepWithMonday.getDay()).toBe(1);
+    expect(wildcardStepWithMonday.getDate()).toBe(13);
+    expect(nextCronRun("* * * * *", Number.NaN)).toBeNull();
+  });
+
+  it("finds leap-day schedules more than two years away", () => {
+    const afterLeapDay = new Date(2028, 2, 1, 0, 0, 0).getTime();
+    const next = new Date(nextCronRun("0 9 29 2 *", afterLeapDay)!);
+    expect(next.getFullYear()).toBe(2032);
+    expect(next.getMonth()).toBe(1);
+    expect(next.getDate()).toBe(29);
+    expect(next.getHours()).toBe(9);
   });
 });
 
@@ -42,7 +79,7 @@ describe("LocalScheduledTasks", () => {
       invoke: async (method: string, args: unknown[]) => {
         if (method === "start") {
           started.push(args[0] as Record<string, unknown>);
-          return { sessionId: `session-${started.length}` };
+          return { sessionId: String(started.at(-1)?.sessionId) };
         }
         return undefined;
       },
@@ -63,6 +100,32 @@ describe("LocalScheduledTasks", () => {
     expect(created).not.toBeNull();
     expect(created.status).toBe("active");
     expect(created.nextRunAt).toBeGreaterThan(Date.now());
+    expect(
+      await manager.invoke("createScheduledTask", [
+        { name: "never-runs", prompt: "No schedule", cwd: directory },
+      ]),
+    ).toBeNull();
+    expect(
+      await manager.invoke("createScheduledTask", [
+        {
+          name: "invalid-permissions",
+          prompt: "Must not silently broaden permissions",
+          cronExpression: "0 4 * * *",
+          cwd: directory,
+          permissionMode: "unrestricted",
+        },
+      ]),
+    ).toBeNull();
+    expect(
+      await manager.invoke("createScheduledTask", [
+        {
+          name: "nightly-review",
+          prompt: "Duplicate",
+          cronExpression: "0 4 * * *",
+          cwd: directory,
+        },
+      ]),
+    ).toBeNull();
 
     const all = (await manager.invoke("getAllScheduledTasks", [])) as Array<
       Record<string, unknown>
@@ -78,7 +141,7 @@ describe("LocalScheduledTasks", () => {
     expect(
       await manager.invoke("updateScheduledTaskStatus", [
         "nightly-review",
-        "paused",
+        "disabled",
       ]),
     ).toBe(true);
     const paused = (await manager.invoke("getAllScheduledTasks", [])) as Array<
@@ -87,11 +150,32 @@ describe("LocalScheduledTasks", () => {
     expect(paused[0].enabled).toBe(false);
     expect(paused[0].nextRunAt).toBeNull();
 
+    expect(
+      await manager.invoke("updateScheduledTaskStatus", [
+        "nightly-review",
+        "enabled",
+      ]),
+    ).toBe(true);
+    const reenabled = (await manager.invoke(
+      "getAllScheduledTasks",
+      [],
+    )) as Array<Record<string, unknown>>;
+    expect(reenabled[0].enabled).toBe(true);
+    expect(reenabled[0].status).toBe("active");
+    expect(reenabled[0].nextRunAt).toEqual(expect.any(Number));
+
+    expect(
+      await manager.invoke("updateScheduledTaskStatus", [
+        "nightly-review",
+        "not-a-status",
+      ]),
+    ).toBe(false);
+
     const content = (await manager.invoke("getScheduledTaskFileContent", [
       "nightly-review",
     ])) as string;
     expect(content).toContain("Review the repo");
-    manager.dispose();
+    await manager.dispose();
 
     // A task whose firing was missed while the app was closed runs once on
     // load and reschedules.
@@ -123,21 +207,201 @@ describe("LocalScheduledTasks", () => {
     const reopened = new LocalScheduledTasks(directory2, starter, (event) =>
       events.push(event as Record<string, unknown>),
     );
-    for (let i = 0; i < 40 && started.length === 0; i += 1)
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(started).toHaveLength(1);
-    expect(started[0].scheduledTaskId).toBe("missed-task");
-    expect(started[0].message).toBe("Run the missed job.");
+    // invoke() is the readiness barrier: the catch-up run and its persistence
+    // must be complete before records are returned.
     const records = (await reopened.invoke(
       "getAllScheduledTasks",
       [],
     )) as Array<Record<string, unknown>>;
+    expect(started).toHaveLength(1);
+    expect(started[0].scheduledTaskId).toBe("missed-task");
+    expect(started[0].message).toBe("Run the missed job.");
     expect(records[0].runCount).toBe(1);
-    expect(records[0].lastRunSessionId).toBe("session-1");
+    expect(records[0].lastRunSessionId).toMatch(/^scheduled-[a-f0-9]{40}$/);
     expect(records[0].nextRunAt).toBeGreaterThan(Date.now() - 60_000);
     expect(events.some((event) => event.type === "run_session_created")).toBe(
       true,
     );
-    reopened.dispose();
+    await reopened.dispose();
+  });
+
+  it("quarantines malformed and duplicate persisted task records", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "sched-bad-"));
+    temporaryDirectories.push(directory);
+    const valid = {
+      id: "valid",
+      name: "valid",
+      displayName: "Valid",
+      description: "",
+      prompt: "Do the work",
+      cronExpression: "0 9 * * 1-5",
+      cwd: directory,
+      status: "paused",
+      createdAt: new Date().toISOString(),
+      lastRunAt: null,
+      nextRunAt: null,
+      runCount: 0,
+    };
+    await writeFile(
+      path.join(directory, "local-scheduled-tasks.json"),
+      JSON.stringify({
+        version: 1,
+        tasks: [
+          { id: "broken", status: "active" },
+          valid,
+          { ...valid, displayName: "Duplicate" },
+        ],
+      }),
+    );
+    const manager = new LocalScheduledTasks(
+      directory,
+      { invoke: async () => ({ sessionId: "unexpected" }) },
+      () => undefined,
+    );
+    const tasks = (await manager.invoke("getAllScheduledTasks", [])) as Array<
+      Record<string, unknown>
+    >;
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].displayName).toBe("Valid");
+    await manager.dispose();
+  });
+
+  it("records a failed run when session creation returns no id", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "sched-no-id-"));
+    temporaryDirectories.push(directory);
+    await writeFile(
+      path.join(directory, "local-scheduled-tasks.json"),
+      JSON.stringify({
+        version: 1,
+        tasks: [
+          {
+            id: "missing-session",
+            name: "missing-session",
+            displayName: "Missing session",
+            description: "",
+            prompt: "Run",
+            cronExpression: "* * * * *",
+            cwd: directory,
+            status: "active",
+            createdAt: new Date().toISOString(),
+            lastRunAt: null,
+            nextRunAt: Date.now() - 60_000,
+            runCount: 0,
+          },
+        ],
+      }),
+    );
+    const events: Array<Record<string, unknown>> = [];
+    const manager = new LocalScheduledTasks(
+      directory,
+      { invoke: async () => ({}) },
+      (event) => events.push(event),
+    );
+    const tasks = (await manager.invoke("getAllScheduledTasks", [])) as Array<
+      Record<string, unknown>
+    >;
+    expect(tasks[0].runCount).toBe(0);
+    expect(tasks[0].lastRunAt).toBeNull();
+    expect(tasks[0].lastRunNote).toMatch(/did not return a session id/);
+    expect(events.some((event) => event.type === "run_failed")).toBe(true);
+    await manager.dispose();
+  });
+
+  it("recovers a persisted pending run without duplicating its Code session", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "sched-recover-"));
+    temporaryDirectories.push(directory);
+    const pendingRunAt = Date.now() - 60_000;
+    await writeFile(
+      path.join(directory, "local-scheduled-tasks.json"),
+      JSON.stringify({
+        version: 1,
+        tasks: [
+          {
+            id: "recover-me",
+            name: "recover-me",
+            displayName: "Recover me",
+            description: "",
+            prompt: "Run exactly once",
+            cronExpression: "* * * * *",
+            cwd: directory,
+            status: "active",
+            createdAt: new Date().toISOString(),
+            lastRunAt: null,
+            nextRunAt: Date.now() + 60_000,
+            pendingRunAt,
+            runCount: 0,
+          },
+        ],
+      }),
+    );
+    let recoveredSessionId = "";
+    let startCalls = 0;
+    const manager = new LocalScheduledTasks(
+      directory,
+      {
+        invoke: async (method, args) => {
+          if (method === "getSession") {
+            recoveredSessionId = String(args[0]);
+            return {
+              sessionId: recoveredSessionId,
+              scheduledTaskId: "recover-me",
+            };
+          }
+          if (method === "start") startCalls += 1;
+          return undefined;
+        },
+      },
+      () => undefined,
+    );
+    const tasks = (await manager.invoke("getAllScheduledTasks", [])) as Array<
+      Record<string, unknown>
+    >;
+    expect(recoveredSessionId).toMatch(/^scheduled-[a-f0-9]{40}$/);
+    expect(startCalls).toBe(0);
+    expect(tasks[0].runCount).toBe(1);
+    expect(tasks[0].lastRunSessionId).toBe(recoveredSessionId);
+    await manager.dispose();
+  });
+
+  it("fails closed when Code does not honor the deterministic run id", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "sched-id-"));
+    temporaryDirectories.push(directory);
+    await writeFile(
+      path.join(directory, "local-scheduled-tasks.json"),
+      JSON.stringify({
+        version: 1,
+        tasks: [
+          {
+            id: "wrong-id",
+            name: "wrong-id",
+            displayName: "Wrong id",
+            description: "",
+            prompt: "Run once",
+            cronExpression: "* * * * *",
+            cwd: directory,
+            status: "active",
+            createdAt: new Date().toISOString(),
+            lastRunAt: null,
+            nextRunAt: Date.now() - 60_000,
+            runCount: 0,
+          },
+        ],
+      }),
+    );
+    const manager = new LocalScheduledTasks(
+      directory,
+      {
+        invoke: async (method) =>
+          method === "start" ? { sessionId: "unexpected-session" } : null,
+      },
+      () => undefined,
+    );
+    const tasks = (await manager.invoke("getAllScheduledTasks", [])) as Array<
+      Record<string, unknown>
+    >;
+    expect(tasks[0].runCount).toBe(0);
+    expect(tasks[0].lastRunSessionId).toBeNull();
+    expect(tasks[0].lastRunNote).toMatch(/deterministic session id/);
+    await manager.dispose();
   });
 });

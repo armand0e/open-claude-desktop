@@ -327,18 +327,16 @@ try {
     settings.localModelLabel?.endsWith("Model"),
     `Unexpected Settings item: ${JSON.stringify(settings)}`,
   );
-  // Connectors moved off this list when the local remote-MCP backend landed
-  // (82d72d1); Cowork became a real local section (files / trusted folders /
-  // global instructions) and Capabilities now lives in the modal. Only
-  // Privacy stays cloud-only and hidden.
+  // Connectors moved off this list when the local remote-MCP backend landed;
+  // Capabilities remains in the modal. Removed/cloud-only sections stay hidden.
   assert(
-    ["Privacy"].every((label) => !settings.visibleLabels.includes(label)),
+    ["Cowork", "Privacy"].every(
+      (label) => !settings.visibleLabels.includes(label),
+    ),
     `Cloud-only Settings sections are still visible: ${JSON.stringify(settings.visibleLabels)}`,
   );
   assert(
-    ["Cowork", "Capabilities"].every((label) =>
-      settings.visibleLabels.includes(label),
-    ),
+    ["Capabilities"].every((label) => settings.visibleLabels.includes(label)),
     `Expected local Settings sections missing: ${JSON.stringify(settings.visibleLabels)}`,
   );
 
@@ -460,6 +458,61 @@ try {
       )
         throw new Error(
           `Dynamic workflows did not toggle and persist: ${JSON.stringify({ initial: workflowsToggle.checked, state })}`,
+        );
+      return state;
+    },
+  );
+
+  const browserToggle = codeSettingsInitial.switches.find(
+    (entry) => entry.label === "Browser tools",
+  );
+  assert(
+    browserToggle,
+    `Browser tools toggle is unavailable: ${JSON.stringify(codeSettingsInitial)}`,
+  );
+  target = await targetAt(debuggerPort);
+  const browserControl = await evaluate(
+    target,
+    `(async () => {
+      const element = [...document.querySelectorAll('[role="dialog"] [role="switch"]')]
+        .find(candidate => {
+          const labelledBy = candidate.getAttribute('aria-labelledby');
+          return labelledBy && document.getElementById(labelledBy)?.textContent?.trim() === 'Browser tools';
+        });
+      element?.scrollIntoView({ block: 'center' });
+      await new Promise(resolve => setTimeout(resolve, 100));
+      return element ? { rect: element.getBoundingClientRect().toJSON() } : null;
+    })()`,
+  );
+  assert(
+    browserControl,
+    "Browser tools toggle could not be scrolled into view",
+  );
+  await click(target, browserControl.rect);
+  const browserSettingToggled = await eventually(
+    debuggerPort,
+    async (activeTarget) => {
+      const state = await evaluate(
+        activeTarget,
+        `(async () => {
+          const preferences = await window["claude.settings"].AppPreferences.getPreferences();
+          const element = [...document.querySelectorAll('[role="dialog"] [role="switch"]')]
+            .find(candidate => {
+              const labelledBy = candidate.getAttribute('aria-labelledby');
+              return labelledBy && document.getElementById(labelledBy)?.textContent?.trim() === 'Browser tools';
+            });
+          return {
+            checked: element?.getAttribute('aria-checked') === 'true',
+            persisted: preferences?.launchEnabled
+          };
+        })()`,
+      );
+      if (
+        state.checked === browserToggle.checked ||
+        state.persisted !== state.checked
+      )
+        throw new Error(
+          `Browser tools did not toggle and persist: ${JSON.stringify({ initial: browserToggle.checked, state })}`,
         );
       return state;
     },
@@ -1041,6 +1094,7 @@ try {
         settings,
         codeSettingsInitial,
         codeSettingsToggled,
+        browserSettingToggled,
         nativeSave,
         opened,
         endpointTyped,

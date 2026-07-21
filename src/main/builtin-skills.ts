@@ -78,6 +78,8 @@ description: Create, revise, and evaluate local skills. Use whenever the user as
 
 Create skills that are easy for a model to trigger, follow, and verify. Adapt the depth of the process to the user's request; do not force a benchmark cycle when the user only wants a concise draft.
 
+Open-Claude project state belongs under .open-claude. Never read, write, create, migrate, or delete an Anthropic .claude directory, and never invoke an external Claude Code CLI while creating or evaluating a skill.
+
 ## Capture intent
 
 Extract what is already known from the conversation before asking questions. Resolve only meaningful gaps:

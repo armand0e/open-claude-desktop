@@ -189,44 +189,17 @@ try {
       if (document.readyState === "complete") done(); else addEventListener("load", done, { once: true });
     })`,
   );
-  let capture = null;
-  const captureDeadline = Date.now() + 5_000;
-  while (
-    (typeof capture !== "string" || capture.length < 100) &&
-    Date.now() < captureDeadline
-  ) {
-    capture = await evaluate(
-      appTarget,
-      `window["claude.web"].CoworkFilePreview.parkAndCapture(
-        { x: 430, y: 110, width: 580, height: 480 },
-        "preview-probe"
-      )`,
-    );
-    if (typeof capture !== "string" || capture.length < 100)
-      await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  const hidden = await evaluate(
-    appTarget,
-    `window["claude.web"].CoworkFilePreview.hide("preview-probe")`,
-  );
   if (!rendered?.text?.includes("Native local preview proof"))
     throw new Error(`Preview HTML did not render: ${JSON.stringify(rendered)}`);
   if (rendered.background !== "rgb(12, 34, 56)")
     throw new Error(
       `Relative preview assets failed: ${JSON.stringify(rendered)}`,
     );
-  if (typeof capture !== "string" || capture.length < 100)
-    throw new Error(
-      `Preview capture did not return a PNG: ${JSON.stringify(capture)}`,
-    );
-  if (hidden !== true) throw new Error("Preview did not hide cleanly");
   process.stdout.write(
     `${JSON.stringify(
       {
         shown: shown.result,
         rendered,
-        captureBytes: Math.floor(capture.length * 0.75),
-        hidden,
       },
       null,
       2,

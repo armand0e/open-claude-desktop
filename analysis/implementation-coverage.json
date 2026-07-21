@@ -1,18 +1,22 @@
 {
   "contract": {
-    "channelCount": 831,
+    "channelCount": 842,
     "serviceCount": 71,
-    "channelsWithGeneratedValidation": 737,
-    "namedArgumentCount": 1146,
-    "validatedResultCount": 526
+    "channelsWithGeneratedValidation": 747,
+    "namedArgumentCount": 1168,
+    "validatedResultCount": 533
   },
   "serviceSpecificDispatch": {
-    "serviceCount": 29,
-    "methodCount": 527,
+    "serviceCount": 36,
+    "methodCount": 611,
     "services": [
       {
         "service": "claude.hybrid.DesktopIntl",
         "methodCount": 3
+      },
+      {
+        "service": "claude.internal.findInPage.FindInPage",
+        "methodCount": 6
       },
       {
         "service": "claude.internal.ui.AboutWindow",
@@ -71,8 +75,16 @@
         "methodCount": 7
       },
       {
+        "service": "claude.web.CCDScheduledTasks",
+        "methodCount": 10
+      },
+      {
         "service": "claude.web.ClaudeCode",
         "methodCount": 7
+      },
+      {
+        "service": "claude.web.ClaudeVM",
+        "methodCount": 19
       },
       {
         "service": "claude.web.CoworkArtifacts",
@@ -81,6 +93,18 @@
       {
         "service": "claude.web.CoworkFilePreview",
         "methodCount": 7
+      },
+      {
+        "service": "claude.web.CoworkMemory",
+        "methodCount": 7
+      },
+      {
+        "service": "claude.web.CoworkScheduledTasks",
+        "methodCount": 11
+      },
+      {
+        "service": "claude.web.CoworkUserFiles",
+        "methodCount": 4
       },
       {
         "service": "claude.web.DesktopNotifications",
@@ -92,11 +116,15 @@
       },
       {
         "service": "claude.web.Launch",
-        "methodCount": 54
+        "methodCount": 56
       },
       {
         "service": "claude.web.LocalAgentModeSessions",
-        "methodCount": 100
+        "methodCount": 101
+      },
+      {
+        "service": "claude.web.LocalPlugins",
+        "methodCount": 17
       },
       {
         "service": "claude.web.LocalSessionEnvironment",
@@ -104,7 +132,7 @@
       },
       {
         "service": "claude.web.LocalSessions",
-        "methodCount": 196
+        "methodCount": 203
       },
       {
         "service": "claude.web.Navigation",
@@ -128,9 +156,23 @@
       }
     ]
   },
+  "eventBackedDispatch": {
+    "serviceCount": 2,
+    "methodCount": 4,
+    "services": [
+      {
+        "service": "claude.web.DeepLink",
+        "methodCount": 1
+      },
+      {
+        "service": "claude.web.MenuEvents",
+        "methodCount": 3
+      }
+    ]
+  },
   "safeFallbackDispatch": {
-    "serviceCount": 42,
-    "methodCount": 304,
+    "serviceCount": 33,
+    "methodCount": 227,
     "services": [
       {
         "service": "claude.buddy.Buddy",
@@ -143,10 +185,6 @@
       {
         "service": "claude.coworkArtifact.CoworkArtifactBridge",
         "methodCount": 5
-      },
-      {
-        "service": "claude.internal.findInPage.FindInPage",
-        "methodCount": 6
       },
       {
         "service": "claude.internal.ui.QuickWindow",
@@ -182,7 +220,7 @@
       },
       {
         "service": "claude.simulator.Simulator",
-        "methodCount": 11
+        "methodCount": 12
       },
       {
         "service": "claude.skills.Skills",
@@ -201,16 +239,8 @@
         "methodCount": 2
       },
       {
-        "service": "claude.web.CCDScheduledTasks",
-        "methodCount": 10
-      },
-      {
         "service": "claude.web.ChromeExtension",
         "methodCount": 3
-      },
-      {
-        "service": "claude.web.ClaudeVM",
-        "methodCount": 19
       },
       {
         "service": "claude.web.ComputerUseTcc",
@@ -221,28 +251,12 @@
         "methodCount": 5
       },
       {
-        "service": "claude.web.CoworkMemory",
-        "methodCount": 7
-      },
-      {
-        "service": "claude.web.CoworkScheduledTasks",
-        "methodCount": 11
-      },
-      {
         "service": "claude.web.CoworkSpaces",
         "methodCount": 26
       },
       {
-        "service": "claude.web.CoworkUserFiles",
-        "methodCount": 4
-      },
-      {
         "service": "claude.web.CustomPlugins",
         "methodCount": 18
-      },
-      {
-        "service": "claude.web.DeepLink",
-        "methodCount": 1
       },
       {
         "service": "claude.web.DeviceRegistry",
@@ -267,14 +281,6 @@
       {
         "service": "claude.web.GrandPrix",
         "methodCount": 8
-      },
-      {
-        "service": "claude.web.LocalPlugins",
-        "methodCount": 17
-      },
-      {
-        "service": "claude.web.MenuEvents",
-        "methodCount": 3
       },
       {
         "service": "claude.web.NestDev",
@@ -302,5 +308,5 @@
       }
     ]
   },
-  "qualification": "A service-specific dispatch branch is not a claim of full semantic parity. See docs/coverage.md for functional and partial adapters."
+  "qualification": "A service-specific or event-backed branch is not a claim of full semantic parity. See docs/coverage.md and docs/product-boundary.md for functional, compatibility, and trimmed surfaces."
 }

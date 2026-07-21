@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { PRELOAD_CHANNELS } from "../generated/ipc-contract";
 import { parseChannel } from "../shared/channels";
+import { isRemovedCoworkService } from "../shared/removed-product";
 
 // The retained desktop client legitimately mounts more than Node's default ten
 // independent store subscriptions on several shared IPC event channels.
@@ -8,7 +9,7 @@ import { parseChannel } from "../shared/channels";
 // still handled per callback below.
 ipcRenderer.setMaxListeners(100);
 
-type BridgeObject = Record<string, unknown>;
+export type BridgeObject = Record<string, unknown>;
 type Callback = (...args: unknown[]) => void;
 
 function isTrustedRendererUrl(
@@ -35,6 +36,7 @@ function isTrustedRendererUrl(
     if (url.protocol === "file:") return true;
     return (
       allowDevelopment &&
+      (url.protocol === "http:" || url.protocol === "https:") &&
       (url.hostname === "localhost" ||
         url.hostname === "127.0.0.1" ||
         url.hostname.endsWith(".ant.dev"))
@@ -90,6 +92,7 @@ function methodFor(
 
 export function exposeContract(
   preloadFile: string,
+  extend?: (namespaces: Record<string, BridgeObject>) => void,
 ): Record<string, BridgeObject> {
   const allowDevelopment = process.env.CLAUDE_ALLOW_DEV_ORIGINS === "1";
   if (!isTrustedRendererUrl(window.location.href, allowDevelopment)) return {};
@@ -100,11 +103,13 @@ export function exposeContract(
     const parsed = parseChannel(contract.channel);
     const publicPath = contract.publicPaths[0];
     if (!parsed || !publicPath) continue;
+    if (isRemovedCoworkService(parsed.namespace, parsed.service)) continue;
     const namespace = (namespaces[parsed.namespace] ??= {});
     const service = (namespace[parsed.service] ??= {}) as BridgeObject;
     setPath(service, publicPath.split("."), methodFor(contract));
   }
 
+  extend?.(namespaces);
   for (const [namespace, value] of Object.entries(namespaces)) {
     contextBridge.exposeInMainWorld(namespace, value);
   }

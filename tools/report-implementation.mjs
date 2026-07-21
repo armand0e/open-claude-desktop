@@ -18,6 +18,13 @@ const explicitKeys = [
   .filter((key) => Object.hasOwn(contract.services, key))
   .sort();
 const explicitSet = new Set(explicitKeys);
+// These services are event-only at the preload boundary, so they do not need
+// a dispatcher switch. Their events are produced by the window/deep-link
+// lifecycle in index.ts and services.ts.
+const eventBackedKeys = ["claude.web.DeepLink", "claude.web.MenuEvents"].filter(
+  (key) => Object.hasOwn(contract.services, key),
+);
+const eventBackedSet = new Set(eventBackedKeys);
 
 function serviceEntry(key) {
   const service = contract.services[key];
@@ -28,8 +35,9 @@ function serviceEntry(key) {
 }
 
 const serviceSpecificDispatch = explicitKeys.map(serviceEntry);
+const eventBackedDispatch = eventBackedKeys.sort().map(serviceEntry);
 const fallbackDispatch = Object.keys(contract.services)
-  .filter((key) => !explicitSet.has(key))
+  .filter((key) => !explicitSet.has(key) && !eventBackedSet.has(key))
   .sort()
   .map(serviceEntry);
 const sumMethods = (entries) =>
@@ -52,13 +60,18 @@ const report = {
     methodCount: sumMethods(serviceSpecificDispatch),
     services: serviceSpecificDispatch,
   },
+  eventBackedDispatch: {
+    serviceCount: eventBackedDispatch.length,
+    methodCount: sumMethods(eventBackedDispatch),
+    services: eventBackedDispatch,
+  },
   safeFallbackDispatch: {
     serviceCount: fallbackDispatch.length,
     methodCount: sumMethods(fallbackDispatch),
     services: fallbackDispatch,
   },
   qualification:
-    "A service-specific dispatch branch is not a claim of full semantic parity. See docs/coverage.md for functional and partial adapters.",
+    "A service-specific or event-backed branch is not a claim of full semantic parity. See docs/coverage.md and docs/product-boundary.md for functional, compatibility, and trimmed surfaces.",
 };
 
 const output = path.resolve("analysis/implementation-coverage.json");

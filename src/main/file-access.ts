@@ -20,66 +20,89 @@ export function isPathInside(root: string, candidate: string): boolean {
   );
 }
 
-function decodePath(input: string): string {
+function pathCandidates(input: string): string[] {
   if (input.includes("\0")) throw new Error("File path contains a null byte");
+  const raw = path.resolve(input);
   let decoded: string;
   try {
     decoded = decodeURIComponent(input);
   } catch {
-    throw new Error("File path is not valid URI encoding");
+    // Native pickers return ordinary filesystem paths. A literal '%' that is
+    // not URI syntax is valid in a filename and must remain usable.
+    return [raw];
   }
+  // Keep this outside the decode error handler. An encoded NUL is invalid
+  // input, not a literal-percent filename that should fall back to `raw`.
   if (decoded.includes("\0")) throw new Error("File path contains a null byte");
-  return path.resolve(decoded);
+  const resolved = path.resolve(decoded);
+  return comparable(resolved) === comparable(raw) ? [raw] : [raw, resolved];
 }
 
 export class FileAccessPolicy {
   private readonly grants: Grant[] = [];
 
   async grantFile(input: string): Promise<string> {
-    const candidate = decodePath(input);
-    const info = await stat(candidate);
-    if (!info.isFile()) throw new Error("Only regular files can be granted");
-    const canonicalPath = await realpath(candidate);
-    this.addGrant({ kind: "file", canonicalPath });
-    return canonicalPath;
+    for (const candidate of pathCandidates(input)) {
+      const info = await stat(candidate).catch(() => null);
+      if (!info?.isFile()) continue;
+      const canonicalPath = await realpath(candidate);
+      this.addGrant({ kind: "file", canonicalPath });
+      return canonicalPath;
+    }
+    throw new Error("Only regular files can be granted");
   }
 
   async grantRoot(input: string): Promise<string> {
-    const candidate = decodePath(input);
-    const info = await stat(candidate);
-    if (!info.isDirectory())
-      throw new Error("Only directories can be granted as roots");
-    const canonicalPath = await realpath(candidate);
-    this.addGrant({ kind: "root", canonicalPath });
-    return canonicalPath;
+    for (const candidate of pathCandidates(input)) {
+      const info = await stat(candidate).catch(() => null);
+      if (!info?.isDirectory()) continue;
+      const canonicalPath = await realpath(candidate);
+      this.addGrant({ kind: "root", canonicalPath });
+      return canonicalPath;
+    }
+    throw new Error("Only directories can be granted as roots");
   }
 
   async requireFile(
     input: string,
     options: { write?: boolean } = {},
   ): Promise<string> {
-    const candidate = decodePath(input);
-    let canonicalPath: string;
-    try {
-      canonicalPath = await realpath(candidate);
-      const info = await stat(canonicalPath);
-      if (!info.isFile()) throw new Error("Path is not a regular file");
-    } catch (error) {
-      if (!options.write) throw error;
-      const canonicalParent = await realpath(path.dirname(candidate));
-      canonicalPath = path.join(canonicalParent, path.basename(candidate));
+    let lastError: unknown = new Error("Path is not a regular file");
+    for (const candidate of pathCandidates(input)) {
+      try {
+        const existing = await stat(candidate).catch(() => null);
+        let canonicalPath: string;
+        if (existing) {
+          if (!existing.isFile()) throw new Error("Path is not a regular file");
+          canonicalPath = await realpath(candidate);
+        } else {
+          if (!options.write) throw new Error("Path does not exist");
+          const canonicalParent = await realpath(path.dirname(candidate));
+          canonicalPath = path.join(canonicalParent, path.basename(candidate));
+        }
+        this.assertGranted(candidate, canonicalPath, false);
+        return canonicalPath;
+      } catch (error) {
+        lastError = error;
+      }
     }
-    this.assertGranted(candidate, canonicalPath, false);
-    return canonicalPath;
+    throw lastError;
   }
 
   async requireRoot(input: string): Promise<string> {
-    const candidate = decodePath(input);
-    const canonicalPath = await realpath(candidate);
-    const info = await stat(canonicalPath);
-    if (!info.isDirectory()) throw new Error("Path is not a directory");
-    this.assertGranted(candidate, canonicalPath, true);
-    return canonicalPath;
+    let lastError: unknown = new Error("Path is not a directory");
+    for (const candidate of pathCandidates(input)) {
+      try {
+        const canonicalPath = await realpath(candidate);
+        const info = await stat(canonicalPath);
+        if (!info.isDirectory()) throw new Error("Path is not a directory");
+        this.assertGranted(candidate, canonicalPath, true);
+        return canonicalPath;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError;
   }
 
   private addGrant(grant: Grant): void {

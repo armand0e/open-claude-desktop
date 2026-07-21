@@ -4,11 +4,15 @@ import {
   extractPdfText,
   extractRichText,
   extractXlsxText,
+  zipEntries,
 } from "../src/main/local-extract";
 
 // Store-method zip builder — enough for Office-document fixtures. The
 // production reader ignores CRCs, so zeros are fine here.
-function buildZip(files: Array<[string, string]>): Uint8Array {
+function buildZip(
+  files: Array<[string, string]>,
+  comment = new Uint8Array(),
+): Uint8Array {
   const encoder = new TextEncoder();
   const chunks: Uint8Array[] = [];
   const central: Uint8Array[] = [];
@@ -78,7 +82,8 @@ function buildZip(files: Array<[string, string]>): Uint8Array {
     uint16(files.length),
     uint32(centralSize),
     uint32(centralStart),
-    uint16(0),
+    uint16(comment.length),
+    comment,
   ];
   for (const part of eocd) push(part, chunks);
   const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
@@ -166,5 +171,25 @@ describe("local rich extraction", () => {
         "application/pdf",
       ),
     ).toBeUndefined();
+  });
+
+  it("rejects archives whose declared expansion exceeds configured limits", () => {
+    const archive = buildZip([["large.txt", "0123456789"]]);
+    expect(() =>
+      zipEntries(archive, {
+        maxEntries: 10,
+        maxEntryBytes: 5,
+        maxTotalBytes: 20,
+      }),
+    ).toThrow(/extraction limit/);
+  });
+
+  it("ignores EOCD signatures embedded in an archive comment", () => {
+    const fakeEocd = new Uint8Array(22);
+    fakeEocd.set([0x50, 0x4b, 0x05, 0x06]);
+    const archive = buildZip([["safe.txt", "still readable"]], fakeEocd);
+    expect(new TextDecoder().decode(zipEntries(archive).get("safe.txt"))).toBe(
+      "still readable",
+    );
   });
 });

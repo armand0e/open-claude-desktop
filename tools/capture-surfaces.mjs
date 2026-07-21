@@ -60,7 +60,9 @@ const child = spawn(electron, [".", `--remote-debugging-port=${port}`], {
 });
 
 async function pageTarget() {
-  const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+  const targets = await (
+    await fetch(`http://127.0.0.1:${port}/json/list`)
+  ).json();
   return targets.find(
     (t) =>
       t.type === "page" &&
@@ -121,7 +123,10 @@ async function evaluate(expression) {
 
 async function shot(name) {
   const { data } = await cdp("Page.captureScreenshot", { format: "png" });
-  await writeFile(path.join(outDir, `${name}.png`), Buffer.from(data, "base64"));
+  await writeFile(
+    path.join(outDir, `${name}.png`),
+    Buffer.from(data, "base64"),
+  );
   console.log(`captured ${name}`);
 }
 
@@ -155,6 +160,21 @@ try {
     })()`,
   );
   await cdp("Page.enable");
+  await evaluate(
+    `(async () => {
+      await fetch('/api/organizations/local/memory', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ memory: '- [Hardware] CPU: Local test processor\\n- [Hardware] RAM: 64GB\\n- [Hardware] GPU: Local test GPU' }),
+      });
+      await fetch('/api/organizations/local/memory/controls', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ controls: ['Keep lists under five things'] }),
+      });
+      return true;
+    })()`,
+  );
 
   // 1. Home (chat) surface.
   await shot("our-01-home");
@@ -186,13 +206,22 @@ try {
   await navigate("/epitaxy/scheduled", 3000);
   await shot("our-12-code-scheduled");
 
-  // 11. Home scheduled page (cowork variant route).
-  await navigate("/scheduled", 3000);
-  await shot("our-11-home-scheduled");
-
-  // 15. Projects.
-  await navigate("/projects", 3000);
-  await shot("our-15-projects");
+  // 15. Project detail with locally persisted knowledge.
+  const projectUuid = await evaluate(
+    `(async () => {
+      const project = await fetch('/api/organizations/local/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Local research project', description: 'Reference material and durable project context' }),
+      }).then(r => r.json());
+      const form = new FormData();
+      form.append('file', new File(['Local knowledge base reference'], 'project-notes.txt', { type: 'text/plain' }));
+      await fetch('/api/organizations/local/projects/' + project.uuid + '/upload', { method: 'POST', body: form });
+      return project.uuid;
+    })()`,
+  );
+  await navigate(`/project/${projectUuid}`, 4000);
+  await shot("our-15-project-detail");
 
   // Settings dialog states. Open from the sidebar button.
   await navigate("/new", 2500);
@@ -210,8 +239,8 @@ try {
   const sections = [
     ["Connectors", "our-04-settings-connectors"],
     ["Memory", "our-09-settings-memory"],
-    ["Extensions", "our-16-settings-extensions"],
-    ["Developer", "our-17-settings-developer"],
+    ["Extensions", "our-18-settings-extensions"],
+    ["Developer", "our-19-settings-developer"],
     ["Claude Code", "our-18-settings-claude-code"],
   ];
   for (const [label, name] of sections) {
@@ -230,6 +259,60 @@ try {
     );
     if (ok) await shot(name);
     else console.log(`section ${label} not found`);
+    console.log(
+      `section ${label} route`,
+      await evaluate(
+        `({ pathname: location.pathname, search: location.search, hash: location.hash })`,
+      ),
+    );
+    if (label === "Connectors") {
+      const directoryOpened = await evaluate(
+        `(async () => {
+          const browse = document.querySelector('#local-connectors-settings')?.shadowRoot?.querySelector('[data-browse]');
+          if (!browse) return false;
+          browse.click();
+          await new Promise(r => setTimeout(r, 900));
+          return !!document.querySelector('#local-directory')?.shadowRoot;
+        })()`,
+      );
+      if (directoryOpened) {
+        await shot("our-06-directory-connectors");
+        for (const [kind, directoryName] of [
+          ["skills", "our-07-directory-skills"],
+          ["plugins", "our-08-directory-plugins"],
+        ]) {
+          await evaluate(
+            `(async () => {
+              document.querySelector('#local-directory')?.shadowRoot?.querySelector('[data-kind=${kind}]')?.click();
+              await new Promise(r => setTimeout(r, 450));
+              return true;
+            })()`,
+          );
+          await shot(directoryName);
+        }
+        await evaluate(
+          `(() => { document.querySelector('#local-directory')?.shadowRoot?.querySelector('.close')?.click(); return true; })()`,
+        );
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    }
+    if (label === "Memory") {
+      const detailOpened = await evaluate(
+        `(async () => {
+          const topic = document.querySelector('#local-claude-workbench')?.shadowRoot?.querySelector('.memory-topic');
+          if (!topic) return false;
+          topic.click();
+          await new Promise(r => setTimeout(r, 350));
+          return true;
+        })()`,
+      );
+      if (detailOpened) {
+        await shot("our-10-settings-memory-detail");
+        await evaluate(
+          `(() => { document.querySelector('#local-claude-workbench')?.shadowRoot?.querySelector('#memory-back')?.click(); return true; })()`,
+        );
+      }
+    }
   }
 } finally {
   child.kill();

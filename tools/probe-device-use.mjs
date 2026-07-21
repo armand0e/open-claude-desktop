@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import electron from "electron";
 
-const PAGE_MARKER = "local-browser-use-proof-4711";
+const PAGE_MARKER = "Example Domain";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -87,16 +87,10 @@ async function evaluateEventually(port, expression, timeout = 45_000) {
   throw lastError ?? new Error("Timed out");
 }
 
-// Local page the browser tools will visit.
-const testSite = createHttpServer((request, response) => {
-  response.writeHead(200, { "Content-Type": "text/html" });
-  response.end(
-    `<!doctype html><html><head><title>Probe Target</title></head><body><h1>Device probe page</h1><p>${PAGE_MARKER}</p></body></html>`,
-  );
-});
-await new Promise((resolve) => testSite.listen(0, "127.0.0.1", resolve));
-const sitePort = testSite.address().port;
-const siteUrl = `http://127.0.0.1:${sitePort}/`;
+// Use a stable public page. Browser Use deliberately blocks loopback/private
+// destinations at its forward proxy, so a local fixture would only exercise
+// the SSRF guard rather than a successful navigation and read.
+const siteUrl = "https://example.com/";
 
 const requests = [];
 const provider = createHttpServer(async (request, response) => {
@@ -278,5 +272,4 @@ try {
   await new Promise((resolve) => setTimeout(resolve, 1500));
   await rm(profile, { recursive: true, force: true }).catch(() => undefined);
   provider.close();
-  testSite.close();
 }

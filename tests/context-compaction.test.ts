@@ -172,6 +172,20 @@ describe("summarizeForCompaction", () => {
       ]),
     ).rejects.toThrow(/empty/);
   });
+
+  it("rejects an oversized provider response before retaining it", async () => {
+    nextResponse = () => ({
+      status: 200,
+      body: {
+        choices: [{ message: { content: "x".repeat(2 * 1024 * 1024 + 1) } }],
+      },
+    });
+    await expect(
+      summarizeForCompaction({ baseUrl, model: "m" }, [
+        { role: "user", content: "hello" },
+      ]),
+    ).rejects.toThrow(/exceeded/);
+  });
 });
 
 describe("compactionSummaryText", () => {

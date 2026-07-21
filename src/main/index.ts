@@ -7,6 +7,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   protocol,
@@ -37,16 +38,18 @@ import {
   registerGeneratedIpc,
 } from "./ipc";
 import { installLocalUiProtocol, registerAppScheme } from "./local-ui";
-import { LocalBackend } from "./local-backend";
-import { LocalCodeSessionManager, setCoworkFilesRoot } from "./local-code";
+import { LocalBackend, type LocalSecretCodec } from "./local-backend";
+import { LocalCodeSessionManager } from "./local-code";
 import { LocalFilePreview } from "./local-file-preview";
 import { LocalLaunchPreview } from "./local-launch-preview";
 import { LocalMcpManager } from "./local-mcp";
+import { LocalMcpOAuthManager } from "./local-mcp-oauth";
 import { LocalMcpPortBridge } from "./local-mcp-bridge";
 import { LocalBrowserUse } from "./local-browser";
 import { LocalComputerUse } from "./local-computer";
 import { LocalPluginManager } from "./local-plugins";
 import { LocalScheduledTasks } from "./local-scheduled-tasks";
+import { LocalTrayController } from "./local-tray";
 import { LocalSandbox } from "./local-sandbox";
 import { LocalArtifactTunnel } from "./local-tunnel";
 import { LocalWebTools } from "./local-web-tools";
@@ -95,16 +98,22 @@ let mainView: WebContentsView | null = null;
 let state: StateStore;
 let disposeIpc: (() => void) | null = null;
 let codeSessions: LocalCodeSessionManager | null = null;
+let localBackend: LocalBackend | null = null;
 let localWebTools: LocalWebTools | null = null;
 let localFilePreview: LocalFilePreview | null = null;
 let localLaunchPreview: LocalLaunchPreview | null = null;
 let localMcpManager: LocalMcpManager | null = null;
+let localMcpOAuth: LocalMcpOAuthManager | null = null;
 let localMcpPortBridge: LocalMcpPortBridge | null = null;
 let localSandbox: LocalSandbox | null = null;
 let localBrowserUse: LocalBrowserUse | null = null;
+let localComputerUse: LocalComputerUse | null = null;
 let localScheduledTasks: LocalScheduledTasks | null = null;
 let localArtifactTunnel: LocalArtifactTunnel | null = null;
+let localTray: LocalTrayController | null = null;
 let targetUrl = "https://claude.ai";
+const pendingOAuthDeepLinks: string[] = [];
+let oauthRuntimeReady = false;
 
 function preloadPath(name: "preload-main-view" | "preload-shell"): string {
   return path.join(app.getAppPath(), "dist-electron", `${name}.cjs`);
@@ -120,10 +129,17 @@ function rendererPath(): string {
 // packaged builds; the source asset is used in development.
 function appIconPath(): string | undefined {
   const candidates = [
-    process.resourcesPath
-      ? path.join(process.resourcesPath, "icon.png")
+    process.platform === "win32" && process.resourcesPath
+      ? path.join(process.resourcesPath, "icon.ico")
+      : null,
+    process.resourcesPath ? path.join(process.resourcesPath, "icon.png") : null,
+    process.platform === "win32"
+      ? path.join(app.getAppPath(), ".package-assets", "icon.ico")
       : null,
     path.join(app.getAppPath(), ".package-assets", "icon.png"),
+    process.platform === "win32"
+      ? path.join(process.cwd(), ".package-assets", "icon.ico")
+      : null,
     path.join(process.cwd(), ".package-assets", "icon.png"),
   ];
   return candidates.find(
@@ -309,7 +325,9 @@ function installNavigationPolicy(contents: WebContents): void {
             contextIsolation: true,
             sandbox: true,
             nodeIntegration: false,
-            additionalArguments: [`--desktop-app-version=${RETAINED_DESKTOP_VERSION}`],
+            additionalArguments: [
+              `--desktop-app-version=${RETAINED_DESKTOP_VERSION}`,
+            ],
           },
         },
       };
@@ -331,7 +349,10 @@ function updateViewBounds(): void {
 }
 
 function showMainWindow(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    if (app.isReady() && !shutdownComplete) createMainWindow();
+    return;
+  }
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
@@ -407,7 +428,10 @@ function createMainWindow(): BrowserWindow {
   view.webContents.setUserAgent(
     `${view.webContents
       .getUserAgent()
-      .replace(` ${app.name}/${app.getVersion()}`, "")} Claude/${RETAINED_DESKTOP_VERSION}`,
+      .replace(
+        ` ${app.name}/${app.getVersion()}`,
+        "",
+      )} Claude/${RETAINED_DESKTOP_VERSION}`,
   );
   if (process.env.CLAUDE_TRACE_LOCAL_API === "1") {
     view.webContents.on(
@@ -508,6 +532,11 @@ function createMainWindow(): BrowserWindow {
     const channel = eventChannel("claude.web.WindowState", "visibilityChanged");
     if (channel) broadcast(channel, false);
   });
+  window.on("close", (event) => {
+    if (shutdownComplete || !localTray?.enabled) return;
+    event.preventDefault();
+    window.hide();
+  });
   window.on("closed", () => {
     mainWindow = null;
     mainView = null;
@@ -594,6 +623,8 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
   ipcMain.removeHandler("local-open-settings");
   ipcMain.removeHandler("local-chrome-action");
   ipcMain.removeHandler("local-code-artifact-details");
+  ipcMain.removeHandler("open-claude-local-sessions");
+  ipcMain.removeHandler("open-claude-connector-oauth");
   ipcMain.handle("list-mcp-servers", (event) => {
     assertTrustedIpcSender(event);
     // The retained client expects an array of server names and connects to
@@ -646,6 +677,7 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
         partition: `local-artifact-capture-${randomUUID()}`,
       },
     });
+    let timer: NodeJS.Timeout | undefined;
     try {
       // The capture stays fully local: only data/blob/about URLs may load.
       capture.webContents.session.webRequest.onBeforeRequest(
@@ -653,19 +685,33 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
           callback({ cancel: !/^(data|blob|about):/i.test(details.url) });
         },
       );
-      await capture.loadURL(
-        `data:text/html;charset=utf-8;base64,${Buffer.from(html, "utf8").toString("base64")}`,
-      );
-      // Let scripts and layout settle before compositing.
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const image = await capture.webContents.capturePage();
-      if (image.isEmpty()) return null;
-      const dataUrl = image.toDataURL();
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          if (!capture.isDestroyed()) capture.webContents.stop();
+          reject(new Error("Artifact screenshot timed out"));
+        }, 15_000);
+        timer.unref?.();
+      });
+      const dataUrl = await Promise.race([
+        (async () => {
+          await capture.loadURL(
+            `data:text/html;charset=utf-8;base64,${Buffer.from(html, "utf8").toString("base64")}`,
+          );
+          // Let scripts and layout settle before compositing.
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          const image = await capture.webContents.capturePage();
+          if (image.isEmpty()) return null;
+          return image.toDataURL();
+        })(),
+        timeout,
+      ]);
+      if (!dataUrl) return null;
       // The publish flow rejects payloads above 10 MiB.
       return dataUrl.length > 10_000_000 ? null : dataUrl;
     } catch {
       return null;
     } finally {
+      if (timer) clearTimeout(timer);
       capture.destroy();
     }
   });
@@ -695,11 +741,116 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
         }
       : null;
   });
+  const localSessionExtensions = new Set([
+    "deleteLocalSkill",
+    "getAllArtifacts",
+    "getLocalSkillFiles",
+    "listLocalSkills",
+    "saveLocalSkill",
+    "setLocalSkillEnabled",
+  ]);
+  ipcMain.handle(
+    "open-claude-local-sessions",
+    async (event, method, ...args) => {
+      assertLocalIpcSender(event);
+      if (typeof method !== "string" || !localSessionExtensions.has(method))
+        throw new Error("Unsupported LocalSessions extension method");
+      return dispatcher.invoke(
+        {
+          channel: "open-claude-local-sessions",
+          kind: "message",
+          generatorId: "open-claude",
+          namespace: "claude.web",
+          service: "LocalSessions",
+          method,
+        },
+        args,
+        event,
+      );
+    },
+  );
+  ipcMain.handle(
+    "open-claude-connector-oauth",
+    async (event, action, payload) => {
+      assertLocalIpcSender(event);
+      if (!localBackend || !localMcpOAuth)
+        throw new Error("Local OAuth connectors are unavailable");
+      if (action === "list-presets") return localMcpOAuth.presets();
+      if (action === "status") {
+        const uuid = typeof payload?.uuid === "string" ? payload.uuid : "";
+        return uuid ? localMcpOAuth.stateFor(uuid) : null;
+      }
+      if (action === "open-setup" || action === "open-docs") {
+        const preset =
+          typeof payload?.preset === "string" ? payload.preset : "";
+        const definition = localMcpOAuth
+          .presets()
+          .find((candidate) => candidate.id === preset);
+        const target =
+          action === "open-docs" ? definition?.docsUrl : definition?.setupUrl;
+        if (typeof target !== "string")
+          throw new Error("Unknown OAuth connector preset");
+        await shell.openExternal(target);
+        return true;
+      }
+      const uuid = typeof payload?.uuid === "string" ? payload.uuid : "";
+      if (!uuid) throw new Error("Connector identifier is required");
+      if (action === "cancel") {
+        localMcpOAuth.cancel(uuid);
+        return true;
+      }
+      if (action === "disconnect") {
+        await localMcpOAuth.disconnect(uuid);
+        localMcpManager?.remoteServersChanged();
+        return true;
+      }
+      if (action === "start") {
+        const connector = localBackend.remoteMcpServer(uuid);
+        if (!connector) throw new Error("Connector not found");
+        const result = await localMcpOAuth.start(connector, {
+          preset: payload?.preset,
+          clientId: payload?.clientId,
+          clientSecret: payload?.clientSecret,
+          access: payload?.access,
+        });
+        const authorizationUrl = result.authorizationUrl;
+        if (typeof authorizationUrl !== "string")
+          throw new Error("OAuth provider URL was not generated");
+        await shell.openExternal(authorizationUrl);
+        return {
+          uuid,
+          redirectUri: result.redirectUri,
+          expiresAt: result.expiresAt,
+        };
+      }
+      throw new Error("Unsupported OAuth connector action");
+    },
+  );
 }
 
 function dispatchDeepLink(url: string): void {
-  const channel = eventChannel("claude.web.DeepLink", "handleDeepLink");
-  if (channel) broadcast(channel, url);
+  let isOAuthCallback = false;
+  try {
+    const parsed = new URL(url);
+    isOAuthCallback =
+      parsed.protocol === "open-claude:" &&
+      parsed.hostname === "oauth" &&
+      parsed.pathname === "/slack";
+  } catch {
+    return;
+  }
+  if (isOAuthCallback && !localMcpOAuth && !oauthRuntimeReady) {
+    if (pendingOAuthDeepLinks.length < 8) pendingOAuthDeepLinks.push(url);
+    return;
+  }
+  void (async () => {
+    if (isOAuthCallback && (await localMcpOAuth?.handleCallbackUrl(url))) {
+      showMainWindow();
+      return;
+    }
+    const channel = eventChannel("claude.web.DeepLink", "handleDeepLink");
+    if (channel) broadcast(channel, url);
+  })().catch((error) => console.error("Deep-link handling failed", error));
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -723,12 +874,11 @@ if (!gotLock) {
     .whenReady()
     .then(async () => {
       state = new StateStore(app.getPath("userData"));
-      setCoworkFilesRoot(state.get("coworkFilesRoot"));
       localWebTools = new LocalWebTools(
         app.getPath("userData"),
         app.getAppPath(),
       );
-      let localBackend: LocalBackend | null = null;
+      localBackend = null;
       const ionRoot = await localUiRoot();
       const useLocalUi =
         process.env.CLAUDE_DESKTOP_LOCAL_UI === "1" ||
@@ -739,9 +889,7 @@ if (!gotLock) {
           throw new Error(
             "Local UI mode is enabled but no ion-dist directory was found. Set CLAUDE_ION_DIST or install the observed Claude Desktop build.",
           );
-        localBackend = await LocalBackend.create(
-          app.getPath("userData"),
-          localWebTools,
+        const localSecretCodec: LocalSecretCodec | undefined =
           safeStorage.isEncryptionAvailable()
             ? {
                 seal: (value) =>
@@ -749,7 +897,21 @@ if (!gotLock) {
                 open: (value) =>
                   safeStorage.decryptString(Buffer.from(value, "base64")),
               }
-            : undefined,
+            : undefined;
+        localBackend = await LocalBackend.create(
+          app.getPath("userData"),
+          localWebTools,
+          localSecretCodec,
+        );
+        localMcpOAuth = await LocalMcpOAuthManager.create(
+          app.getPath("userData"),
+          localSecretCodec,
+          {
+            onChanged: () => localMcpManager?.remoteServersChanged(),
+          },
+        );
+        await localMcpOAuth.prune(
+          localBackend.remoteMcpServers().map((server) => server.uuid),
         );
         targetUrl = "app://localhost/new?mode=chat&surface=chat";
       } else if (process.env.CLAUDE_DESKTOP_URL) {
@@ -764,30 +926,23 @@ if (!gotLock) {
           );
         targetUrl = candidate.toString();
       }
+      oauthRuntimeReady = true;
+      for (const deepLink of pendingOAuthDeepLinks.splice(0))
+        dispatchDeepLink(deepLink);
 
       codeSessions = await LocalCodeSessionManager.create(
         app.getPath("userData"),
         () => localBackend?.provider() ?? null,
         (codeEvent) => {
-          // The Code surface listens on LocalSessions; the Cowork task
-          // surface listens on LocalAgentModeSessions. Same session
-          // manager, so mirror every event on both channels.
-          for (const service of [
-            "claude.web.LocalSessions",
-            "claude.web.LocalAgentModeSessions",
-          ]) {
-            const channel = eventChannel(service, "onEvent");
-            if (channel) broadcast(channel, codeEvent);
-          }
+          const channel = eventChannel("claude.web.LocalSessions", "onEvent");
+          if (channel) broadcast(channel, codeEvent);
         },
         (request) => {
-          for (const service of [
+          const channel = eventChannel(
             "claude.web.LocalSessions",
-            "claude.web.LocalAgentModeSessions",
-          ]) {
-            const channel = eventChannel(service, "onToolPermissionRequest");
-            if (channel) broadcast(channel, request);
-          }
+            "onToolPermissionRequest",
+          );
+          if (channel) broadcast(channel, request);
         },
         localWebTools,
       );
@@ -809,7 +964,29 @@ if (!gotLock) {
           const channel = eventChannel("claude.web.Launch", "elementSelected");
           if (channel) broadcast(channel, serverId, context);
         },
+        (serverId, tabs, activeTabId) => {
+          const channel = eventChannel(
+            "claude.web.Launch",
+            "onPreviewTabsChanged",
+          );
+          if (channel) broadcast(channel, serverId, tabs, activeTabId);
+        },
+        (serverId, url) => {
+          const channel = eventChannel(
+            "claude.web.Launch",
+            "onPreviewUrlChanged",
+          );
+          if (channel) broadcast(channel, serverId, url);
+        },
+        (serverId, sessionId, tabId) => {
+          const channel = eventChannel(
+            "claude.web.Launch",
+            "onPreviewRevealRequested",
+          );
+          if (channel) broadcast(channel, serverId, sessionId, tabId);
+        },
       );
+      codeSessions.setBrowserTools(localLaunchPreview);
       if (useLocalUi && ionRoot && localBackend) {
         localArtifactTunnel = new LocalArtifactTunnel(localBackend);
         await installLocalUiProtocol(
@@ -825,21 +1002,29 @@ if (!gotLock) {
         await session.defaultSession.clearCache().catch(() => undefined);
       }
       const localPlugins = new LocalPluginManager(app.getPath("userData"));
+      codeSessions.setPluginSource(localPlugins);
       localScheduledTasks = new LocalScheduledTasks(
         app.getPath("userData"),
         codeSessions,
         (taskEvent) => {
-          // Both scheduled-task surfaces (Cowork and Code/CCD) subscribe on
-          // their own service channel.
-          for (const service of [
-            "claude.web.CoworkScheduledTasks",
+          const channel = eventChannel(
             "claude.web.CCDScheduledTasks",
-          ]) {
-            const channel = eventChannel(service, "onOnScheduledTaskEvent");
-            if (channel) broadcast(channel, taskEvent);
-          }
+            "onScheduledTaskEvent",
+          );
+          if (channel) broadcast(channel, taskEvent);
         },
       );
+      const openRoutines = () => {
+        showMainWindow();
+        const channel = eventChannel("claude.web.Navigation", "navigate");
+        if (channel) broadcast(channel, "/epitaxy/scheduled");
+      };
+      localTray = new LocalTrayController({
+        iconPath: appIconPath(),
+        openMainWindow: showMainWindow,
+        openRoutines,
+        quit: () => app.quit(),
+      });
       const context: ServiceContext = {
         state,
         codeSessions,
@@ -854,9 +1039,19 @@ if (!gotLock) {
         broadcast,
         targetUrl: () => targetUrl,
         showMainWindow,
+        isMenuBarEnabled: () => localTray?.enabled ?? false,
+        setMenuBarEnabled: (enabled) => {
+          if (!localTray) throw new Error("The system tray is unavailable");
+          if (!enabled && mainWindow && !mainWindow.isVisible())
+            showMainWindow();
+          localTray.setEnabled(enabled);
+        },
       };
       codeSessions.setWorkflowsEnabled(
         () => state.get("appConfig").preferences.enableWorkflows === true,
+      );
+      codeSessions.setBrowserToolsEnabled(
+        () => state.get("appConfig").preferences.launchEnabled !== false,
       );
       if (localBackend) {
         const sessions = codeSessions;
@@ -947,8 +1142,9 @@ if (!gotLock) {
         localBackend.setBrowserSource(localBrowserUse);
         // Computer control asks the user once per conversation through a
         // native modal before the first action executes.
-        localBackend.setComputerSource(
-          new LocalComputerUse(app.getPath("userData"), async () => {
+        localComputerUse = new LocalComputerUse(
+          app.getPath("userData"),
+          async () => {
             // Probe harnesses cannot answer native modals.
             if (process.env.CLAUDE_LOCAL_COMPUTER_AUTOCONSENT === "1")
               return true;
@@ -967,14 +1163,19 @@ if (!gotLock) {
                 "It will be able to see your screen and send real mouse clicks and keystrokes until the conversation ends. You can stop it anytime with the Stop button.",
             });
             return response === 0;
-          }),
+          },
         );
+        localBackend.setComputerSource(localComputerUse);
         // The user's configured MCP servers (Settings > Developer) become
         // chat tools through a local stdio JSON-RPC client.
         const backendForMcp = localBackend;
         localMcpManager = new LocalMcpManager(
           () => state.get("appConfig").mcpServers as Record<string, unknown>,
           () => backendForMcp.remoteMcpServers(),
+          (uuid, forceRefresh) =>
+            localMcpOAuth?.authorizationFor(uuid, forceRefresh) ??
+            Promise.resolve(null),
+          () => localPlugins.enabledMcpServers(),
         );
         // The Connectors surface's own MCP clients ride MessagePorts bridged
         // to stdio children, one per configured server.
@@ -982,10 +1183,13 @@ if (!gotLock) {
           () => state.get("appConfig").mcpServers as Record<string, unknown>,
         );
         localBackend.setMcpSource(localMcpManager);
+        codeSessions.setMcpSource(localMcpManager);
         const mcpManagerForHooks = localMcpManager;
         localBackend.setRemoteMcpHooks({
           status: (name) => mcpManagerForHooks.statusFor(name),
           changed: () => mcpManagerForHooks.remoteServersChanged(),
+          authentication: (uuid) => localMcpOAuth?.stateFor(uuid) ?? null,
+          removed: (uuid) => localMcpOAuth?.disconnect(uuid),
         });
       }
       const dispatcher = new ServiceDispatcher(context);
@@ -994,6 +1198,20 @@ if (!gotLock) {
       installPermissionPolicy();
       Menu.setApplicationMenu(null);
       createMainWindow();
+      if (state.get("menuBarEnabled")) {
+        try {
+          localTray.setEnabled(true);
+        } catch (error) {
+          console.error("Could not restore the system tray setting", error);
+          await state.update((draft) => {
+            draft.menuBarEnabled = false;
+          });
+        }
+      }
+      if (!dispatcher.restoreGlobalShortcut())
+        console.error(
+          `Could not restore the configured global shortcut: ${state.get("globalShortcut")}`,
+        );
 
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
@@ -1006,31 +1224,59 @@ if (!gotLock) {
     });
 }
 
-app.on("before-quit", () => {
-  localArtifactTunnel?.dispose();
-  localArtifactTunnel = null;
-  localMcpManager?.disposeAll();
-  localMcpManager = null;
-  localMcpPortBridge?.disposeAll();
-  localMcpPortBridge = null;
-  localSandbox?.dispose();
-  localSandbox = null;
-  localBrowserUse?.dispose();
-  localBrowserUse = null;
-  localScheduledTasks?.dispose();
-  localScheduledTasks = null;
-  localLaunchPreview?.dispose();
-  localLaunchPreview = null;
-  localFilePreview?.dispose();
-  localFilePreview = null;
-  codeSessions?.dispose();
-  codeSessions = null;
-  localWebTools?.dispose();
-  localWebTools = null;
+let shutdownComplete = false;
+let shutdownPromise: Promise<void> | null = null;
+
+async function disposeRuntime(): Promise<void> {
+  localTray?.dispose();
+  localTray = null;
+  globalShortcut.unregisterAll();
   disposeIpc?.();
   disposeIpc = null;
+  // Stop the scheduler first while its session starter is still alive; a
+  // missed-run catch-up may already be between start() and its atomic write.
+  await localScheduledTasks?.dispose().catch(() => undefined);
+  localScheduledTasks = null;
+  const backendDisposal = localBackend?.dispose() ?? Promise.resolve();
+  const codeDisposal = codeSessions?.dispose() ?? Promise.resolve();
+  // Wake transports and consent waits that are not directly owned by the
+  // backend's AbortControllers before awaiting completion-stream teardown.
+  localMcpManager?.disposeAll();
+  localMcpOAuth?.dispose();
+  localMcpPortBridge?.disposeAll();
+  localComputerUse?.dispose();
+  await Promise.allSettled([backendDisposal, codeDisposal]);
+  localBackend = null;
+  codeSessions = null;
+  localArtifactTunnel?.dispose();
+  localArtifactTunnel = null;
+  localMcpManager = null;
+  localMcpOAuth = null;
+  localMcpPortBridge = null;
+  await localSandbox?.dispose().catch(() => undefined);
+  localSandbox = null;
+  await localBrowserUse?.dispose().catch(() => undefined);
+  localBrowserUse = null;
+  localComputerUse = null;
+  await localLaunchPreview?.dispose().catch(() => undefined);
+  localLaunchPreview = null;
+  await localFilePreview?.dispose().catch(() => undefined);
+  localFilePreview = null;
+  await localWebTools?.dispose().catch(() => undefined);
+  localWebTools = null;
+  await state?.dispose().catch(() => undefined);
+}
+
+app.on("before-quit", (event) => {
+  if (shutdownComplete) return;
+  event.preventDefault();
+  if (shutdownPromise) return;
+  shutdownPromise = disposeRuntime().finally(() => {
+    shutdownComplete = true;
+    app.quit();
+  });
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform !== "darwin" && !localTray?.enabled) app.quit();
 });

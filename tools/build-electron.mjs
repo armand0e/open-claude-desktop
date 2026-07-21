@@ -11,13 +11,17 @@ for (const [index, [name, input]] of entries.entries()) {
   await build({
     configFile: false,
     logLevel: "info",
-    // The packaged app ships no node_modules: everything must bundle. The
-    // main bundle lists its inlined deps explicitly (pdfjs-dist would
-    // otherwise stay a runtime dynamic import and break in production).
+    // Bundle JS-only implementation dependencies. Native/runtime-asset
+    // dependencies stay external so they are loaded lazily from the packaged
+    // node_modules instead of running heavyweight setup during app startup.
     ...(name === "preload-main-view"
       ? { ssr: { noExternal: true } }
       : name === "main"
-        ? { ssr: { noExternal: ["pdfjs-dist"] } }
+        ? {
+            ssr: {
+              noExternal: true,
+            },
+          }
         : {}),
     build: {
       ssr: true,
@@ -28,9 +32,16 @@ for (const [index, [name, input]] of entries.entries()) {
       sourcemap: true,
       rollupOptions: {
         input: path.resolve(input),
-        // playwright-core loads from the packaged node_modules at runtime
-        // (bundling it breaks its __dirname-relative asset lookups).
-        external: ["electron", "node-pty", "playwright-core", /^node:/],
+        // playwright-core and PDF.js load from packaged node_modules at
+        // runtime. Bundling either breaks dirname-relative assets; inlining
+        // PDF.js also executes its browser polyfills before Electron is ready.
+        external: [
+          "electron",
+          "node-pty",
+          "pdfjs-dist/legacy/build/pdf.mjs",
+          "playwright-core",
+          /^node:/,
+        ],
         output: {
           format: "cjs",
           inlineDynamicImports: true,

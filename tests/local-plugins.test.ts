@@ -169,6 +169,27 @@ const CATALOG_PLUGIN_ZIP = buildZip([
 ]);
 
 describe("LocalPluginManager", () => {
+  it("does not claim that embedded marketplace data was refreshed or synced", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "local-plugins-"));
+    temporaryDirectories.push(directory);
+    const manager = new LocalPluginManager(directory);
+
+    expect(manager.invoke("refreshMarketplace", [])).toEqual(
+      expect.objectContaining({
+        success: false,
+        source: "embedded_snapshot",
+        error: expect.stringMatching(/unavailable/i),
+      }),
+    );
+    expect(manager.invoke("syncRemotePlugins", [])).toEqual(
+      expect.objectContaining({
+        success: false,
+        source: "embedded_snapshot",
+        error: expect.stringMatching(/unavailable/i),
+      }),
+    );
+  });
+
   it("rejects archive traversal and preserves an installed plugin on a failed replacement", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "local-plugins-"));
     temporaryDirectories.push(directory);
@@ -358,7 +379,12 @@ describe("LocalPluginManager", () => {
         Record<string, unknown>
       >,
     ).toContainEqual(
-      expect.objectContaining({ name: "agent-sdk-dev", isInstalled: true }),
+      expect.objectContaining({
+        id: "agent-sdk-dev@local",
+        name: "agent-sdk-dev",
+        enabled: true,
+        skills: expect.any(Array),
+      }),
     );
 
     expect(await manager.installCatalogPlugin("not-in-the-catalog")).toEqual(

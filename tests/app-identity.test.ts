@@ -30,11 +30,34 @@ describe("standalone application identity", () => {
     }
   });
 
-  it("honors only the explicit local profile override", () => {
+  it("allows arbitrary overrides only in development", () => {
     const override = path.resolve("C:/isolated/local-profile");
     expect(localProfilePaths("C:/ignored", override).userData).toBe(override);
     expect(isLocalDeepLink("open-claude://chat/123")).toBe(true);
     expect(isLocalDeepLink("claude-local://chat/123")).toBe(false);
     expect(isLocalDeepLink("claude://chat/123")).toBe(false);
+  });
+
+  it("restricts packaged profile overrides to an isolated temporary child", () => {
+    const temporaryRoot = path.resolve("C:/Users/test/AppData/Local/Temp");
+    const isolated = path.join(temporaryRoot, "open-claude-probe-123");
+    expect(
+      localProfilePaths("C:/ignored", isolated, {
+        packaged: true,
+        temporaryRoot,
+      }).userData,
+    ).toBe(isolated);
+    expect(() =>
+      localProfilePaths("C:/ignored", "C:/Users/test/.claude", {
+        packaged: true,
+        temporaryRoot,
+      }),
+    ).toThrow(/temporary profile/);
+    expect(() =>
+      localProfilePaths("C:/ignored", temporaryRoot, {
+        packaged: true,
+        temporaryRoot,
+      }),
+    ).toThrow(/temporary profile/);
   });
 });

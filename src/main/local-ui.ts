@@ -22,9 +22,11 @@ import {
 import {
   DISABLED_PATCH_IDS,
   LOCAL_CLIENT_PATCHES,
-  patchedClientAssets,
+  applyClientPatchSet,
+  type ClientPatchReport,
 } from "./client-patches";
 import { growthbookFeatureKey } from "../shared/growthbook";
+import { RETAINED_DESKTOP_VERSION } from "../shared/desktop-version";
 import { LocalBackend } from "./local-backend";
 import { LocalCodeSessionManager } from "./local-code";
 import {
@@ -37,17 +39,19 @@ import {
   normalizeTrainingExportOptions,
   safeFileName,
 } from "./local-export";
-import {
-  bundledWhisperPaths,
-  transcribeWithBundledWhisper,
-} from "./local-whisper";
+import { LocalMoonshine } from "./local-moonshine";
 import { LocalArtifactTunnel } from "./local-tunnel";
-import { readResponseJson, readResponseText } from "./bounded-response";
+import { finalizePublishedShare } from "./publish-share";
+import { diagnosticError, LocalDiagnostics } from "./local-diagnostics";
 
 const MAX_LOCAL_UI_JSON_BYTES = 8 * 1024 * 1024;
-const MAX_DICTATION_BYTES = 25_000_000;
-const MAX_TRANSCRIPTION_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_DICTATION_CHUNK_BYTES = 512_000;
 const MAX_LOCAL_UI_ASSET_BYTES = 64 * 1024 * 1024;
+const localMoonshine = new LocalMoonshine();
+
+export async function disposeLocalDictation(): Promise<void> {
+  await localMoonshine.dispose();
+}
 
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -70,7 +74,7 @@ const MIME_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-function localArtifactRendererHtml(): string {
+export function localArtifactRendererHtml(): string {
   return `<!doctype html>
 <html>
 <head>
@@ -137,7 +141,7 @@ function localArtifactRendererHtml(): string {
     mount.replaceChildren();
     if(currentType==="text/html"||currentType==="image/svg+xml"){
       var frame=document.createElement("iframe");
-      frame.setAttribute("sandbox","allow-scripts allow-forms allow-modals allow-popups allow-downloads");
+      frame.setAttribute("sandbox","allow-scripts");
       frame.setAttribute("title","Artifact preview content");
       frame.srcdoc=currentType==="image/svg+xml"
         ? "<!doctype html><style>html,body{margin:0;width:100%;height:100%}svg{max-width:100%;height:auto}</style>"+currentContent
@@ -311,6 +315,7 @@ function jsonResponse(body: unknown, status = 200): Response {
     headers: {
       "Content-Type": "application/json",
       "X-Content-Type-Options": "nosniff",
+      "Cache-Control": "no-store",
     },
   });
 }
@@ -423,8 +428,17 @@ function currentUserAccess(): Record<string, unknown> {
       "claude_code",
       "claude_code_web",
       "claude_code_desktop",
+      "claude_code_routines",
+      "claude_code_desktop_auto_permissions",
       "skills",
+      "skill_plugins_scanning",
       "cobalt_plinth",
+      "mcp_artifacts",
+      "public_projects",
+      "saffron",
+      "wiggle",
+      "interactive_content",
+      "dxt_allowlist",
       "web_search",
     ].map((feature) => ({
       feature,
@@ -754,7 +768,7 @@ async function localApiResponse(
     )
       return jsonResponse([]);
     const localFrameMatch = normalized.match(
-      /^\/api\/frame\/([0-9a-f-]{36})$/i,
+      /^\/api\/frame\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
     );
     if (localFrameMatch) {
       if (request.method === "DELETE") {
@@ -825,92 +839,11 @@ async function localApiResponse(
       return jsonResponse({ ok: true });
     }
     if (
-      normalized === "/api/local/dictation/transcribe" &&
+      normalized === "/api/local/dictation/start" &&
       request.method === "POST"
     ) {
-      // Batch speech-to-text: the bundled whisper.cpp model transcribes fully
-      // offline; a provider /audio/transcriptions endpoint is the fallback
-      // when the bundled model is absent or fails.
       try {
-        const provider = backend.provider();
-        const audio = Buffer.from(
-          await readRequestBytes(request, MAX_DICTATION_BYTES),
-        );
-        if (audio.length === 0)
-          return jsonResponse({ error: { message: "Empty recording" } }, 400);
-        if (audio.length > 25_000_000)
-          return jsonResponse(
-            { error: { message: "Recording too long" } },
-            400,
-          );
-        const mime = request.headers.get("content-type") || "audio/webm";
-        if (
-          mime.includes("wav") &&
-          bundledWhisperPaths() &&
-          process.env.CLAUDE_LOCAL_TRANSCRIBE_PREFER !== "provider"
-        ) {
-          try {
-            return jsonResponse({
-              text: await transcribeWithBundledWhisper(audio, request.signal),
-            });
-          } catch {
-            if (request.signal.aborted)
-              throw new LocalUiRequestError("Transcription was cancelled", 499);
-            // The provider path below is the fallback.
-          }
-        }
-        const form = new FormData();
-        form.append(
-          "file",
-          new Blob([audio], { type: mime }),
-          mime.includes("ogg") ? "recording.ogg" : "recording.webm",
-        );
-        form.append(
-          "model",
-          process.env.CLAUDE_LOCAL_TRANSCRIBE_MODEL || "whisper-1",
-        );
-        const upstream = await fetch(
-          `${provider.baseUrl}/audio/transcriptions`,
-          {
-            method: "POST",
-            headers: provider.apiKey
-              ? { Authorization: `Bearer ${provider.apiKey}` }
-              : {},
-            body: form,
-            signal: AbortSignal.any([
-              request.signal,
-              AbortSignal.timeout(120_000),
-            ]),
-          },
-        );
-        if (!upstream.ok) {
-          const detail = (
-            await readResponseText(
-              upstream,
-              64 * 1024,
-              "Transcription error response",
-            ).catch(() => "")
-          ).slice(0, 300);
-          return jsonResponse(
-            {
-              error: {
-                message:
-                  upstream.status === 404
-                    ? "The provider has no /audio/transcriptions endpoint. Run a Whisper-compatible server (for example faster-whisper-server) at the same base URL, or set CLAUDE_LOCAL_TRANSCRIBE_MODEL."
-                    : `Transcription failed: HTTP ${upstream.status}${detail ? ` — ${detail}` : ""}`,
-              },
-            },
-            502,
-          );
-        }
-        const payload = (await readResponseJson(
-          upstream,
-          MAX_TRANSCRIPTION_RESPONSE_BYTES,
-          "Transcription response",
-        )) as { text?: unknown };
-        return jsonResponse({
-          text: typeof payload.text === "string" ? payload.text : "",
-        });
+        return jsonResponse(localMoonshine.start());
       } catch (error) {
         return jsonResponse(
           {
@@ -918,7 +851,67 @@ async function localApiResponse(
               message: error instanceof Error ? error.message : String(error),
             },
           },
-          error instanceof LocalUiRequestError ? error.status : 502,
+          localMoonshine.available() ? 400 : 503,
+        );
+      }
+    }
+    if (
+      normalized === "/api/local/dictation/audio" &&
+      request.method === "POST"
+    ) {
+      const sessionId = url.searchParams.get("sessionId") ?? "";
+      try {
+        const audio = Buffer.from(
+          await readRequestBytes(request, MAX_DICTATION_CHUNK_BYTES),
+        );
+        await localMoonshine.audio(sessionId, audio);
+        return jsonResponse({ ok: true });
+      } catch (error) {
+        return jsonResponse(
+          {
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          },
+          400,
+        );
+      }
+    }
+    if (
+      normalized === "/api/local/dictation/status" &&
+      request.method === "GET"
+    ) {
+      try {
+        return jsonResponse(
+          localMoonshine.status(url.searchParams.get("sessionId") ?? ""),
+        );
+      } catch (error) {
+        return jsonResponse(
+          {
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          },
+          404,
+        );
+      }
+    }
+    if (
+      normalized === "/api/local/dictation/stop" &&
+      request.method === "POST"
+    ) {
+      try {
+        return jsonResponse(
+          await localMoonshine.stop(url.searchParams.get("sessionId") ?? ""),
+        );
+      } catch (error) {
+        return jsonResponse(
+          {
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          },
+          400,
         );
       }
     }
@@ -1357,6 +1350,11 @@ export async function installLocalUiProtocol(
   backend: LocalBackend,
   codeSessions: LocalCodeSessionManager,
   tunnel?: LocalArtifactTunnel,
+  diagnostics?: LocalDiagnostics,
+  options: {
+    patchMode?: "strict" | "compatible";
+    rendererVersion?: string;
+  } = {},
 ): Promise<void> {
   const absoluteRoot = path.resolve(root);
   const canonicalRoot = await realpath(absoluteRoot);
@@ -1538,6 +1536,44 @@ export async function installLocalUiProtocol(
       childList: true,
       subtree: true,
     });
+    let nativePreviewOverlayOpen = false;
+    let nativePreviewPointerHoldUntil = 0;
+    const nativePreviewOverlaySelector =
+      '[aria-modal="true"], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [data-radix-portal], [data-radix-dialog-content], [data-radix-popper-content-wrapper]';
+    const setNativePreviewOverlay = (open) => {
+      if (open === nativePreviewOverlayOpen) return;
+      nativePreviewOverlayOpen = open;
+      window["claude.web"]?.Launch?.setNativePreviewOverlayOpen?.(open);
+    };
+    const syncNativePreviewOverlay = () => {
+      const open = Boolean(
+        Date.now() < nativePreviewPointerHoldUntil ||
+          document.querySelector(nativePreviewOverlaySelector),
+      );
+      setNativePreviewOverlay(open);
+    };
+    // Native WebContentsViews sit above renderer popovers. Suspend them on
+    // pointer-down, before a toolbar button's click handler creates its menu
+    // or editor, so focus cannot bounce back to the preview and immediately
+    // dismiss the new surface. If no surface opens, restore after the short
+    // pointer transaction.
+    document.addEventListener(
+      "pointerdown",
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (!target.closest('button, [role="button"]')) return;
+        nativePreviewPointerHoldUntil = Date.now() + 500;
+        setNativePreviewOverlay(true);
+        setTimeout(syncNativePreviewOverlay, 550);
+      },
+      true,
+    );
+    new MutationObserver(syncNativePreviewOverlay).observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+    syncNativePreviewOverlay();
     window.addEventListener("popstate", tick);
     tick();
   };
@@ -1554,12 +1590,37 @@ export async function installLocalUiProtocol(
       `<head>${visibilityGuard}${artifactBridge}${tunnelClipboard}`,
     );
   const csp = contentSecurityPolicy(inlineScriptHashes(indexHtml));
-  const patchedAssets = await patchedClientAssets(
-    absoluteRoot,
-    indexHtml,
-    LOCAL_CLIENT_PATCHES.filter((patch) => !DISABLED_PATCH_IDS.has(patch.id)),
-  );
-  protocol.handle("app", async (request) => {
+  let patchReport: ClientPatchReport | undefined;
+  let patchedAssets: Map<string, { source: string; ids: string[] }>;
+  try {
+    const applied = await applyClientPatchSet(
+      absoluteRoot,
+      indexHtml,
+      LOCAL_CLIENT_PATCHES.filter((patch) => !DISABLED_PATCH_IDS.has(patch.id)),
+      {
+        mode: options.patchMode ?? "strict",
+        rendererVersion: options.rendererVersion ?? RETAINED_DESKTOP_VERSION,
+        onReport: (report) => {
+          patchReport = report;
+        },
+      },
+    );
+    patchedAssets = applied.assets;
+  } finally {
+    if (patchReport)
+      diagnostics?.record(
+        "renderer",
+        "patch.compatibility",
+        {
+          mode: patchReport.mode,
+          total: patchReport.total,
+          applied: patchReport.applied,
+          unresolved: patchReport.unresolved,
+        },
+        patchReport.unresolved > 0 ? "warn" : "info",
+      );
+  }
+  const handler = async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
     if (url.hostname === "artifacts.local") {
       if (request.method !== "GET" && request.method !== "HEAD")
@@ -1581,8 +1642,11 @@ export async function installLocalUiProtocol(
               "connect-src 'none'",
               "object-src 'none'",
               "base-uri 'none'",
+              "form-action 'none'",
+              "frame-ancestors app://localhost",
             ].join("; "),
             "X-Content-Type-Options": "nosniff",
+            "Referrer-Policy": "no-referrer",
             "Cache-Control": "no-store",
           },
         },
@@ -1615,14 +1679,32 @@ export async function installLocalUiProtocol(
       // nothing remains published — explicit unpublish OR deleting a chat
       // that owned the published artifact (even when the request 404s
       // because the content is already gone).
+      if (
+        apiResponse.status < 400 &&
+        request.method === "POST" &&
+        /\/publish_artifact$/.test(url.pathname)
+      ) {
+        return finalizePublishedShare(apiResponse, {
+          ensureReachable: () =>
+            tunnel?.ensureStarted() ?? Promise.resolve(null),
+          revoke: async (slug) => {
+            const revokeUrl = new URL(
+              `/api/organizations/local/published_artifacts/${encodeURIComponent(slug)}`,
+              url,
+            );
+            const revoked = await localApiResponse(
+              new Request(revokeUrl, { method: "DELETE" }),
+              revokeUrl,
+              backend,
+              codeSessions,
+            );
+            tunnel?.stopIfIdle();
+            return Boolean(revoked && revoked.status < 400);
+          },
+        });
+      }
       if (tunnel) {
         if (
-          apiResponse.status < 400 &&
-          request.method === "POST" &&
-          /\/publish_artifact$/.test(url.pathname)
-        )
-          void tunnel.ensureStarted();
-        else if (
           request.method === "DELETE" &&
           /\/(published_artifacts|chat_conversations)\//.test(url.pathname)
         )
@@ -1689,5 +1771,48 @@ export async function installLocalUiProtocol(
         headers,
       },
     );
+  };
+  protocol.handle("app", async (request) => {
+    const startedAt = Date.now();
+    const url = new URL(request.url);
+    diagnostics?.record("local-ui", "request.begin", {
+      method: request.method,
+      hostname: url.hostname,
+      path: url.pathname,
+    });
+    try {
+      const response = await handler(request);
+      diagnostics?.record(
+        "local-ui",
+        response.status >= 400 ? "request.error" : "request.end",
+        {
+          method: request.method,
+          hostname: url.hostname,
+          path: url.pathname,
+          status: response.status,
+          durationMs: Date.now() - startedAt,
+        },
+        response.status >= 500
+          ? "error"
+          : response.status >= 400
+            ? "warn"
+            : "debug",
+      );
+      return response;
+    } catch (error) {
+      diagnostics?.record(
+        "local-ui",
+        "request.exception",
+        {
+          method: request.method,
+          hostname: url.hostname,
+          path: url.pathname,
+          durationMs: Date.now() - startedAt,
+          error: diagnosticError(error),
+        },
+        "error",
+      );
+      throw error;
+    }
   });
 }

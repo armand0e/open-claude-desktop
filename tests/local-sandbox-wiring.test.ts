@@ -133,6 +133,62 @@ async function runCompletion(backend: LocalBackend): Promise<string> {
 }
 
 describe("LocalBackend code-execution wiring", () => {
+  it("reports whether an image build was accepted instead of claiming nonexistent work", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "local-sbx-build-"));
+    temporaryDirectories.push(directory);
+    const backend = await LocalBackend.create(directory);
+    const url = new URL("app://localhost/api/local/sandbox/build");
+
+    const unavailable = await backend.handle(
+      new Request(url, { method: "POST" }),
+      url,
+    );
+    expect(unavailable?.status).toBe(503);
+    await expect(unavailable?.json()).resolves.toEqual(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          message: expect.stringMatching(/unavailable/i),
+        }),
+      }),
+    );
+
+    let image = "absent";
+    let buildCalls = 0;
+    const { sandbox } = fakeSandbox(directory);
+    sandbox.status = async () => ({ docker: "ok", image });
+    sandbox.startImageBuild = () => {
+      buildCalls += 1;
+      image = "building";
+    };
+    backend.setSandboxSource(sandbox);
+    const accepted = await backend.handle(
+      new Request(url, { method: "POST" }),
+      url,
+    );
+    expect(accepted?.status).toBe(202);
+    await expect(accepted?.json()).resolves.toEqual({
+      ok: false,
+      accepted: true,
+      state: "building",
+      detail: null,
+    });
+    expect(buildCalls).toBe(1);
+
+    image = "ready";
+    const ready = await backend.handle(
+      new Request(url, { method: "POST" }),
+      url,
+    );
+    expect(ready?.status).toBe(200);
+    await expect(ready?.json()).resolves.toEqual({
+      ok: true,
+      accepted: false,
+      state: "ready",
+      detail: null,
+    });
+    expect(buildCalls).toBe(1);
+  });
+
   it("reports sandbox status and exposes the enable flag", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "local-sbx-"));
     temporaryDirectories.push(directory);
@@ -169,13 +225,29 @@ describe("LocalBackend code-execution wiring", () => {
             allowNetwork: false,
           },
         ]);
-        expect(body).toContain("Ran code · echo hi");
+        expect(body).toContain("File/data workspace · echo hi");
         expect(body).toContain("hi from sandbox");
         expect(body).toContain(
           "/api/local/sandbox/files/00000000-0000-4000-8000-000000000201/outputs/result.csv",
         );
         // The provider's follow-up request carries the tool result.
         expect(JSON.stringify(requests.at(-1))).toContain("hi from sandbox");
+        const initialRequest = JSON.stringify(requests[0]);
+        expect(initialRequest).toContain(
+          "A private file-processing and data-analysis workspace is enabled",
+        );
+        expect(initialRequest).toContain(
+          "This is not Code mode and not a general software-development environment",
+        );
+        expect(initialRequest).toContain(
+          "Only files under /workspace persist between calls",
+        );
+        expect(initialRequest).toContain(
+          "must not be used for project development, dev servers, deployment, general browsing, or ordinary text-only answers",
+        );
+        expect(initialRequest).not.toContain(
+          "persistent sandboxed Linux container",
+        );
       },
     );
   });
@@ -190,7 +262,7 @@ describe("LocalBackend code-execution wiring", () => {
 
         const body = await runCompletion(backend);
         expect(calls).toEqual([]);
-        expect(body).not.toContain("Ran code");
+        expect(body).not.toContain("File/data workspace");
         expect(JSON.stringify(requests.at(-1))).toContain(
           "Code execution is disabled",
         );
@@ -225,6 +297,9 @@ describe("LocalBackend code-execution wiring", () => {
     expect(served?.status).toBe(200);
     expect(await served?.text()).toBe("a,b\n1,2\n");
     expect(served?.headers.get("Content-Disposition")).toContain("result.csv");
+    expect(served?.headers.get("Content-Length")).toBe("8");
+    expect(served?.headers.get("Cache-Control")).toBe("no-store");
+    expect(served?.headers.get("X-Content-Type-Options")).toBe("nosniff");
 
     const bad = new URL(
       `app://localhost/api/local/sandbox/files/${conversation}/..%2F..%2Fsecret.txt`,

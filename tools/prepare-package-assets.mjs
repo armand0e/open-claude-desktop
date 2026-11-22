@@ -1,11 +1,39 @@
-import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
 const workspace = path.resolve(process.cwd());
 const staging = path.join(workspace, ".package-assets");
-const compatibilityVersion = process.env.CLAUDE_DESKTOP_VERSION || "1.22209.0";
+// The renderer, preload contract, and exact-match patch table are one release
+// unit. tools/renderer-compatibility.mjs verifies their retained tree hashes.
+const packageMetadata = JSON.parse(
+  await readFile(path.join(workspace, "package.json"), "utf8"),
+);
+const compatibilityVersion =
+  process.env.CLAUDE_DESKTOP_VERSION ||
+  packageMetadata.openClaude?.rendererCompatibilityVersion;
+if (!compatibilityVersion)
+  throw new Error(
+    "package.json does not declare a renderer compatibility version",
+  );
+if (
+  packageMetadata.openClaude?.contractReferenceVersion !== compatibilityVersion
+)
+  throw new Error(
+    "Renderer and contract reference versions must match before packaging",
+  );
+const compatibilityManifest = JSON.parse(
+  await readFile(
+    path.join(workspace, "analysis", "renderer-compatibility.json"),
+    "utf8",
+  ),
+);
+if (
+  compatibilityManifest.rendererCompatibilityVersion !== compatibilityVersion ||
+  compatibilityManifest.contractReferenceVersion !== compatibilityVersion
+)
+  throw new Error("The renderer compatibility manifest is stale");
 
 function insideWorkspace(candidate) {
   const relative = path.relative(workspace, candidate);
@@ -26,16 +54,14 @@ async function installedUiCandidates() {
     username,
     "AnthropicClaude",
   );
-  const versions = await readdir(installRoot, { withFileTypes: true }).catch(
-    () => [],
-  );
-  return versions
-    .filter((entry) => entry.isDirectory() && /^app-\d/u.test(entry.name))
-    .map((entry) => entry.name)
-    .sort((left, right) =>
-      right.localeCompare(left, undefined, { numeric: true }),
-    )
-    .map((name) => path.join(installRoot, name, "resources", "ion-dist"));
+  return [
+    path.join(
+      installRoot,
+      `app-${compatibilityVersion}`,
+      "resources",
+      "ion-dist",
+    ),
+  ];
 }
 
 const appData =
@@ -83,6 +109,25 @@ if (!insideWorkspace(staging))
 await rm(staging, { recursive: true, force: true });
 await mkdir(staging, { recursive: true });
 await cp(source, path.join(staging, "ion-dist"), { recursive: true });
+await cp(
+  path.join(workspace, "analysis", "renderer-compatibility.json"),
+  path.join(staging, "renderer-compatibility.json"),
+);
+await writeFile(
+  path.join(staging, "release-metadata.json"),
+  `${JSON.stringify(
+    {
+      rendererCompatibilityVersion: compatibilityVersion,
+      contractReferenceVersion:
+        packageMetadata.openClaude?.contractReferenceVersion ?? null,
+      rendererTreeSha256: compatibilityManifest.renderer.treeSha256,
+      contractTreeSha256: compatibilityManifest.contract.treeSha256,
+      patchSourceSha256: compatibilityManifest.patchSourceSha256,
+    },
+    null,
+    2,
+  )}\n`,
+);
 
 const icon = path.join(source, "images", "claude_app_icon.png");
 if (!(await stat(icon).catch(() => null)))

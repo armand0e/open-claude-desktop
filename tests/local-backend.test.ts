@@ -85,6 +85,7 @@ describe("LocalBackend", () => {
     );
     const backend = await LocalBackend.create(directory);
     expect(backend.provider().baseUrl).toBe("http://127.0.0.1:11434/v1");
+    expect(backend.provider().preset).toBe("local");
     expect(backend.exportConversations()).toEqual([
       expect.objectContaining({
         uuid: "good-conversation",
@@ -122,6 +123,7 @@ describe("LocalBackend", () => {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          preset: "openrouter",
           baseUrl: "http://127.0.0.1:9999/v1",
           model: "first-model",
           contextWindow: 65_536,
@@ -144,6 +146,7 @@ describe("LocalBackend", () => {
     expect(patch?.status).toBe(200);
     expect(backend.provider()).toEqual(
       expect.objectContaining({
+        preset: "openrouter",
         baseUrl: "http://127.0.0.1:9999/v1",
         model: "second-model",
         contextWindow: 65_536,
@@ -179,6 +182,40 @@ describe("LocalBackend", () => {
       expect(invalidUrl?.status).toBe(400);
       expect(backend.provider().baseUrl).toBe("http://127.0.0.1:9999/v1");
     }
+
+    const publicConfig = await backend.handle(
+      new Request(configUrl),
+      configUrl,
+    );
+    expect(await publicConfig?.json()).toEqual(
+      expect.objectContaining({
+        hasApiKey: true,
+        presets: expect.arrayContaining([
+          expect.objectContaining({
+            id: "openrouter",
+            baseUrl: "https://openrouter.ai/api/v1",
+          }),
+          expect.objectContaining({
+            id: "openai-codex",
+            baseUrl: "https://api.openai.com/v1",
+          }),
+          expect.objectContaining({
+            id: "claude-code",
+            baseUrl: "https://api.anthropic.com/v1",
+          }),
+        ]),
+      }),
+    );
+
+    const unknownPreset = await backend.handle(
+      new Request(configUrl, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ preset: "unknown-provider" }),
+      }),
+      configUrl,
+    );
+    expect(unknownPreset?.status).toBe(400);
   });
 
   it("keeps uploaded project knowledge visible and deletable through the docs contract", async () => {
@@ -1415,8 +1452,33 @@ describe("LocalBackend", () => {
       );
       const events = await completion?.text();
 
+      const persistedFollowup = await backend.handle(
+        new Request(completionUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: "Summarize what you verified",
+            turn_message_uuids: {
+              human_message_uuid: "00000000-0000-4000-8000-000000000194",
+              assistant_message_uuid: "00000000-0000-4000-8000-000000000195",
+            },
+          }),
+        }),
+        completionUrl,
+      );
+      await persistedFollowup?.text();
+
       expect(providerTimeoutSpy).not.toHaveBeenCalled();
-      expect(providerRequests).toHaveLength(2);
+      expect(providerRequests).toHaveLength(3);
+      const followupContext = JSON.stringify(providerRequests[2].messages);
+      expect(followupContext).not.toContain(
+        "[Assistant tool call: web_search]",
+      );
+      expect(followupContext).not.toContain("[Tool result: web_search]");
+      expect(followupContext).toContain(
+        "The live source confirms the runtime proof.",
+      );
+      expect(followupContext).not.toContain("<artifact id=undefined");
       expect(webCalls).toEqual([
         { name: "web_search", input: { query: "runtime proof" } },
       ]);
@@ -1424,6 +1486,10 @@ describe("LocalBackend", () => {
       expect(events).toContain('"name":"web_search"');
       expect(events).toContain('\\"query\\":\\"runtime proof\\"');
       expect(events).toContain('"type":"tool_result"');
+      expect(events).toContain('"type":"thinking"');
+      expect(events).toContain(
+        '"type":"thinking_delta","thinking":"Continuing with tools."',
+      );
       expect(events).toContain('"title":"Runtime proof source"');
       expect(events).toContain('"url":"https://example.com/runtime-proof"');
       expect(events).toContain("The live source confirms the runtime proof.");
@@ -1459,6 +1525,10 @@ describe("LocalBackend", () => {
                 url: "https://example.com/runtime-proof",
               }),
             ],
+          }),
+          expect.objectContaining({
+            type: "thinking",
+            thinking: "Continuing with tools.",
           }),
         ]),
       );

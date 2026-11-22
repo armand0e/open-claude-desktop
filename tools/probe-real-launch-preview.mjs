@@ -187,7 +187,7 @@ try {
         "launch-probe"
       );
       const activeServers = await launch.activeServersStore.getState();
-      return { serverId, shown, activeServers, available: launch.isAvailable(), artifactId: artifacts[0].id };
+      return { serverId, shown, activeServers, available: await launch.isAvailable(), artifactId: artifacts[0].id };
     })()`,
   );
   const appTarget = evaluated.target;

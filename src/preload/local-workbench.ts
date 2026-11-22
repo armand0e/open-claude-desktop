@@ -2,6 +2,8 @@ import { ipcRenderer } from "electron";
 
 interface PublicProviderConfig {
   provider: {
+    preset: string;
+    transport: "openai-chat" | "anthropic-messages";
     baseUrl: string;
     model: string;
     contextWindow: number;
@@ -9,6 +11,16 @@ interface PublicProviderConfig {
     thinkingEndTag: string;
   };
   hasApiKey: boolean;
+  presets: Array<{
+    id: string;
+    label: string;
+    baseUrl?: string;
+    model?: string;
+    contextWindow?: number;
+    apiKeyHint?: string;
+    note?: string;
+    transport?: "openai-chat" | "anthropic-messages";
+  }>;
 }
 
 interface ModelList {
@@ -57,6 +69,7 @@ async function getConfig(): Promise<PublicProviderConfig> {
 }
 
 async function setConfig(input: {
+  preset: string;
   baseUrl: string;
   model: string;
   contextWindow: number;
@@ -76,6 +89,7 @@ async function setConfig(input: {
 async function listModels(input?: {
   baseUrl?: string;
   apiKey?: string;
+  preset?: string;
 }): Promise<string[]> {
   return (await modelCatalog(input)).models;
 }
@@ -83,6 +97,7 @@ async function listModels(input?: {
 async function modelCatalog(input?: {
   baseUrl?: string;
   apiKey?: string;
+  preset?: string;
 }): Promise<ModelList> {
   return responseJson<ModelList>(
     await fetch("/api/local/models", {
@@ -541,10 +556,15 @@ export interface LocalWorkbenchServices {
       overwrite: boolean,
     ) => Promise<unknown>;
     setLocalSkillEnabled: (name: string, enabled: boolean) => Promise<unknown>;
+    deleteLocalSkill: (name: string) => Promise<unknown>;
+    getLocalSkillFiles: (name: string) => Promise<unknown>;
+    revealLocalSkill: (name: string) => Promise<unknown>;
   };
   localPlugins?: {
     getPlugins: () => Promise<unknown>;
     installCatalogPlugin: (catalogId: string) => Promise<unknown>;
+    setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<unknown>;
+    deletePlugin: (pluginId: string) => Promise<unknown>;
   };
   connectorOAuth?: {
     listPresets: () => Promise<unknown>;
@@ -759,6 +779,8 @@ export function installLocalWorkbench(
       <section id="panel" aria-label="Model settings">
         <h1>Model</h1>
         <div class="section">
+          <label class="row"><span class="copy"><span class="label">Provider preset</span><span class="hint">Presets use your own API key and keep the provider request local to this app.</span></span><select id="provider-preset"></select></label>
+          <p id="provider-note" class="hint"></p>
           <label class="row"><span class="copy"><span class="label">OpenAI-compatible URL</span><span class="hint">LM Studio usually uses http://127.0.0.1:1234/v1</span></span><input id="base-url" type="url" spellcheck="false"></label>
           <label class="row"><span class="copy"><span class="label">Model</span><span class="hint">The model ID exposed by your local server</span></span><input id="model" type="text" spellcheck="false"></label>
           <label class="row"><span class="copy"><span class="label">Context window</span><span class="hint">Used by Code for its live context meter</span></span><input id="context-window" type="number" min="1024" step="1024" inputmode="numeric"></label>
@@ -770,10 +792,10 @@ export function installLocalWorkbench(
         </div>
         <h1 class="subhead">Capabilities</h1>
         <div class="section">
-          <div class="row"><span class="copy"><span class="label">Code execution</span><span class="hint">Requires Docker. Lets chat run commands in an isolated Linux container with Python and Node; generated files become downloadable.</span></span>
-            <span class="checks"><input id="sandbox-enabled" type="checkbox" aria-label="Code execution"></span></div>
-          <div class="row"><span class="copy"><span class="label">Sandbox internet access</span><span class="hint">Off keeps sandbox containers fully offline. Applies to containers started after the change.</span></span>
-            <span class="checks"><input id="sandbox-egress" type="checkbox" aria-label="Sandbox internet access"></span></div>
+          <div class="row"><span class="copy"><span class="label">File creation &amp; data analysis</span><span class="hint">Requires Docker. Gives Chat a private workspace for uploaded-file processing, calculations, conversion, and downloadable outputs. It cannot access your projects or computer.</span></span>
+            <span class="checks"><input id="sandbox-enabled" type="checkbox" aria-label="File creation and data analysis"></span></div>
+          <div class="row"><span class="copy"><span class="label">Workspace internet access</span><span class="hint">Off keeps file and data processing fully offline. On allows unrestricted outbound internet, so do not enable it for sensitive uploads. Applies to containers started after the change.</span></span>
+            <span class="checks"><input id="sandbox-egress" type="checkbox" aria-label="Workspace internet access"></span></div>
           <p id="sandbox-status" role="status"></p>
           <div class="row"><span class="copy"><span class="label">Browser use</span><span class="hint">Lets chat drive a visible Chrome window: open pages, read them, click, type, and take screenshots.</span></span>
             <span class="checks"><input id="browser-use-enabled" type="checkbox" aria-label="Browser use"></span></div>
@@ -828,6 +850,8 @@ export function installLocalWorkbench(
       return value;
     };
     const status = element<HTMLElement>("#status");
+    const providerPreset = element<HTMLSelectElement>("#provider-preset");
+    const providerNote = element<HTMLElement>("#provider-note");
     const baseUrl = element<HTMLInputElement>("#base-url");
     const model = element<HTMLInputElement>("#model");
     const contextWindow = element<HTMLInputElement>("#context-window");
@@ -835,6 +859,7 @@ export function installLocalWorkbench(
     const thinkingEndTag = element<HTMLInputElement>("#thinking-end-tag");
     const apiKey = element<HTMLInputElement>("#api-key");
     const models = element<HTMLElement>("#models");
+    let presets: PublicProviderConfig["presets"] = [];
     const showError = (error: unknown) => {
       status.textContent =
         error instanceof Error ? error.message : String(error);
@@ -1470,6 +1495,23 @@ export function installLocalWorkbench(
       try {
         const config = await getConfig();
         if (load !== configLoad) return;
+        presets = config.presets;
+        providerPreset.replaceChildren(
+          ...presets.map((preset) => {
+            const option = document.createElement("option");
+            option.value = preset.id;
+            option.textContent = preset.label;
+            return option;
+          }),
+        );
+        providerPreset.value = presets.some(
+          (preset) => preset.id === config.provider.preset,
+        )
+          ? config.provider.preset
+          : "custom";
+        providerNote.textContent =
+          presets.find((preset) => preset.id === providerPreset.value)?.note ??
+          "Choose Custom endpoint to configure another OpenAI-compatible provider.";
         baseUrl.value = config.provider.baseUrl;
         model.value = config.provider.model;
         modelLabelAliases.add(configuredModelLabel);
@@ -1480,7 +1522,8 @@ export function installLocalWorkbench(
         apiKey.value = "";
         apiKey.placeholder = config.hasApiKey
           ? "Key stored — leave blank to keep it"
-          : "Optional";
+          : (presets.find((preset) => preset.id === providerPreset.value)
+              ?.apiKeyHint ?? "Optional");
         status.textContent = "";
         wireConfiguredModelLabels();
       } catch (error) {
@@ -2290,6 +2333,7 @@ export function installLocalWorkbench(
       try {
         const catalog = await modelCatalog({
           baseUrl: baseUrl.value.trim(),
+          preset: providerPreset.value,
           ...(apiKey.value ? { apiKey: apiKey.value } : {}),
         });
         const available = catalog.models;
@@ -2312,10 +2356,40 @@ export function installLocalWorkbench(
         showError(error);
       }
     });
+    providerPreset.addEventListener("change", () => {
+      const preset = presets.find((entry) => entry.id === providerPreset.value);
+      providerNote.textContent =
+        preset?.note ??
+        "Choose Custom endpoint to configure another OpenAI-compatible provider.";
+      if (!preset?.baseUrl || !preset.model || !preset.contextWindow) return;
+      baseUrl.value = preset.baseUrl;
+      model.value = preset.model;
+      contextWindow.value = String(preset.contextWindow);
+      apiKey.placeholder = preset.apiKeyHint ?? "Optional";
+      status.textContent = `Applied ${preset.label}. Add your key, optionally discover models, then save.`;
+    });
+    for (const control of [baseUrl, model, contextWindow]) {
+      control.addEventListener("input", () => {
+        const preset = presets.find(
+          (entry) => entry.id === providerPreset.value,
+        );
+        if (
+          preset?.baseUrl &&
+          (baseUrl.value.trim() !== preset.baseUrl ||
+            model.value.trim() !== preset.model ||
+            Number(contextWindow.value) !== preset.contextWindow)
+        ) {
+          providerPreset.value = "custom";
+          providerNote.textContent =
+            "Custom endpoint settings are preserved when you save.";
+        }
+      });
+    }
     element("#save").addEventListener("click", async () => {
       status.textContent = "Saving…";
       try {
         await setConfig({
+          preset: providerPreset.value,
           baseUrl: baseUrl.value.trim(),
           model: model.value.trim(),
           contextWindow: Number(contextWindow.value),
@@ -2407,27 +2481,23 @@ export function installLocalWorkbench(
     );
 
     document.documentElement.append(host);
-    // Local streaming dictation: a mic button beside the composer records
-    // with MediaRecorder and re-transcribes the growing buffer every couple
-    // of seconds, appending newly stabilized words to the composer so the
-    // text streams in while the mic stays on — the user can leave dictation
-    // running and hit send whenever. whisper.cpp is batch-only, so partial
-    // passes hold back the last words (they change while audio grows) and
-    // the final pass on stop commits everything.
-    let dictationRecorder: MediaRecorder | null = null;
-    let dictationChunks: Blob[] = [];
-    // The exact text this dictation has written into the composer, and the
-    // editor node it wrote into. Every pass REPLACES this run rather than
-    // appending: whisper re-transcribes the whole growing buffer each pass
-    // and freely revises earlier words, so an append-by-count strategy
-    // duplicates and loops. Replacing our own run in place is idempotent and
-    // self-correcting, and tracking the specific editor node stops a prior
-    // session's text from leaking into a freshly mounted composer.
+    // Moonshine is a persistent streaming recognizer. The renderer forwards
+    // resampled PCM16 as it is captured and polls the same native session for
+    // revisions, avoiding the old whole-recording Whisper retranscription
+    // loop and its multi-second latency spikes.
+    let dictationSessionId: string | null = null;
+    let dictationStream: MediaStream | null = null;
+    let dictationContext: AudioContext | null = null;
+    let dictationSource: MediaStreamAudioSourceNode | null = null;
+    let dictationProcessor: ScriptProcessorNode | null = null;
+    let dictationSilentGain: GainNode | null = null;
+    let dictationTimer: ReturnType<typeof setInterval> | null = null;
+    let dictationWrites = Promise.resolve();
+    let dictationWriteError: Error | null = null;
+    let dictationPollBusy = false;
+    let dictationResamplePosition = 0;
     let dictationRendered = "";
     let dictationEditor: HTMLElement | null = null;
-    let dictationTimer: ReturnType<typeof setInterval> | null = null;
-    let dictationBusy = false;
-    let dictationGeneration = 0;
     const findDictationEditor = (): HTMLElement | null =>
       [
         ...document.querySelectorAll<HTMLElement>('[contenteditable="true"]'),
@@ -2438,9 +2508,8 @@ export function installLocalWorkbench(
           (label === "Write your prompt to Claude" || label === "Prompt")
         );
       }) ?? null;
-    // Render the full dictated text, replacing whatever this dictation wrote
-    // last. Selects our previous run (verifying it still matches, so a user
-    // edit mid-dictation is left alone) and overwrites it.
+    // Select and replace only the text written by this dictation run. If the
+    // user edits it in place, leave their text alone and continue at cursor.
     const renderDictation = (text: string) => {
       const editor = findDictationEditor();
       if (!editor) return;
@@ -2464,171 +2533,211 @@ export function installLocalWorkbench(
       document.execCommand("insertText", false, text);
       dictationRendered = text;
     };
-    // whisper.cpp consumes 16 kHz mono PCM16 WAV; decode and resample the
-    // recording with the Web Audio API so the backend needs no ffmpeg.
-    const dictationWav = async (blob: Blob): Promise<Blob> => {
-      const decodeContext = new AudioContext();
-      let decoded: AudioBuffer;
-      try {
-        decoded = await decodeContext.decodeAudioData(await blob.arrayBuffer());
-      } finally {
-        void decodeContext.close();
-      }
-      const offline = new OfflineAudioContext(
-        1,
-        Math.max(1, Math.ceil(decoded.duration * 16_000)),
-        16_000,
-      );
-      const source = offline.createBufferSource();
-      source.buffer = decoded;
-      source.connect(offline.destination);
-      source.start();
-      const rendered = await offline.startRendering();
-      const samples = rendered.getChannelData(0);
-      const wav = new ArrayBuffer(44 + samples.length * 2);
-      const view = new DataView(wav);
-      const writeAscii = (offset: number, text: string) => {
-        for (let index = 0; index < text.length; index += 1)
-          view.setUint8(offset + index, text.charCodeAt(index));
-      };
-      writeAscii(0, "RIFF");
-      view.setUint32(4, 36 + samples.length * 2, true);
-      writeAscii(8, "WAVE");
-      writeAscii(12, "fmt ");
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true);
-      view.setUint32(24, 16_000, true);
-      view.setUint32(28, 32_000, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true);
-      writeAscii(36, "data");
-      view.setUint32(40, samples.length * 2, true);
-      for (let index = 0; index < samples.length; index += 1) {
-        const sample = Math.max(-1, Math.min(1, samples[index]));
-        view.setInt16(
-          44 + index * 2,
-          sample < 0 ? sample * 0x8000 : sample * 0x7fff,
-          true,
-        );
-      }
-      return new Blob([wav], { type: "audio/wav" });
-    };
-    const transcribeChunks = async (
-      chunks: Blob[],
-      mimeType: string,
-    ): Promise<string> => {
-      const recorded = new Blob(chunks, { type: mimeType || "audio/webm" });
-      if (recorded.size === 0) return "";
-      const blob = await dictationWav(recorded);
-      const response = await fetch("/api/local/dictation/transcribe", {
-        method: "POST",
-        headers: { "Content-Type": blob.type },
-        body: blob,
-      });
+    const dictationJson = async <T>(
+      input: string,
+      init?: RequestInit,
+    ): Promise<T> => {
+      const response = await fetch(input, init);
       const payload = (await response.json()) as {
-        text?: string;
         error?: { message?: string };
-      };
-      if (payload.error?.message) throw new Error(payload.error.message);
-      return (payload.text ?? "").trim();
+      } & T;
+      if (!response.ok || payload.error?.message)
+        throw new Error(
+          payload.error?.message || `Dictation failed: HTTP ${response.status}`,
+        );
+      return payload;
     };
-    // Preload fetches are invisible to the page realm; announce passes as
-    // DOM events so probes (and future UI) can observe streaming progress.
-    const announceDictationPass = (phase: "partial" | "final") => {
+    const announceDictationPass = (
+      phase: "partial" | "final",
+      text: string,
+    ) => {
       document.dispatchEvent(
-        new CustomEvent("local-dictation-pass", { detail: { phase } }),
+        new CustomEvent("local-dictation-pass", {
+          detail: { phase, text, engine: "moonshine-voice" },
+        }),
       );
     };
-    // Render the transcript, replacing our previous run. Partial passes drop
-    // the trailing two words because whisper keeps revising the end of a
-    // still-growing recording; the final pass renders everything.
-    const dictationAppend = (transcript: string, finalPass: boolean) => {
-      const words = transcript.split(/\s+/).filter(Boolean);
-      const usable = finalPass ? words : words.slice(0, -2);
-      if (usable.length === 0) return;
-      renderDictation(usable.join(" "));
+    const queueDictationAudio = (pcm: ArrayBuffer) => {
+      const sessionId = dictationSessionId;
+      if (!sessionId || pcm.byteLength === 0) return;
+      dictationWrites = dictationWrites
+        .then(async () => {
+          await dictationJson(
+            `/api/local/dictation/audio?sessionId=${encodeURIComponent(sessionId)}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/octet-stream" },
+              body: pcm,
+            },
+          );
+        })
+        .catch((error: unknown) => {
+          dictationWriteError =
+            error instanceof Error ? error : new Error(String(error));
+        });
     };
     const dictationTick = async () => {
-      const recorder = dictationRecorder;
-      if (!recorder || dictationBusy) return;
-      const generation = dictationGeneration;
-      dictationBusy = true;
+      const sessionId = dictationSessionId;
+      if (!sessionId || dictationPollBusy) return;
+      dictationPollBusy = true;
       try {
-        recorder.requestData();
-        // Let the flushed dataavailable event land before snapshotting.
-        await new Promise((resolve) => setTimeout(resolve, 60));
-        const text = await transcribeChunks(
-          dictationChunks.slice(),
-          recorder.mimeType,
+        const status = await dictationJson<{
+          text: string;
+          final: boolean;
+          error?: string;
+          bytes: number;
+        }>(
+          `/api/local/dictation/status?sessionId=${encodeURIComponent(sessionId)}`,
         );
-        // A stop while this pass was in flight owns the final append.
-        if (generation === dictationGeneration && dictationRecorder) {
-          dictationAppend(text, false);
-          announceDictationPass("partial");
+        document.dispatchEvent(
+          new CustomEvent("local-dictation-status", { detail: status }),
+        );
+        if (status.error) throw new Error(status.error);
+        const text = status.text.trim();
+        if (dictationSessionId === sessionId && text !== dictationRendered) {
+          renderDictation(text);
+          announceDictationPass("partial", text);
         }
-      } catch {
-        // Partial passes are best effort; the final pass reports errors.
+      } catch (error) {
+        document.dispatchEvent(
+          new CustomEvent("local-dictation-status", {
+            detail: {
+              error: error instanceof Error ? error.message : String(error),
+            },
+          }),
+        );
+        // The stop path reports the durable error on the button.
       } finally {
-        dictationBusy = false;
+        dictationPollBusy = false;
       }
     };
+    const releaseDictationAudio = async () => {
+      dictationProcessor?.disconnect();
+      dictationSource?.disconnect();
+      dictationSilentGain?.disconnect();
+      dictationStream?.getTracks().forEach((track) => track.stop());
+      const context = dictationContext;
+      dictationProcessor = null;
+      dictationSource = null;
+      dictationSilentGain = null;
+      dictationStream = null;
+      dictationContext = null;
+      if (context) await context.close().catch(() => undefined);
+    };
     const stopDictation = async (button: HTMLButtonElement) => {
-      const recorder = dictationRecorder;
-      dictationRecorder = null;
-      if (!recorder) return;
-      dictationGeneration += 1;
+      const sessionId = dictationSessionId;
+      dictationSessionId = null;
+      if (!sessionId) return;
       if (dictationTimer !== null) {
         clearInterval(dictationTimer);
         dictationTimer = null;
       }
       button.dataset.state = "busy";
       button.style.color = "";
-      const finished = new Promise<void>((resolve) => {
-        recorder.addEventListener("stop", () => resolve(), { once: true });
-      });
-      recorder.stop();
-      recorder.stream.getTracks().forEach((track) => track.stop());
-      await finished;
-      // Wait out an in-flight partial pass so the final append wins.
-      const busyDeadline = Date.now() + 15_000;
-      while (dictationBusy && Date.now() < busyDeadline)
-        await new Promise((resolve) => setTimeout(resolve, 100));
+      await releaseDictationAudio();
       try {
-        const text = await transcribeChunks(dictationChunks, recorder.mimeType);
-        dictationChunks = [];
-        if (text) dictationAppend(text, true);
-        announceDictationPass("final");
+        await dictationWrites;
+        const writeError = dictationWriteError;
+        const final = await dictationJson<{ text: string; error?: string }>(
+          `/api/local/dictation/stop?sessionId=${encodeURIComponent(sessionId)}`,
+          { method: "POST" },
+        );
+        if (writeError) throw writeError;
+        if (final.error) throw new Error(final.error);
+        const text = final.text.trim();
+        renderDictation(text);
+        announceDictationPass("final", text);
       } catch (error) {
         button.title =
           error instanceof Error ? error.message : "Transcription failed";
       } finally {
-        // The dictated run is now the user's text; a new dictation starts a
-        // fresh run rather than reselecting this one.
+        dictationWrites = Promise.resolve();
+        dictationWriteError = null;
         dictationRendered = "";
         dictationEditor = null;
+        button.title = "Dictate with Moonshine (on-device streaming)";
         delete button.dataset.state;
       }
     };
     const startDictation = async (button: HTMLButtonElement) => {
+      let stream: MediaStream | null = null;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
+        stream = await navigator.mediaDevices.getUserMedia({
+          // Feed Moonshine the source waveform. Chromium's WebRTC echo
+          // cancellation/AGC path is designed for calls and can distort both
+          // test fixtures and quiet dictated speech before recognition.
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+          },
         });
-        dictationChunks = [];
+        const started = await dictationJson<{ sessionId: string }>(
+          "/api/local/dictation/start",
+          { method: "POST" },
+        );
+        const context = new AudioContext();
+        const source = context.createMediaStreamSource(stream);
+        const processor = context.createScriptProcessor(4096, 1, 1);
+        const silentGain = context.createGain();
+        silentGain.gain.value = 0;
+        dictationSessionId = started.sessionId;
+        dictationStream = stream;
+        dictationContext = context;
+        dictationSource = source;
+        dictationProcessor = processor;
+        dictationSilentGain = silentGain;
+        dictationWrites = Promise.resolve();
+        dictationWriteError = null;
+        dictationResamplePosition = 0;
         dictationRendered = "";
         dictationEditor = null;
-        const recorder = new MediaRecorder(stream);
-        recorder.addEventListener("dataavailable", (event) => {
-          if (event.data.size > 0) dictationChunks.push(event.data);
-        });
-        // Timesliced so partial passes always have decodable audio.
-        recorder.start(1_000);
-        dictationRecorder = recorder;
-        dictationTimer = setInterval(() => void dictationTick(), 2_500);
+        processor.onaudioprocess = (event) => {
+          const input = event.inputBuffer.getChannelData(0);
+          const step = context.sampleRate / 16_000;
+          const samples: number[] = [];
+          let position = dictationResamplePosition;
+          while (position < input.length) {
+            const left = Math.floor(position);
+            const right = Math.min(input.length - 1, left + 1);
+            const fraction = position - left;
+            samples.push(input[left] + (input[right] - input[left]) * fraction);
+            position += step;
+          }
+          dictationResamplePosition = position - input.length;
+          const pcm = new ArrayBuffer(samples.length * 2);
+          const view = new DataView(pcm);
+          for (let index = 0; index < samples.length; index += 1) {
+            const sample = Math.max(-1, Math.min(1, samples[index]));
+            view.setInt16(
+              index * 2,
+              sample < 0 ? sample * 0x8000 : sample * 0x7fff,
+              true,
+            );
+          }
+          queueDictationAudio(pcm);
+        };
+        source.connect(processor);
+        processor.connect(silentGain);
+        silentGain.connect(context.destination);
+        await context.resume();
+        if (context.state !== "running")
+          throw new Error(`Microphone audio context is ${context.state}`);
+        dictationTimer = setInterval(() => void dictationTick(), 100);
         button.dataset.state = "recording";
         button.style.color = "#d97757";
+        button.title = "Dictating with Moonshine (on-device streaming)";
       } catch (error) {
+        const orphanSession = dictationSessionId;
+        dictationSessionId = null;
+        await releaseDictationAudio();
+        if (orphanSession)
+          await fetch(
+            `/api/local/dictation/stop?sessionId=${encodeURIComponent(orphanSession)}`,
+            { method: "POST" },
+          ).catch(() => undefined);
+        stream?.getTracks().forEach((track) => track.stop());
         button.title =
           error instanceof Error ? error.message : "Microphone unavailable";
       }
@@ -2649,13 +2758,13 @@ export function installLocalWorkbench(
       button.type = "button";
       button.dataset.testid = "local-dictate-button";
       button.setAttribute("aria-label", "Dictate");
-      button.title = "Dictate (on-device transcription)";
+      button.title = "Dictate with Moonshine (on-device streaming)";
       button.className = anchor.className;
       button.innerHTML =
         '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>';
       // A route change remounts the composer while a recording may still be
       // live; the fresh button must show the active state, not idle.
-      if (dictationRecorder) {
+      if (dictationSessionId) {
         button.dataset.state = "recording";
         button.style.color = "#d97757";
       }
@@ -2663,7 +2772,7 @@ export function installLocalWorkbench(
         event.preventDefault();
         event.stopPropagation();
         if (button.dataset.state === "busy") return;
-        if (dictationRecorder) void stopDictation(button);
+        if (dictationSessionId) void stopDictation(button);
         else void startDictation(button);
       });
       anchor.parentElement.insertBefore(button, anchor.nextSibling);

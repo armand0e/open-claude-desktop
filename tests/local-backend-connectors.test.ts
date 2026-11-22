@@ -88,17 +88,7 @@ describe("remote MCP connector endpoints", () => {
       backend,
       "/api/organizations/test-org/skills/list-skills?include_wiggle_skills=true",
     );
-    expect(await skillResponse.json()).toEqual({
-      skills: [
-        expect.objectContaining({
-          id: "local:skill-creator",
-          name: "skill-creator",
-          creator_type: "anthropic",
-          enabled: true,
-          user_invocable: true,
-        }),
-      ],
-    });
+    expect(await skillResponse.json()).toEqual({ skills: [] });
   });
 
   it("creates, lists, updates, and deletes RAe-shaped records", async () => {

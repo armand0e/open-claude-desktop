@@ -4,21 +4,29 @@
 // model-written summary and only a recent tail is kept verbatim.
 
 import { readResponseJson } from "./bounded-response";
+import {
+  fetchProviderCompletion,
+  type ProviderTransport,
+} from "./provider-transport";
 
 type JsonObject = Record<string, unknown>;
 
 export interface CompactionProviderConfig {
+  preset?: string;
+  transport?: ProviderTransport;
   baseUrl: string;
   model: string;
   apiKey?: string;
 }
 
-export const COMPACTION_TRIGGER_RATIO = 0.75;
+export const COMPACTION_TRIGGER_RATIO = 0.68;
 // Fraction of the context window the verbatim tail may occupy afterwards.
-export const COMPACTION_TAIL_RATIO = 0.25;
-// A conservative chars-per-token that holds across OpenAI-compatible
-// tokenizers; overestimating usage only compacts a little earlier.
-const CHARS_PER_TOKEN = 4;
+export const COMPACTION_TAIL_RATIO = 0.2;
+// Tool results, JSON, paths, source code, and minified output tokenize much
+// more densely than ordinary prose. Three chars per token intentionally
+// overestimates typical English so preflight compaction wins the race against
+// the provider's hard context check.
+const CHARS_PER_TOKEN = 3;
 // The summarization request itself must fit the model, so the flattened
 // transcript sent for summarization is capped and cut from the middle.
 const MAX_SUMMARY_INPUT_CHARS = 160_000;
@@ -47,12 +55,13 @@ export function planCompaction(
   reservedTokens: number,
   messages: readonly unknown[],
   contextWindow: number,
+  force = false,
 ): CompactionPlan | null {
   const window = Math.max(4_096, Math.floor(contextWindow));
   const sizes = messages.map(estimateMessageTokens);
   const totalTokens =
     reservedTokens + sizes.reduce((sum, size) => sum + size, 0);
-  if (totalTokens <= window * COMPACTION_TRIGGER_RATIO) return null;
+  if (!force && totalTokens <= window * COMPACTION_TRIGGER_RATIO) return null;
   const tailBudget = window * COMPACTION_TAIL_RATIO;
   let tailTokens = 0;
   let tailCount = 0;
@@ -66,6 +75,18 @@ export function planCompaction(
   // an oversized tail is handled by the callers' hard budget instead.
   if (prefixLength < 2) return null;
   return { prefixLength, totalTokens };
+}
+
+export function contextResponseReserve(contextWindow: number): number {
+  const window = Math.max(4_096, Math.floor(contextWindow));
+  return Math.min(24_000, Math.max(4_096, Math.ceil(window * 0.12)));
+}
+
+export function isContextLengthError(status: number, detail: string): boolean {
+  if (![400, 413, 422].includes(status)) return false;
+  return /(?:context(?:_|\s|-)*(?:length|size|window)|n_ctx|prompt(?:_|\s|-)*tokens|too many tokens|maximum context|exceeds? the available context)/iu.test(
+    detail,
+  );
 }
 
 const COMPACTION_SYSTEM_PROMPT = [
@@ -107,6 +128,22 @@ export function compactionTranscript(messages: readonly JsonObject[]): string {
   return transcript;
 }
 
+export function emergencyCompactionSummary(
+  messages: readonly JsonObject[],
+): string {
+  const transcript = compactionTranscript(messages);
+  const limit = 24_000;
+  const retained =
+    transcript.length <= limit
+      ? transcript
+      : `${transcript.slice(0, 7_000)}\n\n[... older detail omitted by emergency context recovery ...]\n\n${transcript.slice(-17_000)}`;
+  return [
+    "Emergency deterministic context recovery was required after the provider rejected the full prompt.",
+    "The following retained transcript excerpts are authoritative; continue the unfinished work and re-read workspace files when exact omitted details are needed.",
+    retained,
+  ].join("\n\n");
+}
+
 function strippedThinking(text: string): string {
   // Some local models prepend an inline thinking block even to plain
   // completions; the summary must not carry it forward.
@@ -122,24 +159,18 @@ export async function providerSummaryCompletion(
   signal?: AbortSignal,
 ): Promise<string> {
   const timeout = AbortSignal.timeout(SUMMARY_TIMEOUT_MS);
-  const response = await fetch(`${provider.baseUrl}/chat/completions`, {
-    method: "POST",
-    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
-    headers: {
-      "Content-Type": "application/json",
-      ...(provider.apiKey
-        ? { Authorization: `Bearer ${provider.apiKey}` }
-        : {}),
-    },
-    body: JSON.stringify({
+  const response = await fetchProviderCompletion(
+    provider,
+    {
       model: provider.model,
       stream: false,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
-    }),
-  });
+    },
+    signal ? AbortSignal.any([signal, timeout]) : timeout,
+  );
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     throw new Error(`Provider summary failed: HTTP ${response.status}`);

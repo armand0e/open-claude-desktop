@@ -110,7 +110,7 @@ describe("LocalCodeSessionManager message queue", () => {
         () => undefined,
         () => undefined,
       );
-      const transcript = await waitForResults(reopened, sessionId, 2);
+      const transcript = await waitForResults(reopened, sessionId, 1);
       expect(JSON.stringify(transcript)).toContain(
         "Recovered steering after restart.",
       );
@@ -124,18 +124,15 @@ describe("LocalCodeSessionManager message queue", () => {
           entry.type === "user" &&
           JSON.stringify(entry.message).includes("persist this steering"),
       );
-      const interrupted = transcript.find(
-        (entry) =>
-          entry.type === "result" &&
-          JSON.stringify(entry).includes("Generation interrupted"),
-      );
       const recoveredAssistant = transcript.find(
         (entry) =>
           entry.type === "assistant" &&
           JSON.stringify(entry.message).includes("Recovered steering"),
       );
-      expect(interrupted?.parentUuid).toBe(initialUser?.uuid);
-      expect(steeringUser?.parentUuid).toBe(interrupted?.uuid);
+      expect(JSON.stringify(transcript)).not.toContain(
+        "Generation interrupted",
+      );
+      expect(steeringUser?.parentUuid).toBe(initialUser?.uuid);
       expect(recoveredAssistant?.parentUuid).toBe(steeringUser?.uuid);
       expect(
         providerRequests
@@ -269,6 +266,129 @@ describe("LocalCodeSessionManager message queue", () => {
           JSON.stringify(entry.message).includes("Steered once"),
       );
       expect(steeredAssistant?.parentUuid).toBe(steeringUser?.uuid);
+    } finally {
+      releaseFirst();
+      await manager.dispose();
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("queues an immediate message when the client disables live steering", async () => {
+    const providerRequests: Array<{
+      messages: Array<{ role: string; content: unknown }>;
+    }> = [];
+    let resolveFirstRequest!: () => void;
+    const firstRequest = new Promise<void>((resolve) => {
+      resolveFirstRequest = resolve;
+    });
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const server = createServer(async (request, response) => {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      const parsed = JSON.parse(body) as {
+        messages: Array<{ role: string; content: unknown }>;
+      };
+      providerRequests.push(parsed);
+      response.writeHead(200, { "Content-Type": "application/json" });
+      if (providerRequests.length === 1) {
+        resolveFirstRequest();
+        await firstGate;
+        response.end(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  role: "assistant",
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "gate-read",
+                      type: "function",
+                      function: {
+                        name: "Read",
+                        arguments: JSON.stringify({ file_path: "missing.txt" }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+        );
+        return;
+      }
+      const lastUser = parsed.messages.findLast(
+        (message) => message.role === "user",
+      );
+      response.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content:
+                  lastUser?.content === "queue after this turn"
+                    ? "Queued turn completed."
+                    : "Initial turn completed.",
+              },
+            },
+          ],
+        }),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("Missing provider test address");
+    const directory = await mkdtemp(path.join(os.tmpdir(), "code-gates-"));
+    const workspace = await mkdtemp(path.join(os.tmpdir(), "code-gates-ws-"));
+    temporaryDirectories.push(directory, workspace);
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => ({
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        model: "test-model",
+      }),
+      () => undefined,
+      () => undefined,
+    );
+    try {
+      const { sessionId } = (await manager.invoke("start", [
+        { cwd: workspace, message: "initial task" },
+      ])) as { sessionId: string };
+      await manager.invoke("getTranscript", [sessionId]);
+      await firstRequest;
+      await manager.invoke("sendMessage", [
+        sessionId,
+        "queue after this turn",
+        undefined,
+        undefined,
+        undefined,
+        "immediate",
+        { ccdSteering: false, queuedMessageBar: true },
+      ]);
+      releaseFirst();
+      await waitForResults(manager, sessionId, 2);
+
+      expect(providerRequests).toHaveLength(3);
+      expect(
+        providerRequests[1].messages.some(
+          (message) => message.content === "queue after this turn",
+        ),
+      ).toBe(false);
+      expect(
+        providerRequests[2].messages.filter(
+          (message) => message.content === "queue after this turn",
+        ),
+      ).toHaveLength(1);
     } finally {
       releaseFirst();
       await manager.dispose();

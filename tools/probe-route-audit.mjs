@@ -141,6 +141,7 @@ const child = spawn(
       CLAUDE_DESKTOP_LOCAL_UI: "1",
       CLAUDE_LOCAL_BASE_URL: `http://127.0.0.1:${providerPort}/v1`,
       CLAUDE_LOCAL_MODEL: "smoke-model",
+      CLAUDE_TRACE_CAPABILITY_IPC: "1",
     },
   },
 );
@@ -190,19 +191,92 @@ try {
           .map(el => el.shadowRoot?.querySelector("main,section:not([hidden])")?.textContent || "")
           .join(" ");
         const text = ((document.body?.innerText || "") + " " + shadowText).replace(/\\s+/g, " ");
+        const dialogs = [...document.querySelectorAll('[role="dialog"]')]
+          .filter(element => {
+            const style = getComputedStyle(element);
+            return style.display !== "none" && style.visibility !== "hidden";
+          })
+          .map(element => (element.innerText || element.textContent || "").replace(/\\s+/g, " ").slice(0, 220));
+        const headings = [...document.querySelectorAll("h1,h2,h3")]
+          .map(element => (element.innerText || element.textContent || "").replace(/\\s+/g, " ").trim())
+          .filter(Boolean)
+          .slice(0, 12);
         visited.push({
           route,
           landed: location.pathname,
           empty: text.length < 200,
           notFound: /not found|nothing here|went wrong|error occurred/i.test(text),
           snippet: text.slice(0, 180),
+          dialogs,
+          headings,
         });
       }
       return { visited, failed: window.__audit.failed, errors: window.__audit.errors.slice(0, 40) };
     })()`,
     140_000,
   );
-  console.log(JSON.stringify(report, null, 2));
+  const capabilityCalls = output
+    .join("")
+    .split(/\r?\n/)
+    .flatMap((line) => {
+      const marker = line.indexOf("[capability-ipc] ");
+      if (marker === -1) return [];
+      try {
+        return [JSON.parse(line.slice(marker + "[capability-ipc] ".length))];
+      } catch {
+        return [];
+      }
+    });
+  const uniqueCapabilities = [
+    ...new Map(
+      capabilityCalls.map((call) => [
+        `${call.service}.${call.method}.${call.resultShape}`,
+        call,
+      ]),
+    ).values(),
+  ].sort((left, right) =>
+    `${left.service}.${left.method}`.localeCompare(
+      `${right.service}.${right.method}`,
+    ),
+  );
+  const expectedCompatibilityCalls = new Set([
+    "claude.settings.Custom3pSetup.bootstrapState_$store$_getState",
+    "claude.settings.Custom3pSetup.getConfigHealth",
+    "claude.settings.Custom3pSetup.getLoginDesktop3pStatus",
+    "claude.settings.SupportBundle.supportBundleState_$store$_getState",
+    "claude.settings.WakeScheduler.getStatus",
+    "claude.web.Account.setAccountDetails",
+    "claude.web.ComputerUseTcc.getState",
+    "claude.web.GrandPrix.grandPrixStatus_$store$_getState",
+    "claude.web.QuickEntry.setRecentChats",
+    "claude.web.WebBuild.reportCommitHash",
+  ]);
+  const compatibilityCalls = uniqueCapabilities.filter(
+    (call) => call.compatibilityOnly,
+  );
+  const unexpectedCompatibilityCalls = compatibilityCalls.filter(
+    (call) => !expectedCompatibilityCalls.has(`${call.service}.${call.method}`),
+  );
+  if (unexpectedCompatibilityCalls.length > 0)
+    throw new Error(
+      `Visible routes invoked unreviewed compatibility behavior: ${JSON.stringify(unexpectedCompatibilityCalls)}`,
+    );
+  if (report.failed.length > 0 || report.errors.length > 0)
+    throw new Error(
+      `Route audit failed: ${JSON.stringify({ failed: report.failed, errors: report.errors })}`,
+    );
+  console.log(
+    JSON.stringify(
+      {
+        ...report,
+        capabilityCalls: uniqueCapabilities,
+        compatibilityCalls,
+        unexpectedCompatibilityCalls,
+      },
+      null,
+      2,
+    ),
+  );
 } catch (error) {
   console.error("PROBE FAIL:", error.message);
   console.error(output.join("").slice(-3000));

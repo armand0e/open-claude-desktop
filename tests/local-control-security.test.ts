@@ -73,6 +73,29 @@ describe("browser-use network boundary", () => {
       publicBrowserUrl("https://[2606:4700:4700::1111]/"),
     ).resolves.toBeInstanceOf(URL);
   });
+
+  it("fails closed on mixed DNS answers and simulated rebinding", async () => {
+    await expect(
+      publicBrowserUrl("https://mixed.example/", async () => [
+        { address: "93.184.216.34", family: 4 },
+        { address: "127.0.0.1", family: 4 },
+      ]),
+    ).rejects.toThrow(/local network/i);
+
+    let lookupCount = 0;
+    const rebindingResolver = async () => {
+      lookupCount += 1;
+      return lookupCount === 1
+        ? [{ address: "93.184.216.34", family: 4 }]
+        : [{ address: "169.254.169.254", family: 4 }];
+    };
+    await expect(
+      publicBrowserUrl("https://rebind.example/", rebindingResolver),
+    ).resolves.toBeInstanceOf(URL);
+    await expect(
+      publicBrowserUrl("https://rebind.example/next", rebindingResolver),
+    ).rejects.toThrow(/local network/i);
+  });
 });
 
 describe("control screenshot boundary", () => {
@@ -121,6 +144,21 @@ describe("control screenshot boundary", () => {
     await mkdir(shots, { recursive: true });
     await writeFile(outside, "not a screenshot");
     await symlink(outside, path.join(shots, "shot-1-1.png"), "file");
+    await expect(
+      browser.shotFile(conversation, "shot-1-1.png"),
+    ).resolves.toBeNull();
+  });
+
+  it("does not expose screenshots through a linked conversation directory", async () => {
+    const directory = await root();
+    const browser = new LocalBrowserUse(directory);
+    browsers.push(browser);
+    const shotsRoot = path.join(directory, "browser-use", "shots");
+    const outside = path.join(directory, "outside-browser-shots");
+    await mkdir(shotsRoot, { recursive: true });
+    await mkdir(outside);
+    await writeFile(path.join(outside, "shot-1-1.png"), "not a screenshot");
+    await symlink(outside, path.join(shotsRoot, conversation), "dir");
     await expect(
       browser.shotFile(conversation, "shot-1-1.png"),
     ).resolves.toBeNull();

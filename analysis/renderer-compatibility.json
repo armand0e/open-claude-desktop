@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "rendererCompatibilityVersion": "1.24012.11",
+  "contractReferenceVersion": "1.24012.11",
+  "referenceRoot": "reference/claude-1.24012.11",
+  "renderer": {
+    "fileCount": 2058,
+    "bytes": 133384838,
+    "treeSha256": "21994ac5bfe85c20c96f9f8e1c646f747e3dafcaabe781cbd1809e70ec8bbd60"
+  },
+  "contract": {
+    "fileCount": 214,
+    "bytes": 44843918,
+    "treeSha256": "5e61b3797f304039c26452f36cdd4910a2d27c28476f51468734ef006f021660"
+  },
+  "patchSourceSha256": "16567d715151563df31dad7bf9ec01ad84f2594364c384ac1daeaf4ea0fd7ab6"
+}

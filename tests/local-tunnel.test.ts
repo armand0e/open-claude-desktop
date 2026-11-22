@@ -29,17 +29,51 @@ describe("LocalArtifactTunnel lifecycle", () => {
   it("closes and forgets a relay that reports an error", async () => {
     const handlers = new Map<string, () => void>();
     const close = vi.fn(() => handlers.get("close")?.());
-    const tunnel = new LocalArtifactTunnel(source, async () => ({
-      url: "https://proof.example/",
-      close,
-      on: (event, handler) => handlers.set(event, handler),
-    }));
+    const verify = vi.fn(async () => undefined);
+    const tunnel = new LocalArtifactTunnel(
+      source,
+      async () => ({
+        url: "https://proof.example/",
+        close,
+        on: (event, handler) => handlers.set(event, handler),
+      }),
+      30_000,
+      verify,
+    );
 
     await expect(tunnel.ensureStarted()).resolves.toBe("https://proof.example");
+    expect(verify).toHaveBeenCalledWith(
+      "https://proof.example/",
+      "proof",
+      expect.any(AbortSignal),
+    );
     handlers.get("error")?.();
     expect(close).toHaveBeenCalledOnce();
     expect(tunnel.status()).toEqual({ url: null, active: false });
     tunnel.dispose();
+  });
+
+  it("revokes published state when an established relay disconnects", async () => {
+    const handlers = new Map<string, () => void>();
+    const revokePublishedArtifacts = vi.fn(async () => undefined);
+    const close = vi.fn(() => handlers.get("close")?.());
+    const tunnel = new LocalArtifactTunnel(
+      { ...source, revokePublishedArtifacts },
+      async () => ({
+        url: "https://proof.example/",
+        close,
+        on: (event, handler) => handlers.set(event, handler),
+      }),
+      30_000,
+      async () => undefined,
+    );
+
+    await expect(tunnel.ensureStarted()).resolves.toBe("https://proof.example");
+    handlers.get("close")?.();
+    await vi.waitFor(() =>
+      expect(revokePublishedArtifacts).toHaveBeenCalledOnce(),
+    );
+    expect(tunnel.status()).toEqual({ url: null, active: false });
   });
 
   it("bounds tunnel startup and closes a relay that resolves after timeout", async () => {

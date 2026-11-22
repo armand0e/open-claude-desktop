@@ -23,6 +23,7 @@ import path from "node:path";
 import pluginDirectorySnapshot from "../shared/plugin-directory-snapshot.json";
 import { zipEntries } from "./local-extract";
 import { readResponseBytes } from "./bounded-response";
+import { childEnvironment } from "./child-environment";
 import {
   assertBoundedJson,
   readRecoverableBoundedJsonFile,
@@ -882,11 +883,10 @@ export class LocalPluginManager {
     return new Promise((resolve) => {
       const child = spawn(command, [], {
         cwd,
-        env: {
-          ...process.env,
+        env: childEnvironment({
           CLAUDE_PLUGIN_ROOT: root,
           CLAUDE_PROJECT_DIR: cwd,
-        },
+        }),
         shell: true,
         windowsHide: true,
         stdio: ["pipe", "pipe", "pipe"],
@@ -1449,9 +1449,7 @@ export class LocalPluginManager {
       case "listAvailablePlugins":
         return this.listCatalogPlugins();
       case "listInstalledPlugins":
-        return this.listCatalogPlugins().then((plugins) =>
-          plugins.filter((plugin) => plugin.isInstalled === true),
-        );
+        return this.getPlugins();
       case "listLocalOrgPlugins":
         return this.listLocalOrgPlugins();
       case "listRemotePluginsPage":
@@ -1473,7 +1471,11 @@ export class LocalPluginManager {
       case "syncLocalOrgPlugins":
         return { newlyInstalled: [], configuredMarketplaceStatus: [] };
       case "refreshMarketplace":
-        return { success: true };
+        return {
+          success: false,
+          source: "embedded_snapshot",
+          error: "Marketplace refresh is unavailable in local-only mode",
+        };
       case "getDownloadedRemotePlugins":
       case "getPluginCliBatch":
       case "getPluginShimOps":
@@ -1482,7 +1484,11 @@ export class LocalPluginManager {
       case "getPluginOAuthStatus":
         return null;
       case "syncRemotePlugins":
-        return { success: true };
+        return {
+          success: false,
+          source: "embedded_snapshot",
+          error: "Remote plugin sync is unavailable in local-only mode",
+        };
       case "setPluginShimPermission":
         return [];
       default:

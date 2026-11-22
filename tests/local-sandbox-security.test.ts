@@ -1,7 +1,9 @@
 import {
+  lstat,
   mkdtemp,
   mkdir,
   readFile,
+  readdir,
   rm,
   symlink,
   writeFile,
@@ -76,6 +78,11 @@ describe("local sandbox host boundary", () => {
     });
     expect(active).toEqual(new Set());
     expect(calls.filter((args) => args[0] === "run")).toHaveLength(1);
+    const runArgs = calls.find((args) => args[0] === "run") ?? [];
+    expect(runArgs).toContain("--read-only");
+    expect(runArgs).toContain("/tmp:rw,nosuid,nodev,size=512m");
+    expect(runArgs).toContain("core=0:0");
+    expect(runArgs).toContain("fsize=209715200:209715200");
     expect(calls.filter((args) => args[0] === "rm").length).toBeGreaterThan(1);
 
     active.add("untracked-owner-container");
@@ -132,6 +139,33 @@ describe("local sandbox host boundary", () => {
     expect(active).toEqual(new Set());
   });
 
+  it("strips terminal escapes, control characters, and bidi overrides from output", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "open-claude-sandbox-"));
+    roots.push(root);
+    const docker = async (args: readonly string[]) => {
+      if (args[0] === "version" || args[0] === "image")
+        return { missing: false, code: 0, stdout: "ready", stderr: "" };
+      if (args[0] === "exec")
+        return {
+          missing: false,
+          code: 0,
+          stdout:
+            "\u001b]8;;https://example.com\u0007link\u001b]8;;\u0007 \u001b[31mred\u001b[0m safe\u202etxt\u0000",
+          stderr: "",
+        };
+      return { missing: false, code: 0, stdout: "", stderr: "" };
+    };
+    const sandbox = new LocalSandbox(root, docker);
+    sandboxes.push(sandbox);
+
+    const result = await sandbox.runCommand(conversation, "true", {
+      allowNetwork: false,
+      signal: new AbortController().signal,
+    });
+
+    expect(result.output).toBe("link red safetxt");
+  });
+
   it("coalesces stale-container reaping across concurrent conversations", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "open-claude-sandbox-"));
     roots.push(root);
@@ -177,6 +211,40 @@ describe("local sandbox host boundary", () => {
     ).resolves.toBeNull();
   });
 
+  it("reconciles orphaned workspaces without following links", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "open-claude-sandbox-"));
+    roots.push(root);
+    const sandbox = new LocalSandbox(root);
+    sandboxes.push(sandbox);
+    const active = "00000000-0000-4000-8000-000000000401";
+    const orphan = "00000000-0000-4000-8000-000000000402";
+    const linked = "00000000-0000-4000-8000-000000000403";
+    const activeWorkspace = sandbox.workspaceDir(active);
+    const orphanWorkspace = sandbox.workspaceDir(orphan);
+    const linkedWorkspace = sandbox.workspaceDir(linked);
+    const outside = path.join(root, "outside");
+    await mkdir(activeWorkspace, { recursive: true });
+    await mkdir(orphanWorkspace, { recursive: true });
+    await mkdir(outside);
+    await writeFile(path.join(activeWorkspace, "keep.txt"), "active");
+    await writeFile(path.join(orphanWorkspace, "remove.txt"), "orphan");
+    await writeFile(path.join(outside, "keep.txt"), "outside");
+    await symlink(outside, linkedWorkspace, "junction");
+
+    await sandbox.reconcileWorkspaces([active]);
+
+    await expect(
+      readFile(path.join(activeWorkspace, "keep.txt"), "utf8"),
+    ).resolves.toBe("active");
+    await expect(
+      readFile(path.join(orphanWorkspace, "remove.txt")),
+    ).rejects.toThrow();
+    await expect(
+      readFile(path.join(outside, "keep.txt"), "utf8"),
+    ).resolves.toBe("outside");
+    await expect(lstat(linkedWorkspace)).rejects.toThrow();
+  });
+
   it("rejects an upload directory redirected outside the workspace", async () => {
     const { root, sandbox, workspace } = await fixture();
     const outside = path.join(root, "outside");
@@ -206,6 +274,99 @@ describe("local sandbox host boundary", () => {
     await expect(
       readFile(path.join(uploads, "copied.txt"), "utf8"),
     ).resolves.toBe("new upload");
+  });
+
+  it("atomically exposes only active-branch uploads and preserves duplicate names", async () => {
+    const { root, sandbox, workspace } = await fixture();
+    const first = path.join(root, "first.csv");
+    const second = path.join(root, "second.csv");
+    const replacement = path.join(root, "replacement.csv");
+    await writeFile(first, "first");
+    await writeFile(second, "second");
+    await writeFile(replacement, "replacement");
+
+    await sandbox.stageUpload(conversation, "stale.csv", first);
+    await sandbox.syncUploads(conversation, [
+      { id: "first-id", fileName: "Report.csv", sourcePath: first },
+      { id: "second-id", fileName: "report.csv", sourcePath: second },
+    ]);
+
+    const uploads = path.join(workspace, "uploads");
+    expect((await readdir(uploads)).sort()).toEqual([
+      "Report.csv",
+      "_open_claude_manifest.json",
+      "report (2).csv",
+    ]);
+    await expect(
+      readFile(path.join(uploads, "Report.csv"), "utf8"),
+    ).resolves.toBe("first");
+    await expect(
+      readFile(path.join(uploads, "report (2).csv"), "utf8"),
+    ).resolves.toBe("second");
+    const manifest = JSON.parse(
+      await readFile(path.join(uploads, "_open_claude_manifest.json"), "utf8"),
+    ) as { files: Array<{ id: string; original_name: string; path: string }> };
+    expect(manifest.files).toEqual([
+      {
+        id: "first-id",
+        original_name: "Report.csv",
+        path: "/workspace/uploads/Report.csv",
+        size_bytes: 5,
+      },
+      {
+        id: "second-id",
+        original_name: "report.csv",
+        path: "/workspace/uploads/report (2).csv",
+        size_bytes: 6,
+      },
+    ]);
+
+    await sandbox.syncUploads(conversation, [
+      {
+        id: "replacement-id",
+        fileName: "current.csv",
+        sourcePath: replacement,
+      },
+    ]);
+    expect((await readdir(uploads)).sort()).toEqual([
+      "_open_claude_manifest.json",
+      "current.csv",
+    ]);
+    await expect(readFile(path.join(uploads, "stale.csv"))).rejects.toThrow();
+    await expect(readFile(path.join(uploads, "Report.csv"))).rejects.toThrow();
+  });
+
+  it("keeps the last good upload snapshot when reconciliation fails", async () => {
+    const { root, sandbox, workspace } = await fixture();
+    const original = path.join(root, "original.txt");
+    const valid = path.join(root, "valid.txt");
+    await writeFile(original, "original");
+    await writeFile(valid, "valid");
+    await sandbox.syncUploads(conversation, [
+      { id: "original-id", fileName: "original.txt", sourcePath: original },
+    ]);
+
+    await expect(
+      sandbox.syncUploads(conversation, [
+        { id: "valid-id", fileName: "valid.txt", sourcePath: valid },
+        {
+          id: "missing-id",
+          fileName: "missing.txt",
+          sourcePath: path.join(root, "missing.txt"),
+        },
+      ]),
+    ).rejects.toThrow();
+
+    const uploads = path.join(workspace, "uploads");
+    await expect(
+      readFile(path.join(uploads, "original.txt"), "utf8"),
+    ).resolves.toBe("original");
+    await expect(readFile(path.join(uploads, "valid.txt"))).rejects.toThrow();
+    expect(
+      (await readdir(workspace)).filter((name) =>
+        name.includes(".uploads.tmp"),
+      ),
+    ).toEqual([]);
   });
 
   it("validates all skill paths and sizes before staging any file", async () => {

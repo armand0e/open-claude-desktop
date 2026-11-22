@@ -14,7 +14,8 @@ import {
   assertContractArguments,
   contractValueMatches,
 } from "../shared/validation";
-import { ServiceDispatcher } from "./services";
+import { isCompatibilityOnlyService, ServiceDispatcher } from "./services";
+import { diagnosticError, LocalDiagnostics } from "./local-diagnostics";
 
 function senderUrl(event: IpcMainEvent | IpcMainInvokeEvent): string {
   return event.senderFrame?.url ?? event.sender.getURL();
@@ -68,6 +69,46 @@ function traceCodeIpc(
     return;
   console.error(
     `[code-ipc] ${parsed.service}.${parsed.method} ${JSON.stringify(args.map(tracedArgumentShape))}`,
+  );
+}
+
+function traceCapabilityIpc(
+  parsed: NonNullable<ReturnType<typeof parseChannel>>,
+  result: unknown,
+  startedAt: number,
+  error?: unknown,
+): void {
+  if (process.env.CLAUDE_TRACE_CAPABILITY_IPC !== "1") return;
+  const resultShape = error
+    ? "error"
+    : result === null
+      ? "null"
+      : Array.isArray(result)
+        ? `array:${result.length}`
+        : typeof result === "object"
+          ? `object:${Object.keys(result as Record<string, unknown>)
+              .sort()
+              .join(",")}`
+          : `${typeof result}:${String(result).slice(0, 80)}`;
+  console.error(
+    `[capability-ipc] ${JSON.stringify({
+      service: `${parsed.namespace}.${parsed.service}`,
+      method: parsed.method,
+      compatibilityOnly: isCompatibilityOnlyService(
+        parsed.namespace,
+        parsed.service,
+      ),
+      resultShape,
+      durationMs: Date.now() - startedAt,
+      ...(error
+        ? {
+            error:
+              error instanceof Error
+                ? error.message.slice(0, 500)
+                : String(error),
+          }
+        : {}),
+    })}`,
   );
 }
 
@@ -127,6 +168,7 @@ function assertServiceAvailableToSender(
 
 export function registerGeneratedIpc(
   dispatcher: ServiceDispatcher,
+  diagnostics?: LocalDiagnostics,
 ): () => void {
   const cleanups: Array<() => void> = [];
 
@@ -138,22 +180,61 @@ export function registerGeneratedIpc(
     if ((contract.rendererOperations as readonly string[]).includes("invoke")) {
       ipcMain.removeHandler(contract.channel);
       ipcMain.handle(contract.channel, async (event, ...args) => {
-        assertTrustedIpcSender(event);
-        assertServiceAvailableToSender(event, parsed);
-        const validation =
-          IPC_VALIDATION[contract.channel as keyof typeof IPC_VALIDATION];
-        if (validation)
-          assertContractArguments(contract.channel, args, validation.arguments);
-        traceCodeIpc(parsed, args);
-        const result = await dispatcher.invoke(parsed, args, event);
-        if (
-          process.env.CLAUDE_STRICT_RESULT_VALIDATION === "1" &&
-          validation?.result &&
-          !contractValueMatches(result, validation.result.validation)
-        )
-          throw new TypeError(
-            `Result failed recovered validation (${validation.result.validation}) for ${contract.channel}`,
+        const startedAt = Date.now();
+        diagnostics?.record("ipc", "invoke.begin", {
+          channel: contract.channel,
+          service: `${parsed.namespace}.${parsed.service}`,
+          method: parsed.method,
+          sender: senderUrl(event),
+          arguments: args.map(tracedArgumentShape),
+        });
+        let result: unknown;
+        try {
+          assertTrustedIpcSender(event);
+          assertServiceAvailableToSender(event, parsed);
+          const validation =
+            IPC_VALIDATION[contract.channel as keyof typeof IPC_VALIDATION];
+          if (validation)
+            assertContractArguments(
+              contract.channel,
+              args,
+              validation.arguments,
+            );
+          traceCodeIpc(parsed, args);
+          result = await dispatcher.invoke(parsed, args, event);
+          if (
+            process.env.CLAUDE_DISABLE_RESULT_VALIDATION !== "1" &&
+            !isCompatibilityOnlyService(parsed.namespace, parsed.service) &&
+            validation?.result &&
+            !contractValueMatches(result, validation.result.validation)
+          )
+            throw new TypeError(
+              `Result failed recovered validation (${validation.result.validation}) for ${contract.channel}`,
+            );
+        } catch (error) {
+          traceCapabilityIpc(parsed, undefined, startedAt, error);
+          diagnostics?.record(
+            "ipc",
+            "invoke.error",
+            {
+              channel: contract.channel,
+              service: `${parsed.namespace}.${parsed.service}`,
+              method: parsed.method,
+              durationMs: Date.now() - startedAt,
+              error: diagnosticError(error),
+            },
+            "error",
           );
+          throw error;
+        }
+        traceCapabilityIpc(parsed, result, startedAt);
+        diagnostics?.record("ipc", "invoke.end", {
+          channel: contract.channel,
+          service: `${parsed.namespace}.${parsed.service}`,
+          method: parsed.method,
+          durationMs: Date.now() - startedAt,
+          result: tracedArgumentShape(result),
+        });
         return result;
       });
       cleanups.push(() => ipcMain.removeHandler(contract.channel));
@@ -163,6 +244,14 @@ export function registerGeneratedIpc(
       (contract.rendererOperations as readonly string[]).includes("sendSync")
     ) {
       const listener = (event: IpcMainEvent, ...args: unknown[]) => {
+        const startedAt = Date.now();
+        diagnostics?.record("ipc", "sync.begin", {
+          channel: contract.channel,
+          service: `${parsed.namespace}.${parsed.service}`,
+          method: parsed.method,
+          sender: senderUrl(event),
+          arguments: args.map(tracedArgumentShape),
+        });
         try {
           assertTrustedIpcSender(event);
           assertServiceAvailableToSender(event, parsed);
@@ -179,15 +268,37 @@ export function registerGeneratedIpc(
           if (result instanceof Promise)
             throw new Error("Synchronous IPC handler returned a Promise");
           if (
-            process.env.CLAUDE_STRICT_RESULT_VALIDATION === "1" &&
+            process.env.CLAUDE_DISABLE_RESULT_VALIDATION !== "1" &&
+            !isCompatibilityOnlyService(parsed.namespace, parsed.service) &&
             validation?.result &&
             !contractValueMatches(result, validation.result.validation)
           )
             throw new TypeError(
               `Result failed recovered validation (${validation.result.validation}) for ${contract.channel}`,
             );
+          traceCapabilityIpc(parsed, result, startedAt);
+          diagnostics?.record("ipc", "sync.end", {
+            channel: contract.channel,
+            service: `${parsed.namespace}.${parsed.service}`,
+            method: parsed.method,
+            durationMs: Date.now() - startedAt,
+            result: tracedArgumentShape(result),
+          });
           event.returnValue = { result };
         } catch (error) {
+          traceCapabilityIpc(parsed, undefined, startedAt, error);
+          diagnostics?.record(
+            "ipc",
+            "sync.error",
+            {
+              channel: contract.channel,
+              service: `${parsed.namespace}.${parsed.service}`,
+              method: parsed.method,
+              durationMs: Date.now() - startedAt,
+              error: diagnosticError(error),
+            },
+            "error",
+          );
           event.returnValue = {
             error: error instanceof Error ? error.message : String(error),
           };

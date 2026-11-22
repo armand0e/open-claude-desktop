@@ -118,12 +118,26 @@ try {
         window.fetch = async (...args) => {
           const response = await originalFetch(...args);
           const target = String(args[0]?.url || args[0] || '');
-          if (target.includes('/skills/list-skills')) {
+          if (
+            target.includes('/skills/list-skills') ||
+            (target.includes('/mcp-registry/') &&
+              !directoryFetches.some(entry => entry.target.includes('/mcp-registry/')))
+          ) {
             let body = '';
             try { body = (await response.clone().text()).slice(0, 1200); } catch {}
             directoryFetches.push({ target, status: response.status, body });
           }
           return response;
+        };
+        const connectorChunkText = await (
+          await originalFetch('/assets/v1/shared-4-aQIEM2lk.js')
+        ).text();
+        const connectorPatchDiagnostics = {
+          localEndpoint: connectorChunkText.includes(
+            'new URL("/mcp-registry/v0/servers",location.origin)',
+          ),
+          queryEnabled: connectorChunkText.includes('var hd=!0,yd='),
+          localRegistryPreferred: connectorChunkText.includes('d=!1,u=ie("mcp_server_spec_directory")'),
         };
         const visible = element => {
           if (!(element instanceof Element)) return false;
@@ -192,6 +206,7 @@ try {
             customDirectoryPresent: Boolean(
               document.querySelector('#local-directory, #local-connectors-settings')
             ),
+            connectorPatchDiagnostics,
             directoryFetches: [...directoryFetches],
             nativeDirectory: directoryRoot ? {
               text: text(directoryRoot).slice(0, 2000),
@@ -223,21 +238,6 @@ try {
 
         await openSettings();
         const snapshots = [];
-
-        await section('Extensions');
-        snapshots.push(snapshot('extensions'));
-        contentButton('Advanced settings')?.click();
-        await wait(900);
-        snapshots.push(snapshot('extensions-advanced'));
-        location.hash = 'settings/desktop/extensions/advanced';
-        await wait(900);
-        snapshots.push(snapshot('extensions-advanced-hash'));
-
-        await section('Extensions');
-        contentButton('Browse extensions')?.click();
-        await wait(1200);
-        snapshots.push(snapshot('extensions-directory'));
-        await closeDirectory();
 
         for (const [name, buttonLabel] of [
           ['Skills', 'Browse'],
@@ -280,20 +280,7 @@ try {
   const snapshots = Object.fromEntries(
     result.map((entry) => [entry.label, entry]),
   );
-  assert(
-    snapshots["extensions-advanced"]?.settingsText.includes(
-      "Extension Settings",
-    ),
-    "Advanced settings did not replace the Extensions overview",
-  );
-  assert(
-    snapshots["extensions-advanced-hash"]?.settingsText.includes(
-      "Extension Developer",
-    ),
-    "The Advanced settings hash did not survive a direct route update",
-  );
   for (const label of [
-    "extensions-directory",
     "skills-directory",
     "connectors-directory",
     "plugins-directory",
@@ -313,14 +300,21 @@ try {
     );
   }
   assert(
-    snapshots["extensions-directory"].nativeDirectory.cardTitles.length > 10,
+    snapshots["plugins-directory"].nativeDirectory.cardTitles.length > 10,
     "The plugin Directory did not render its bundled public catalog",
   );
   assert(
-    snapshots["skills-directory"].nativeDirectory.cardTitles.some((title) =>
-      title.includes("skill-creator"),
-    ),
-    "The Skills Directory is empty",
+    snapshots["skills-directory"].nativeDirectory.cardTitles.length === 0 &&
+      snapshots["skills-directory"].directoryFetches
+        .filter((request) => request.target.includes("/skills/list-skills"))
+        .every((request) => request.body === '{"skills":[]}'),
+    "The cloud Skills Directory duplicated local standalone skills",
+  );
+  assert(
+    Object.values(
+      snapshots["connectors-directory"].connectorPatchDiagnostics,
+    ).every(Boolean),
+    "The Connectors Directory release patches were not all served",
   );
   assert(
     snapshots["connectors-directory"].nativeDirectory.cardTitles.includes(

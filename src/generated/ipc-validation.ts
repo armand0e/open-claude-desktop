@@ -3,13 +3,13 @@ export interface ValueValidation { readonly validation: string; }
 export interface ArgumentValidation extends ValueValidation { readonly name: string; readonly position: number; }
 export interface ChannelValidation { readonly arguments: readonly ArgumentValidation[]; readonly result: ValueValidation | null; }
 export const IPC_VALIDATION = {
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_deviceStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_deviceStatus": {
     "arguments": [],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_install": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_install": {
     "arguments": [
       {
         "name": "folderPath",
@@ -19,13 +19,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_pairDevice": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_pairDevice": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_pairingPrompt": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_pairingPrompt": {
     "arguments": [
       {
         "name": "deviceName",
@@ -35,7 +35,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_pickDevice": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_pickDevice": {
     "arguments": [
       {
         "name": "id",
@@ -47,13 +47,13 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_pickFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_pickFolder": {
     "arguments": [],
     "result": {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_preview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_preview": {
     "arguments": [
       {
         "name": "folderPath",
@@ -65,7 +65,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_progress": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_progress": {
     "arguments": [
       {
         "name": "msg",
@@ -75,13 +75,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_scanDevices": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_scanDevices": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_setName": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_setName": {
     "arguments": [
       {
         "name": "name",
@@ -93,13 +93,13 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_status": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_status": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_Buddy_$_submitPin": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_Buddy_$_submitPin": {
     "arguments": [
       {
         "name": "pin",
@@ -109,7 +109,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_BuddyBleTransport_$_log": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_BuddyBleTransport_$_log": {
     "arguments": [
       {
         "name": "msg",
@@ -119,7 +119,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_BuddyBleTransport_$_reportState": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_BuddyBleTransport_$_reportState": {
     "arguments": [
       {
         "name": "state",
@@ -134,7 +134,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_BuddyBleTransport_$_rx": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_BuddyBleTransport_$_rx": {
     "arguments": [
       {
         "name": "line",
@@ -144,7 +144,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.buddy_$_BuddyBleTransport_$_tx": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.buddy_$_BuddyBleTransport_$_tx": {
     "arguments": [
       {
         "name": "line",
@@ -154,7 +154,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_askClaude": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_askClaude": {
     "arguments": [
       {
         "name": "prompt",
@@ -171,7 +171,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_callMcpTool": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_callMcpTool": {
     "arguments": [
       {
         "name": "tool",
@@ -188,7 +188,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_navigateHost": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_navigateHost": {
     "arguments": [
       {
         "name": "direction",
@@ -198,7 +198,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_openExternalUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_openExternalUrl": {
     "arguments": [
       {
         "name": "url",
@@ -208,7 +208,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_runScheduledTask": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.coworkArtifact_$_CoworkArtifactBridge_$_runScheduledTask": {
     "arguments": [
       {
         "name": "taskId",
@@ -225,13 +225,13 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.hybrid_$_DesktopIntl_$_getInitialLocale": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.hybrid_$_DesktopIntl_$_getInitialLocale": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.hybrid_$_DesktopIntl_$_localeChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.hybrid_$_DesktopIntl_$_localeChanged": {
     "arguments": [
       {
         "name": "locale",
@@ -241,7 +241,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.hybrid_$_DesktopIntl_$_requestLocaleChange": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.hybrid_$_DesktopIntl_$_requestLocaleChange": {
     "arguments": [
       {
         "name": "locale",
@@ -251,7 +251,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.findInPage_$_FindInPage_$_findInPage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.findInPage_$_FindInPage_$_findInPage": {
     "arguments": [
       {
         "name": "text",
@@ -268,7 +268,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.findInPage_$_FindInPage_$_stepToMatch": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.findInPage_$_FindInPage_$_stepToMatch": {
     "arguments": [
       {
         "name": "forward",
@@ -278,25 +278,25 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.ui_$_AboutWindow_$_getAppName": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.ui_$_AboutWindow_$_getAppName": {
     "arguments": [],
     "result": {
       "validation": "string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.ui_$_AboutWindow_$_getBuildProps": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.ui_$_AboutWindow_$_getBuildProps": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.ui_$_MainWindowTitleBar_$_isClaudeCurrentlyHealthy": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.ui_$_MainWindowTitleBar_$_isClaudeCurrentlyHealthy": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.ui_$_MainWindowTitleBar_$_showLoadError": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.ui_$_MainWindowTitleBar_$_showLoadError": {
     "arguments": [
       {
         "name": "details",
@@ -306,7 +306,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.ui_$_MainWindowTitleBar_$_updateTitleBar": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.ui_$_MainWindowTitleBar_$_updateTitleBar": {
     "arguments": [
       {
         "name": "title",
@@ -316,7 +316,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.ui_$_QuickWindow_$_requestDismiss": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.ui_$_QuickWindow_$_requestDismiss": {
     "arguments": [
       {
         "name": "promptText",
@@ -326,7 +326,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.ui_$_QuickWindow_$_requestDismissWithPayload": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.ui_$_QuickWindow_$_requestDismissWithPayload": {
     "arguments": [
       {
         "name": "payload",
@@ -336,7 +336,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.internal.ui_$_QuickWindow_$_requestSkooch": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.internal.ui_$_QuickWindow_$_requestSkooch": {
     "arguments": [
       {
         "name": "contentWidth",
@@ -351,7 +351,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.officeAddin_$_OfficeAddinFiles_$_focusFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.officeAddin_$_OfficeAddinFiles_$_focusFile": {
     "arguments": [
       {
         "name": "fileId",
@@ -363,7 +363,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.officeAddin_$_OfficeAddinFiles_$_getConnectedFiles": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.officeAddin_$_OfficeAddinFiles_$_getConnectedFiles": {
     "arguments": [
       {
         "name": "sessionId",
@@ -375,13 +375,13 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.officeAddin_$_OfficeAddinFiles_$_isFeatureEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.officeAddin_$_OfficeAddinFiles_$_isFeatureEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.officeAddin_$_OfficeAddinFiles_$_onFileAdded": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.officeAddin_$_OfficeAddinFiles_$_onFileAdded": {
     "arguments": [
       {
         "name": "file",
@@ -391,7 +391,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.officeAddin_$_OfficeAddinFiles_$_onFileRemoved": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.officeAddin_$_OfficeAddinFiles_$_onFileRemoved": {
     "arguments": [
       {
         "name": "fileId",
@@ -401,7 +401,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.officeAddin_$_OfficeAddinFiles_$_onFileStateChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.officeAddin_$_OfficeAddinFiles_$_onFileStateChanged": {
     "arguments": [
       {
         "name": "file",
@@ -411,7 +411,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.officeAddin_$_OfficeAddinFiles_$_selectFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.officeAddin_$_OfficeAddinFiles_$_selectFile": {
     "arguments": [
       {
         "name": "fileId",
@@ -423,7 +423,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.officeAddin_$_OfficeAddinFiles_$_updateActiveConversationSummary": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.officeAddin_$_OfficeAddinFiles_$_updateActiveConversationSummary": {
     "arguments": [
       {
         "name": "summary",
@@ -433,13 +433,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_AppConfig_$_getAppConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_AppConfig_$_getAppConfig": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_AppConfig_$_setAppFeature": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_AppConfig_$_setAppFeature": {
     "arguments": [
       {
         "name": "feature",
@@ -454,7 +454,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_AppConfig_$_setIsDxtAutoUpdatesEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_AppConfig_$_setIsDxtAutoUpdatesEnabled": {
     "arguments": [
       {
         "name": "enabled",
@@ -464,7 +464,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_AppConfig_$_setIsUsingBuiltInNodeForMcp": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_AppConfig_$_setIsUsingBuiltInNodeForMcp": {
     "arguments": [
       {
         "name": "enabled",
@@ -474,19 +474,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_AppFeatures_$_getSupportedFeatures": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_AppFeatures_$_getSupportedFeatures": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_AppPreferences_$_getPreferences": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_AppPreferences_$_getPreferences": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_AppPreferences_$_preferencesChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_AppPreferences_$_preferencesChanged": {
     "arguments": [
       {
         "name": "preferences",
@@ -496,7 +496,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_AppPreferences_$_setPreference": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_AppPreferences_$_setPreference": {
     "arguments": [
       {
         "name": "key",
@@ -506,37 +506,37 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_CcdCli_$_getCcdCliStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_CcdCli_$_getCcdCliStatus": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_CcdCli_$_installCcdCli": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_CcdCli_$_installCcdCli": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_CcdCli_$_uninstallCcdCli": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_CcdCli_$_uninstallCcdCli": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_ClaudeAiImport_$_getAuthState": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_ClaudeAiImport_$_getAuthState": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_ClaudeAiImport_$_isAvailable": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_ClaudeAiImport_$_isAvailable": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_ClaudeAiImport_$_onAuthStateChange": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_ClaudeAiImport_$_onAuthStateChange": {
     "arguments": [
       {
         "name": "state",
@@ -546,7 +546,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_ClaudeAiImport_$_onAuthUserCode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_ClaudeAiImport_$_onAuthUserCode": {
     "arguments": [
       {
         "name": "code",
@@ -556,19 +556,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_ClaudeAiImport_$_runImport": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_ClaudeAiImport_$_runImport": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pHelperRun_$_discoverModels": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pHelperRun_$_discoverModels": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pHelperRun_$_probeDeviceCode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pHelperRun_$_probeDeviceCode": {
     "arguments": [
       {
         "name": "userCode",
@@ -583,13 +583,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pHelperRun_$_probeInference": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pHelperRun_$_probeInference": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pHelperRun_$_runCredentialHelper": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pHelperRun_$_runCredentialHelper": {
     "arguments": [
       {
         "name": "helperPath",
@@ -611,13 +611,13 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_authorizeAndProbeMcpServer": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_authorizeAndProbeMcpServer": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_createConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_createConfig": {
     "arguments": [
       {
         "name": "name",
@@ -629,7 +629,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_deleteConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_deleteConfig": {
     "arguments": [
       {
         "name": "id",
@@ -641,7 +641,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_duplicateConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_duplicateConfig": {
     "arguments": [
       {
         "name": "sourceId",
@@ -658,7 +658,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_exportConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_exportConfig": {
     "arguments": [
       {
         "name": "format",
@@ -670,7 +670,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_forgetMcpOAuth": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_forgetMcpOAuth": {
     "arguments": [
       {
         "name": "serverName",
@@ -680,25 +680,25 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_getConfigHealth": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_getConfigHealth": {
     "arguments": [],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_getLoginDesktop3pStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_getLoginDesktop3pStatus": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_listConfigs": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_listConfigs": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_probeEgressHosts": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_probeEgressHosts": {
     "arguments": [
       {
         "name": "hosts",
@@ -710,13 +710,13 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_probeMcpServer": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_probeMcpServer": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_readConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_readConfig": {
     "arguments": [
       {
         "name": "id",
@@ -728,13 +728,13 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_recheckConfigHealth": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_recheckConfigHealth": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_renameConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_renameConfig": {
     "arguments": [
       {
         "name": "id",
@@ -749,7 +749,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_revealConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_revealConfig": {
     "arguments": [
       {
         "name": "id",
@@ -759,13 +759,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_scanOrgPlugins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_scanOrgPlugins": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_setAppliedConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_setAppliedConfig": {
     "arguments": [
       {
         "name": "id",
@@ -775,7 +775,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_setDeploymentMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_setDeploymentMode": {
     "arguments": [
       {
         "name": "mode",
@@ -785,13 +785,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_signInWithAnthropicApi": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_signInWithAnthropicApi": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_triggerBootstrapAuth": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_triggerBootstrapAuth": {
     "arguments": [
       {
         "name": "args",
@@ -803,7 +803,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Custom3pSetup_$_writeConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pSetup_$_writeConfig": {
     "arguments": [
       {
         "name": "id",
@@ -815,13 +815,25 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_DesktopInfo_$_getSystemInfo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Custom3pUsage_$_getSummary": {
+    "arguments": [
+      {
+        "name": "windowDays",
+        "position": 0,
+        "validation": "number"
+      }
+    ],
+    "result": {
+      "validation": "custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_DesktopInfo_$_getSystemInfo": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_deleteExtension": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_deleteExtension": {
     "arguments": [
       {
         "name": "extensionId",
@@ -831,7 +843,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_extensionDownloadProgress": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_extensionDownloadProgress": {
     "arguments": [
       {
         "name": "extensionId",
@@ -866,7 +878,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_extensionSettingsChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_extensionSettingsChanged": {
     "arguments": [
       {
         "name": "extensionId",
@@ -881,19 +893,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_getAvailableExtensionRuntimes": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_getAvailableExtensionRuntimes": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_getDirectoryUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_getDirectoryUrl": {
     "arguments": [],
     "result": {
       "validation": "string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_getExtension": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_getExtension": {
     "arguments": [
       {
         "name": "request",
@@ -905,7 +917,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_getExtensions": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_getExtensions": {
     "arguments": [
       {
         "name": "request",
@@ -917,7 +929,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_getExtensionSettings": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_getExtensionSettings": {
     "arguments": [
       {
         "name": "extensionId",
@@ -929,13 +941,13 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_getInstalledExtensionsWithState": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_getInstalledExtensionsWithState": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_getIsUpdateAvailable": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_getIsUpdateAvailable": {
     "arguments": [
       {
         "name": "extensionId",
@@ -952,7 +964,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_getManifestCompatibilityResult": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_getManifestCompatibilityResult": {
     "arguments": [
       {
         "name": "manifest",
@@ -964,7 +976,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_handleDxtFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_handleDxtFile": {
     "arguments": [
       {
         "name": "dxtPath",
@@ -974,7 +986,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_installDxt": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_installDxt": {
     "arguments": [
       {
         "name": "extensionId",
@@ -991,7 +1003,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_installDxtFromDirectory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_installDxtFromDirectory": {
     "arguments": [
       {
         "name": "extensionId",
@@ -1008,7 +1020,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_installDxtUnpacked": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_installDxtUnpacked": {
     "arguments": [
       {
         "name": "folderPath",
@@ -1020,7 +1032,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_installExtensionFromPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_installExtensionFromPreview": {
     "arguments": [
       {
         "name": "extensionId",
@@ -1037,37 +1049,37 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_isDesktopExtensionDirectoryEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_isDesktopExtensionDirectoryEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_isDesktopExtensionSignatureRequired": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_isDesktopExtensionSignatureRequired": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_isDirectoryEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_isDirectoryEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_isExtensionsEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_isExtensionsEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_isLocalExtensionInstallAllowed": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_isLocalExtensionInstallAllowed": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_previewExtensionInstallation": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_previewExtensionInstallation": {
     "arguments": [
       {
         "name": "manifest",
@@ -1092,7 +1104,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_setExtensionSettings": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_setExtensionSettings": {
     "arguments": [
       {
         "name": "extensionId",
@@ -1107,7 +1119,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Extensions_$_showExtensionInFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Extensions_$_showExtensionInFolder": {
     "arguments": [
       {
         "name": "extensionId",
@@ -1117,7 +1129,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_FilePickers_$_getDirectoryPath": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_FilePickers_$_getDirectoryPath": {
     "arguments": [
       {
         "name": "multiple",
@@ -1129,7 +1141,7 @@ export const IPC_VALIDATION = {
       "validation": "string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_FilePickers_$_getFilePath": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_FilePickers_$_getFilePath": {
     "arguments": [
       {
         "name": "multiple",
@@ -1141,13 +1153,13 @@ export const IPC_VALIDATION = {
       "validation": "string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_GlobalShortcut_$_getGlobalShortcut": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_GlobalShortcut_$_getGlobalShortcut": {
     "arguments": [],
     "result": {
       "validation": "string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_GlobalShortcut_$_globalShortcutChange": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_GlobalShortcut_$_globalShortcutChange": {
     "arguments": [
       {
         "name": "globalShortcut",
@@ -1157,7 +1169,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_GlobalShortcut_$_setGlobalShortcut": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_GlobalShortcut_$_setGlobalShortcut": {
     "arguments": [
       {
         "name": "globalShortcut",
@@ -1167,7 +1179,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_MCP_$_getMcpServersConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_MCP_$_getMcpServersConfig": {
     "arguments": [
       {
         "name": "forceReload",
@@ -1179,19 +1191,19 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_MCP_$_getMcpServersConfigWithStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_MCP_$_getMcpServersConfigWithStatus": {
     "arguments": [],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_MCP_$_isLocalDevMcpEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_MCP_$_isLocalDevMcpEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_MCP_$_mcpConfigChange": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_MCP_$_mcpConfigChange": {
     "arguments": [
       {
         "name": "configs",
@@ -1201,7 +1213,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_MCP_$_mcpStatusChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_MCP_$_mcpStatusChanged": {
     "arguments": [
       {
         "name": "name",
@@ -1221,7 +1233,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_MCP_$_revealMcpServerSettingsRequested": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_MCP_$_revealMcpServerSettingsRequested": {
     "arguments": [
       {
         "name": "serverName",
@@ -1231,7 +1243,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_MCP_$_revealServerLog": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_MCP_$_revealServerLog": {
     "arguments": [
       {
         "name": "serverName",
@@ -1241,7 +1253,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_MCP_$_setMcpServerConfigs": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_MCP_$_setMcpServerConfigs": {
     "arguments": [
       {
         "name": "configs",
@@ -1251,19 +1263,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Startup_$_isMenuBarEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Startup_$_isMenuBarEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Startup_$_isStartupOnLoginEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Startup_$_isStartupOnLoginEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Startup_$_setMenuBarEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Startup_$_setMenuBarEnabled": {
     "arguments": [
       {
         "name": "enabled",
@@ -1273,7 +1285,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_Startup_$_setStartupOnLoginEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_Startup_$_setStartupOnLoginEnabled": {
     "arguments": [
       {
         "name": "enabled",
@@ -1283,7 +1295,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_SupportBundle_$_submitAction": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_SupportBundle_$_submitAction": {
     "arguments": [
       {
         "name": "action",
@@ -1295,13 +1307,13 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.settings_$_WakeScheduler_$_getStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.settings_$_WakeScheduler_$_getStatus": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.simulator_$_Simulator_$_attach": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_attach": {
     "arguments": [
       {
         "name": "udid",
@@ -1322,23 +1334,75 @@ export const IPC_VALIDATION = {
         "name": "autoBoot",
         "position": 3,
         "validation": "undefined | boolean"
+      },
+      {
+        "name": "intent",
+        "position": 4,
+        "validation": "undefined | string"
+      },
+      {
+        "name": "originSessionId",
+        "position": 5,
+        "validation": "undefined | string"
       }
     ],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.simulator_$_Simulator_$_detach": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_captureShortcut": {
+    "arguments": [
+      {
+        "name": "udid",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "action",
+        "position": 1,
+        "validation": "string"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_checkAndroidSetup": {
+    "arguments": [],
+    "result": {
+      "validation": "custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_checkSetup": {
+    "arguments": [],
+    "result": {
+      "validation": "custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_consentAskShown": {
+    "arguments": [
+      {
+        "name": "ask",
+        "position": 0,
+        "validation": "custom schema validated"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_detach": {
     "arguments": [
       {
         "name": "udid",
         "position": 0,
         "validation": "undefined | string"
+      },
+      {
+        "name": "reason",
+        "position": 1,
+        "validation": "undefined | string"
       }
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.simulator_$_Simulator_$_gesture": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_gesture": {
     "arguments": [
       {
         "name": "udid",
@@ -1353,7 +1417,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.simulator_$_Simulator_$_installAndLaunch": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_installAndLaunch": {
     "arguments": [
       {
         "name": "req",
@@ -1363,7 +1427,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.simulator_$_Simulator_$_listDevices": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_listDevices": {
     "arguments": [
       {
         "name": "kind",
@@ -1375,7 +1439,45 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.simulator_$_Simulator_$_saveScreenshot": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_modelActivity": {
+    "arguments": [
+      {
+        "name": "activity",
+        "position": 0,
+        "validation": "custom schema validated"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_openAndroidStudio": {
+    "arguments": [],
+    "result": {
+      "validation": "boolean"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_openAppStore": {
+    "arguments": [],
+    "result": {
+      "validation": "boolean"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_openXcode": {
+    "arguments": [],
+    "result": {
+      "validation": "boolean"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_panelViewed": {
+    "arguments": [
+      {
+        "name": "kind",
+        "position": 0,
+        "validation": "string"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_requestDeviceConsent": {
     "arguments": [
       {
         "name": "udid",
@@ -1384,10 +1486,48 @@ export const IPC_VALIDATION = {
       }
     ],
     "result": {
+      "validation": "null | custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_requestDeviceToolsRepin": {
+    "arguments": [],
+    "result": {
+      "validation": "boolean"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_saveScreenshot": {
+    "arguments": [
+      {
+        "name": "udid",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "trigger",
+        "position": 1,
+        "validation": "undefined | string"
+      }
+    ],
+    "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.simulator_$_Simulator_$_setEditShortcutsClaimed": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_setCaptureShortcutsClaimed": {
+    "arguments": [
+      {
+        "name": "udid",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "claims",
+        "position": 1,
+        "validation": "custom schema validated"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_setEditShortcutsClaimed": {
     "arguments": [
       {
         "name": "udid",
@@ -1402,19 +1542,76 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.simulator_$_Simulator_$_startRecording": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_setupCtaClicked": {
+    "arguments": [
+      {
+        "name": "kind",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "cta",
+        "position": 1,
+        "validation": "string"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_setupStepChanged": {
+    "arguments": [
+      {
+        "name": "kind",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "step",
+        "position": 1,
+        "validation": "string"
+      },
+      {
+        "name": "status",
+        "position": 2,
+        "validation": "string"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_shutdown": {
     "arguments": [
       {
         "name": "udid",
         "position": 0,
         "validation": "string"
+      },
+      {
+        "name": "trigger",
+        "position": 1,
+        "validation": "undefined | string"
       }
     ],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.simulator_$_Simulator_$_stopRecording": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_startRecording": {
+    "arguments": [
+      {
+        "name": "udid",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "trigger",
+        "position": 1,
+        "validation": "undefined | string"
+      }
+    ],
+    "result": {
+      "validation": "null | custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.simulator_$_Simulator_$_stopRecording": {
     "arguments": [
       {
         "name": "udid",
@@ -1426,7 +1623,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.skills_$_Skills_$_previewSkillFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.skills_$_Skills_$_previewSkillFile": {
     "arguments": [
       {
         "name": "data",
@@ -1441,7 +1638,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Account_$_setAccountDetails": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Account_$_setAccountDetails": {
     "arguments": [
       {
         "name": "info",
@@ -1451,7 +1648,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_AgentModeFeedback_$_openFeedbackAndConfirmReinstall": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_AgentModeFeedback_$_openFeedbackAndConfirmReinstall": {
     "arguments": [
       {
         "name": "options",
@@ -1463,7 +1660,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_AgentModeFeedback_$_openFeedbackWindow": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_AgentModeFeedback_$_openFeedbackWindow": {
     "arguments": [
       {
         "name": "options",
@@ -1475,7 +1672,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_AgentModeFeedback_$_reportErrorToSlack": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_AgentModeFeedback_$_reportErrorToSlack": {
     "arguments": [
       {
         "name": "sessionId",
@@ -1495,7 +1692,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Auth_$_doAuthInBrowser": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Auth_$_doAuthInBrowser": {
     "arguments": [
       {
         "name": "url",
@@ -1505,31 +1702,31 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_AutoUpdater_$_getRunningLocalSessionCount": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_AutoUpdater_$_getRunningLocalSessionCount": {
     "arguments": [],
     "result": {
       "validation": "number"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_AutoUpdater_$_getRunningLocalSessions": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_AutoUpdater_$_getRunningLocalSessions": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_AutoUpdater_$_restartToUpdate": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_AutoUpdater_$_restartToUpdate": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_AutoUpdater_$_restartToUpdateWhenIdle": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_AutoUpdater_$_restartToUpdateWhenIdle": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_BrowserNavigation_$_reportNavigationState": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_BrowserNavigation_$_reportNavigationState": {
     "arguments": [
       {
         "name": "state",
@@ -1539,7 +1736,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_BuddyRemoteFeed_$_permissionDecision": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_BuddyRemoteFeed_$_permissionDecision": {
     "arguments": [
       {
         "name": "sessionId",
@@ -1559,7 +1756,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_BuddyRemoteFeed_$_sync": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_BuddyRemoteFeed_$_sync": {
     "arguments": [
       {
         "name": "sessions",
@@ -1569,7 +1766,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_createScheduledTask": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_createScheduledTask": {
     "arguments": [
       {
         "name": "params",
@@ -1581,13 +1778,13 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_getAllScheduledTasks": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_getAllScheduledTasks": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_getScheduledTaskFileContent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_getScheduledTaskFileContent": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -1599,7 +1796,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_getWatcherHistory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_getWatcherHistory": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -1611,13 +1808,13 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_markListenerReady": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_markListenerReady": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_onScheduledTaskEvent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_onScheduledTaskEvent": {
     "arguments": [
       {
         "name": "event",
@@ -1627,7 +1824,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_removeApprovedPermission": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_removeApprovedPermission": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -1649,7 +1846,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_updateScheduledTask": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_updateScheduledTask": {
     "arguments": [
       {
         "name": "params",
@@ -1661,7 +1858,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_updateScheduledTaskFileContent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_updateScheduledTaskFileContent": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -1678,7 +1875,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CCDScheduledTasks_$_updateScheduledTaskStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CCDScheduledTasks_$_updateScheduledTaskStatus": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -1700,43 +1897,43 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ChromeExtension_$_installExtension": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ChromeExtension_$_installExtension": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ChromeExtension_$_isInstalled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ChromeExtension_$_isInstalled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ChromeExtension_$_restartChrome": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ChromeExtension_$_restartChrome": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeCode_$_checkGitAvailable": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeCode_$_checkGitAvailable": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeCode_$_getPeriodUsage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeCode_$_getPeriodUsage": {
     "arguments": [],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeCode_$_getStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeCode_$_getStatus": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeCode_$_patchUserSettings": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeCode_$_patchUserSettings": {
     "arguments": [
       {
         "name": "patch",
@@ -1748,13 +1945,13 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeCode_$_prepare": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeCode_$_prepare": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeCode_$_resolveLocalSettings": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeCode_$_resolveLocalSettings": {
     "arguments": [
       {
         "name": "workspacePath",
@@ -1766,7 +1963,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeCode_$_setEnableWorkflows": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeCode_$_setEnableWorkflows": {
     "arguments": [
       {
         "name": "value",
@@ -1778,19 +1975,19 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_checkVirtualMachinePlatform": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_checkVirtualMachinePlatform": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_download": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_download": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_downloadProgress": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_downloadProgress": {
     "arguments": [
       {
         "name": "percent",
@@ -1800,7 +1997,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_downloadStatusChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_downloadStatusChanged": {
     "arguments": [
       {
         "name": "status",
@@ -1810,43 +2007,43 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_enableVirtualMachinePlatform": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_enableVirtualMachinePlatform": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_getDownloadStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_getDownloadStatus": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_getRunningStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_getRunningStatus": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_isHostLoopDevOverrideActive": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_isHostLoopDevOverrideActive": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_isHostLoopModeEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_isHostLoopModeEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_restartAfterVMPInstall": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_restartAfterVMPInstall": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_runningStatusChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_runningStatusChanged": {
     "arguments": [
       {
         "name": "status",
@@ -1856,7 +2053,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_setForceDisableHostLoop": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_setForceDisableHostLoop": {
     "arguments": [
       {
         "name": "value",
@@ -1866,7 +2063,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_setYukonSilverConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_setYukonSilverConfig": {
     "arguments": [
       {
         "name": "config",
@@ -1876,7 +2073,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_startupError": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_startupError": {
     "arguments": [
       {
         "name": "error",
@@ -1886,7 +2083,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ClaudeVM_$_startVM": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ClaudeVM_$_startVM": {
     "arguments": [
       {
         "name": "options",
@@ -1898,7 +2095,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ComputerUseTcc_$_getCurrentSessionGrants": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ComputerUseTcc_$_getCurrentSessionGrants": {
     "arguments": [
       {
         "name": "sessionId",
@@ -1910,19 +2107,19 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ComputerUseTcc_$_getState": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ComputerUseTcc_$_getState": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ComputerUseTcc_$_listInstalledApps": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ComputerUseTcc_$_listInstalledApps": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ComputerUseTcc_$_openSystemSettings": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ComputerUseTcc_$_openSystemSettings": {
     "arguments": [
       {
         "name": "pane",
@@ -1932,19 +2129,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ComputerUseTcc_$_requestAccessibility": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ComputerUseTcc_$_requestAccessibility": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ComputerUseTcc_$_requestScreenRecording": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ComputerUseTcc_$_requestScreenRecording": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_ComputerUseTcc_$_revokeGrant": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ComputerUseTcc_$_revokeGrant": {
     "arguments": [
       {
         "name": "sessionId",
@@ -1959,7 +2156,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_deleteArtifact": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_deleteArtifact": {
     "arguments": [
       {
         "name": "artifactId",
@@ -1976,13 +2173,13 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_getAllArtifacts": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_getAllArtifacts": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_getArtifactIndexHtmlPath": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_getArtifactIndexHtmlPath": {
     "arguments": [
       {
         "name": "artifactId",
@@ -1994,7 +2191,7 @@ export const IPC_VALIDATION = {
       "validation": "string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_getArtifactMetadata": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_getArtifactMetadata": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2006,7 +2203,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_getArtifactThumbnail": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_getArtifactThumbnail": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2018,7 +2215,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_hideArtifact": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_hideArtifact": {
     "arguments": [
       {
         "name": "targetWindowId",
@@ -2030,7 +2227,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_importArtifact": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_importArtifact": {
     "arguments": [
       {
         "name": "artifactUuid",
@@ -2042,19 +2239,19 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_isAutoPublishEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_isAutoPublishEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_isSharingEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_isSharingEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_parkAndCaptureArtifact": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_parkAndCaptureArtifact": {
     "arguments": [
       {
         "name": "bounds",
@@ -2071,13 +2268,13 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_printArtifactToPdf": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_printArtifactToPdf": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_refreshImportedArtifact": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_refreshImportedArtifact": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2089,13 +2286,13 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_reloadArtifactView": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_reloadArtifactView": {
     "arguments": [],
     "result": {
       "validation": "number"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_restoreArtifactVersion": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_restoreArtifactVersion": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2112,7 +2309,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_setArtifactAutoPublish": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_setArtifactAutoPublish": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2129,7 +2326,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_setArtifactLastModifiedSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_setArtifactLastModifiedSession": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2146,7 +2343,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_setArtifactMcpTools": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_setArtifactMcpTools": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2163,7 +2360,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_setArtifactStarred": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_setArtifactStarred": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2180,7 +2377,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_shareArtifact": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_shareArtifact": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2192,7 +2389,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_showArtifact": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_showArtifact": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2219,7 +2416,7 @@ export const IPC_VALIDATION = {
       "validation": "number"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkArtifacts_$_unshareArtifact": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkArtifacts_$_unshareArtifact": {
     "arguments": [
       {
         "name": "artifactId",
@@ -2231,13 +2428,13 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFeedback_$_captureScreenshot": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFeedback_$_captureScreenshot": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFeedback_$_discardScreenshot": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFeedback_$_discardScreenshot": {
     "arguments": [
       {
         "name": "token",
@@ -2247,7 +2444,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFeedback_$_getScreenshotDataUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFeedback_$_getScreenshotDataUrl": {
     "arguments": [
       {
         "name": "token",
@@ -2259,13 +2456,13 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFeedback_$_getSystemInfo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFeedback_$_getSystemInfo": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFeedback_$_submitFeedback": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFeedback_$_submitFeedback": {
     "arguments": [
       {
         "name": "form",
@@ -2277,7 +2474,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFilePreview_$_hide": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFilePreview_$_hide": {
     "arguments": [
       {
         "name": "consumerId",
@@ -2289,31 +2486,31 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFilePreview_$_isEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFilePreview_$_isEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFilePreview_$_isEpitaxyPreviewEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFilePreview_$_isEpitaxyPreviewEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFilePreview_$_isOpenInDefaultAppEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFilePreview_$_isOpenInDefaultAppEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFilePreview_$_isVmReady": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFilePreview_$_isVmReady": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFilePreview_$_parkAndCapture": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFilePreview_$_parkAndCapture": {
     "arguments": [
       {
         "name": "bounds",
@@ -2330,7 +2527,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkFilePreview_$_show": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkFilePreview_$_show": {
     "arguments": [
       {
         "name": "sessionId",
@@ -2357,7 +2554,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkMemory_$_deleteAccountMemory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkMemory_$_deleteAccountMemory": {
     "arguments": [
       {
         "name": "path",
@@ -2369,7 +2566,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkMemory_$_listAccountMemories": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkMemory_$_listAccountMemories": {
     "arguments": [
       {
         "name": "includeContent",
@@ -2381,7 +2578,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkMemory_$_readAccountMemory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkMemory_$_readAccountMemory": {
     "arguments": [
       {
         "name": "path",
@@ -2393,19 +2590,19 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkMemory_$_readGlobalMemory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkMemory_$_readGlobalMemory": {
     "arguments": [],
     "result": {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkMemory_$_resetMemories": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkMemory_$_resetMemories": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkMemory_$_writeAccountMemory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkMemory_$_writeAccountMemory": {
     "arguments": [
       {
         "name": "path",
@@ -2422,7 +2619,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkMemory_$_writeGlobalMemory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkMemory_$_writeGlobalMemory": {
     "arguments": [
       {
         "name": "content",
@@ -2434,7 +2631,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_clearChromePermissions": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_clearChromePermissions": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -2446,7 +2643,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_createScheduledTask": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_createScheduledTask": {
     "arguments": [
       {
         "name": "params",
@@ -2458,13 +2655,13 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_getAllScheduledTasks": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_getAllScheduledTasks": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_getScheduledTaskFileContent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_getScheduledTaskFileContent": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -2476,7 +2673,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_getWatcherHistory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_getWatcherHistory": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -2488,13 +2685,13 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_markListenerReady": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_markListenerReady": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_onScheduledTaskEvent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_onScheduledTaskEvent": {
     "arguments": [
       {
         "name": "event",
@@ -2504,7 +2701,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_removeApprovedPermission": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_removeApprovedPermission": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -2526,7 +2723,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_updateScheduledTask": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_updateScheduledTask": {
     "arguments": [
       {
         "name": "params",
@@ -2538,7 +2735,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_updateScheduledTaskFileContent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_updateScheduledTaskFileContent": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -2555,7 +2752,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkScheduledTasks_$_updateScheduledTaskStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkScheduledTasks_$_updateScheduledTaskStatus": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -2577,7 +2774,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_addFolderToSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_addFolderToSpace": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2594,7 +2791,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_addLinkToSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_addLinkToSpace": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2611,7 +2808,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_addProjectToSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_addProjectToSpace": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2628,7 +2825,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_appendRemoteSessionSpaceFolders": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_appendRemoteSessionSpaceFolders": {
     "arguments": [
       {
         "name": "sessionId",
@@ -2645,7 +2842,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_classifySessions": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_classifySessions": {
     "arguments": [
       {
         "name": "sessions",
@@ -2662,7 +2859,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_copyFilesToSpaceFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_copyFilesToSpaceFolder": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2679,7 +2876,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_createSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_createSpace": {
     "arguments": [
       {
         "name": "params",
@@ -2691,7 +2888,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_createSpaceFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_createSpaceFolder": {
     "arguments": [
       {
         "name": "parentPath",
@@ -2708,7 +2905,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_deleteSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_deleteSpace": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2720,13 +2917,13 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_getAllSpaces": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_getAllSpaces": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_getAutoMemoryDir": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_getAutoMemoryDir": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2738,13 +2935,13 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_getRemoteSessionSpaces": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_getRemoteSessionSpaces": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_getSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_getSpace": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2756,7 +2953,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_listFolderContents": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_listFolderContents": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2773,7 +2970,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_onSpaceEvent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_onSpaceEvent": {
     "arguments": [
       {
         "name": "event",
@@ -2783,7 +2980,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_openFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_openFile": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2800,7 +2997,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_readFileContents": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_readFileContents": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2817,7 +3014,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_readSpaceMemoryIndex": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_readSpaceMemoryIndex": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2829,7 +3026,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_removeFolderFromSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_removeFolderFromSpace": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2846,7 +3043,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_removeLinkFromSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_removeLinkFromSpace": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2863,7 +3060,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_removeProjectFromSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_removeProjectFromSpace": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2880,7 +3077,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_removeRemoteSessionSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_removeRemoteSessionSpace": {
     "arguments": [
       {
         "name": "sessionId",
@@ -2892,7 +3089,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_setAutoDescription": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_setAutoDescription": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2909,7 +3106,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_setRemoteSessionSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_setRemoteSessionSpace": {
     "arguments": [
       {
         "name": "entry",
@@ -2921,7 +3118,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_summarizeSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_summarizeSpace": {
     "arguments": [
       {
         "name": "spaceName",
@@ -2938,7 +3135,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkSpaces_$_updateSpace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkSpaces_$_updateSpace": {
     "arguments": [
       {
         "name": "spaceId",
@@ -2955,13 +3152,13 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkUserFiles_$_getInfo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkUserFiles_$_getInfo": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkUserFiles_$_migrate": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkUserFiles_$_migrate": {
     "arguments": [
       {
         "name": "targetRoot",
@@ -2973,13 +3170,13 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CoworkUserFiles_$_pickTarget": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CoworkUserFiles_$_pickTarget": {
     "arguments": [],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_addMarketplace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_addMarketplace": {
     "arguments": [
       {
         "name": "input",
@@ -3001,7 +3198,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_checkPluginHasLocalChanges": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_checkPluginHasLocalChanges": {
     "arguments": [
       {
         "name": "pluginId",
@@ -3018,25 +3215,25 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_getAndClearMigrationIssues": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_getAndClearMigrationIssues": {
     "arguments": [],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_getCachedCommands": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_getCachedCommands": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_getInstallCounts": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_getInstallCounts": {
     "arguments": [],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_installLocalOrgPlugin": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_installLocalOrgPlugin": {
     "arguments": [
       {
         "name": "name",
@@ -3048,7 +3245,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_installPlugin": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_installPlugin": {
     "arguments": [
       {
         "name": "pluginId",
@@ -3070,7 +3267,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_installProgress": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_installProgress": {
     "arguments": [
       {
         "name": "pluginId",
@@ -3085,7 +3282,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_listAvailablePlugins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_listAvailablePlugins": {
     "arguments": [
       {
         "name": "egressAllowedDomains",
@@ -3102,7 +3299,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_listInstalledPlugins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_listInstalledPlugins": {
     "arguments": [
       {
         "name": "egressAllowedDomains",
@@ -3119,13 +3316,13 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_listLocalOrgPlugins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_listLocalOrgPlugins": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_listMarketplaces": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_listMarketplaces": {
     "arguments": [
       {
         "name": "egressAllowedDomains",
@@ -3142,7 +3339,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_listRemotePluginsPage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_listRemotePluginsPage": {
     "arguments": [
       {
         "name": "limit",
@@ -3159,7 +3356,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_refreshMarketplace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_refreshMarketplace": {
     "arguments": [
       {
         "name": "name",
@@ -3186,7 +3383,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_removeMarketplace": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_removeMarketplace": {
     "arguments": [
       {
         "name": "name",
@@ -3211,13 +3408,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_syncLocalOrgPlugins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_syncLocalOrgPlugins": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_uninstallPlugin": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_uninstallPlugin": {
     "arguments": [
       {
         "name": "pluginId",
@@ -3237,7 +3434,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_CustomPlugins_$_updatePlugin": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_CustomPlugins_$_updatePlugin": {
     "arguments": [
       {
         "name": "pluginId",
@@ -3259,7 +3456,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeepLink_$_handleDeepLink": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeepLink_$_handleDeepLink": {
     "arguments": [
       {
         "name": "url",
@@ -3269,13 +3466,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DesktopNotifications_$_getAuthorizationStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DesktopNotifications_$_getAuthorizationStatus": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DesktopNotifications_$_onNotificationClicked": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DesktopNotifications_$_onNotificationClicked": {
     "arguments": [
       {
         "name": "result",
@@ -3285,13 +3482,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DesktopNotifications_$_requestAuthorization": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DesktopNotifications_$_requestAuthorization": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DesktopNotifications_$_showNotification": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DesktopNotifications_$_showNotification": {
     "arguments": [
       {
         "name": "title",
@@ -3317,11 +3514,16 @@ export const IPC_VALIDATION = {
         "name": "notificationType",
         "position": 4,
         "validation": "undefined | string"
+      },
+      {
+        "name": "attribution",
+        "position": 5,
+        "validation": "undefined | custom schema validated"
       }
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeviceRegistry_$_getAvailability": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeviceRegistry_$_getAvailability": {
     "arguments": [
       {
         "name": "accountUuid",
@@ -3333,7 +3535,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeviceRegistry_$_getLocalDeviceInfo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeviceRegistry_$_getLocalDeviceInfo": {
     "arguments": [
       {
         "name": "accountUuid",
@@ -3345,7 +3547,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeviceRegistry_$_getPublicKey": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeviceRegistry_$_getPublicKey": {
     "arguments": [
       {
         "name": "accountUuid",
@@ -3357,7 +3559,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeviceRegistry_$_notifyRegistered": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeviceRegistry_$_notifyRegistered": {
     "arguments": [
       {
         "name": "accountUuid",
@@ -3367,7 +3569,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeviceRegistry_$_setKeylessBridgeRowPk": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeviceRegistry_$_setKeylessBridgeRowPk": {
     "arguments": [
       {
         "name": "accountUuid",
@@ -3382,7 +3584,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeviceRegistry_$_signAttestationPreimage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeviceRegistry_$_signAttestationPreimage": {
     "arguments": [
       {
         "name": "accountUuid",
@@ -3399,7 +3601,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeviceRegistry_$_signCreateSessionBind": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeviceRegistry_$_signCreateSessionBind": {
     "arguments": [
       {
         "name": "accountUuid",
@@ -3416,7 +3618,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeviceRegistry_$_signForSessionHeader": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeviceRegistry_$_signForSessionHeader": {
     "arguments": [
       {
         "name": "accountUuid",
@@ -3438,7 +3640,7 @@ export const IPC_VALIDATION = {
       "validation": "string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DeviceRegistry_$_signTriggerOp": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DeviceRegistry_$_signTriggerOp": {
     "arguments": [
       {
         "name": "accountUuid",
@@ -3470,7 +3672,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_ensureScratchRoot": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_ensureScratchRoot": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3482,7 +3684,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_ingestSessionDocument": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_ingestSessionDocument": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3499,7 +3701,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_injectDocumentContext": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_injectDocumentContext": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3514,7 +3716,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_listScratchWorkingFiles": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_listScratchWorkingFiles": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3526,7 +3728,7 @@ export const IPC_VALIDATION = {
       "validation": "string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_openDownloadExport": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_openDownloadExport": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3543,7 +3745,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_revealDownloadExport": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_revealDownloadExport": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3560,7 +3762,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_runClarkdownConvert": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_runClarkdownConvert": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3577,7 +3779,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_runClarkdownDownloadExport": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_runClarkdownDownloadExport": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3594,7 +3796,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_workingDocumentsChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_workingDocumentsChanged": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3604,7 +3806,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_DocumentFunnel_$_writeScratchFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_DocumentFunnel_$_writeScratchFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3631,7 +3833,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_appInfoForExtension": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_appInfoForExtension": {
     "arguments": [
       {
         "name": "extension",
@@ -3643,7 +3845,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_browseFiles": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_browseFiles": {
     "arguments": [
       {
         "name": "title",
@@ -3655,7 +3857,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_browseFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_browseFolder": {
     "arguments": [
       {
         "name": "title",
@@ -3682,7 +3884,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_browseFolders": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_browseFolders": {
     "arguments": [
       {
         "name": "title",
@@ -3704,7 +3906,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_exportLocalFileToGoogleDrive": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_exportLocalFileToGoogleDrive": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3721,7 +3923,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_getLocalFileThumbnail": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_getLocalFileThumbnail": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3743,7 +3945,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_getSystemPath": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_getSystemPath": {
     "arguments": [
       {
         "name": "pathType",
@@ -3755,7 +3957,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_listDirectory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_listDirectory": {
     "arguments": [
       {
         "name": "dirPath",
@@ -3767,7 +3969,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_listFilesInFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_listFilesInFolder": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3784,7 +3986,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_openLocalFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_openLocalFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3804,7 +4006,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_promoteScratchpadFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_promoteScratchpadFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3821,7 +4023,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_readLocalFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_readLocalFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3838,7 +4040,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_savePastedFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_savePastedFile": {
     "arguments": [
       {
         "name": "base64",
@@ -3860,7 +4062,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_showInFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_showInFolder": {
     "arguments": [
       {
         "name": "path",
@@ -3870,7 +4072,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_whichApplication": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_whichApplication": {
     "arguments": [
       {
         "name": "filename",
@@ -3882,7 +4084,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_writeFileDownload": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_writeFileDownload": {
     "arguments": [
       {
         "name": "filename",
@@ -3899,7 +4101,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_writeFileDownloadAndOpen": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_writeFileDownloadAndOpen": {
     "arguments": [
       {
         "name": "filename",
@@ -3916,7 +4118,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FileSystem_$_writeLocalFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FileSystem_$_writeLocalFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -3938,7 +4140,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FindInPageProvider_$_findRequest": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FindInPageProvider_$_findRequest": {
     "arguments": [
       {
         "name": "requestId",
@@ -3963,7 +4165,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FindInPageProvider_$_reportFindResult": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FindInPageProvider_$_reportFindResult": {
     "arguments": [
       {
         "name": "requestId",
@@ -3978,7 +4180,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FindInPageProvider_$_setProviderActive": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FindInPageProvider_$_setProviderActive": {
     "arguments": [
       {
         "name": "active",
@@ -3988,7 +4190,38 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_attach": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ForgeState_$_forgeStateChanged": {
+    "arguments": [
+      {
+        "name": "changed",
+        "position": 0,
+        "validation": "array (item schema validated)"
+      },
+      {
+        "name": "removed",
+        "position": 1,
+        "validation": "string[]"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ForgeState_$_getForgeStateSnapshot": {
+    "arguments": [],
+    "result": {
+      "validation": "array (item schema validated)"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_ForgeState_$_setForgeStateVisibleKeys": {
+    "arguments": [
+      {
+        "name": "keys",
+        "position": 0,
+        "validation": "array (item schema validated)"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_attach": {
     "arguments": [
       {
         "name": "cwd",
@@ -4005,7 +4238,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_detach": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_detach": {
     "arguments": [
       {
         "name": "sessionId",
@@ -4015,7 +4248,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_listSources": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_listSources": {
     "arguments": [
       {
         "name": "cwd",
@@ -4027,23 +4260,33 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_openSourceRequested": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_openSourceRequested": {
     "arguments": [
       {
         "name": "name",
         "position": 0,
         "validation": "string"
+      },
+      {
+        "name": "cwd",
+        "position": 1,
+        "validation": "string"
+      },
+      {
+        "name": "sessionId",
+        "position": 2,
+        "validation": "undefined | string"
       }
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_requestFramePort": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_requestFramePort": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_sendKey": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_sendKey": {
     "arguments": [
       {
         "name": "sessionId",
@@ -4068,7 +4311,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_sendPointer": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_sendPointer": {
     "arguments": [
       {
         "name": "sessionId",
@@ -4093,7 +4336,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_sendScroll": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_sendScroll": {
     "arguments": [
       {
         "name": "sessionId",
@@ -4113,7 +4356,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_sessionFatal": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_sessionFatal": {
     "arguments": [
       {
         "name": "sessionId",
@@ -4128,7 +4371,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_sessionResized": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_sessionResized": {
     "arguments": [
       {
         "name": "sessionId",
@@ -4148,7 +4391,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_FramebufferPreview_$_setStreamHints": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_FramebufferPreview_$_setStreamHints": {
     "arguments": [
       {
         "name": "sessionId",
@@ -4163,7 +4406,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_GrandPrix_$_disconnect": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_GrandPrix_$_disconnect": {
     "arguments": [
       {
         "name": "partnerId",
@@ -4173,7 +4416,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_GrandPrix_$_dismissVerificationCode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_GrandPrix_$_dismissVerificationCode": {
     "arguments": [
       {
         "name": "requestId",
@@ -4183,7 +4426,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_GrandPrix_$_pair": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_GrandPrix_$_pair": {
     "arguments": [
       {
         "name": "partnerId",
@@ -4200,7 +4443,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_GrandPrix_$_request": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_GrandPrix_$_request": {
     "arguments": [
       {
         "name": "req",
@@ -4212,7 +4455,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_GrandPrix_$_submitVerificationCode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_GrandPrix_$_submitVerificationCode": {
     "arguments": [
       {
         "name": "requestId",
@@ -4229,7 +4472,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_addPreviewAllowedOrigin": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_addPreviewAllowedOrigin": {
     "arguments": [
       {
         "name": "origin",
@@ -4241,7 +4484,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_capturePreviewScreenshot": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_capturePreviewScreenshot": {
     "arguments": [
       {
         "name": "serverId",
@@ -4258,7 +4501,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_capturePreviewScreenshotIfChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_capturePreviewScreenshotIfChanged": {
     "arguments": [
       {
         "name": "serverId",
@@ -4275,13 +4518,13 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_clearPreviewAllowedOrigins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_clearPreviewAllowedOrigins": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_clearPreviewViewport": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_clearPreviewViewport": {
     "arguments": [
       {
         "name": "serverId",
@@ -4298,7 +4541,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_closeAllPreviewTabs": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_closeAllPreviewTabs": {
     "arguments": [
       {
         "name": "serverId",
@@ -4310,7 +4553,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_closePreviewTab": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_closePreviewTab": {
     "arguments": [
       {
         "name": "serverId",
@@ -4327,7 +4570,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_destroyPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_destroyPreview": {
     "arguments": [
       {
         "name": "serverId",
@@ -4339,7 +4582,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_elementSelected": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_elementSelected": {
     "arguments": [
       {
         "name": "serverId",
@@ -4354,7 +4597,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_exportPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_ensureRemoteBlankPreview": {
+    "arguments": [
+      {
+        "name": "sessionId",
+        "position": 0,
+        "validation": "string"
+      }
+    ],
+    "result": {
+      "validation": "null | string"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_exportPreview": {
     "arguments": [
       {
         "name": "serverId",
@@ -4371,7 +4626,7 @@ export const IPC_VALIDATION = {
       "validation": "null | boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_focusOrOpenPreviewTab": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_focusOrOpenPreviewTab": {
     "arguments": [
       {
         "name": "previewId",
@@ -4393,7 +4648,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_focusPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_focusPreview": {
     "arguments": [
       {
         "name": "serverId",
@@ -4405,7 +4660,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_getAutoVerify": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_getAutoVerify": {
     "arguments": [
       {
         "name": "cwd",
@@ -4417,7 +4672,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_getConfiguredServices": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_getConfiguredServices": {
     "arguments": [
       {
         "name": "cwd",
@@ -4429,7 +4684,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_getLogs": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_getLogs": {
     "arguments": [
       {
         "name": "serverId",
@@ -4441,13 +4696,13 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_getPreviewAllowedOrigins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_getPreviewAllowedOrigins": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_getPreviewNavState": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_getPreviewNavState": {
     "arguments": [
       {
         "name": "serverId",
@@ -4464,7 +4719,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_getPreviewTabs": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_getPreviewTabs": {
     "arguments": [
       {
         "name": "serverId",
@@ -4476,7 +4731,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_getPreviewUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_getPreviewUrl": {
     "arguments": [
       {
         "name": "serverId",
@@ -4488,7 +4743,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_goBack": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_goBack": {
     "arguments": [
       {
         "name": "serverId",
@@ -4505,7 +4760,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_goForward": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_goForward": {
     "arguments": [
       {
         "name": "serverId",
@@ -4522,7 +4777,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_hidePreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_hidePreview": {
     "arguments": [
       {
         "name": "serverId",
@@ -4539,19 +4794,19 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_isAvailable": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_isAvailable": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_isJitlessForced": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_isJitlessForced": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_loadClaudePagePreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_loadClaudePagePreview": {
     "arguments": [
       {
         "name": "pageUrl",
@@ -4573,7 +4828,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_loadHtmlPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_loadHtmlPreview": {
     "arguments": [
       {
         "name": "filePath",
@@ -4595,7 +4850,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_loadHtmlPreviewContent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_loadHtmlPreviewContent": {
     "arguments": [
       {
         "name": "content",
@@ -4627,7 +4882,7 @@ export const IPC_VALIDATION = {
       "validation": "string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_navigatePreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_navigatePreview": {
     "arguments": [
       {
         "name": "serverId",
@@ -4649,7 +4904,24 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_openExternalLinkInPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_navigatePreviewFromModel": {
+    "arguments": [
+      {
+        "name": "serverId",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "url",
+        "position": 1,
+        "validation": "string"
+      }
+    ],
+    "result": {
+      "validation": "custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_openExternalLinkInPreview": {
     "arguments": [
       {
         "name": "previewId",
@@ -4671,7 +4943,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_openPreviewInBrowser": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_openPreviewInBrowser": {
     "arguments": [
       {
         "name": "serverId",
@@ -4688,7 +4960,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_openPreviewTab": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_openPreviewTab": {
     "arguments": [
       {
         "name": "serverId",
@@ -4705,7 +4977,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_pickHtmlFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_pickHtmlFile": {
     "arguments": [
       {
         "name": "cwd",
@@ -4717,7 +4989,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_previewCloseShortcut": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewCloseShortcut": {
     "arguments": [
       {
         "name": "serverId",
@@ -4732,7 +5004,24 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_previewFocusExit": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewConsoleLogs": {
+    "arguments": [
+      {
+        "name": "serverId",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "options",
+        "position": 1,
+        "validation": "undefined | custom schema validated"
+      }
+    ],
+    "result": {
+      "validation": "null | array (item schema validated)"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewFocusExit": {
     "arguments": [
       {
         "name": "serverId",
@@ -4742,7 +5031,41 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_previewNewTabShortcut": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewInspect": {
+    "arguments": [
+      {
+        "name": "serverId",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "selector",
+        "position": 1,
+        "validation": "string"
+      },
+      {
+        "name": "styles",
+        "position": 2,
+        "validation": "undefined | string[]"
+      }
+    ],
+    "result": {
+      "validation": "null | custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewModelScreenshot": {
+    "arguments": [
+      {
+        "name": "serverId",
+        "position": 0,
+        "validation": "string"
+      }
+    ],
+    "result": {
+      "validation": "null | string"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewNewTabShortcut": {
     "arguments": [
       {
         "name": "serverId",
@@ -4752,7 +5075,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_previewRevealRequested": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewRevealRequested": {
     "arguments": [
       {
         "name": "previewId",
@@ -4772,7 +5095,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_previewSelectionShortcut": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewSelectionShortcut": {
     "arguments": [
       {
         "name": "serverId",
@@ -4782,7 +5105,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_previewTabsChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewSnapshot": {
+    "arguments": [
+      {
+        "name": "serverId",
+        "position": 0,
+        "validation": "string"
+      }
+    ],
+    "result": {
+      "validation": "null | string"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewTabsChanged": {
     "arguments": [
       {
         "name": "serverId",
@@ -4802,7 +5137,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_previewUrlChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_previewUrlChanged": {
     "arguments": [
       {
         "name": "serverId",
@@ -4817,7 +5152,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_refreshPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_refreshPreview": {
     "arguments": [
       {
         "name": "serverId",
@@ -4834,7 +5169,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_removePreviewAllowedOrigin": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_removePreviewAllowedOrigin": {
     "arguments": [
       {
         "name": "origin",
@@ -4846,7 +5181,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_sendClaudePageDismissCommand": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_sendClaudePageDismissCommand": {
     "arguments": [
       {
         "name": "serverId",
@@ -4858,7 +5193,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_sendClaudePageShareCommand": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_sendClaudePageShareCommand": {
     "arguments": [
       {
         "name": "serverId",
@@ -4870,7 +5205,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_setActivePreviewTab": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_setActivePreviewTab": {
     "arguments": [
       {
         "name": "serverId",
@@ -4887,7 +5222,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_setAutoVerify": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_setAutoVerify": {
     "arguments": [
       {
         "name": "cwd",
@@ -4904,7 +5239,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_setPreviewColorScheme": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_setPreviewColorScheme": {
     "arguments": [
       {
         "name": "serverId",
@@ -4926,7 +5261,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_setPreviewViewport": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_setPreviewViewport": {
     "arguments": [
       {
         "name": "serverId",
@@ -4953,7 +5288,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_showPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_showPreview": {
     "arguments": [
       {
         "name": "serverId",
@@ -4975,7 +5310,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_startBrowserPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_startBrowserPreview": {
     "arguments": [
       {
         "name": "cwd",
@@ -4992,7 +5327,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_startFromConfig": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_startFromConfig": {
     "arguments": [
       {
         "name": "cwd",
@@ -5014,7 +5349,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_startRemoteBrowserPreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_startRemoteBrowserPreview": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5025,13 +5360,18 @@ export const IPC_VALIDATION = {
         "name": "initialUrl",
         "position": 1,
         "validation": "string"
+      },
+      {
+        "name": "openInNewTab",
+        "position": 2,
+        "validation": "undefined | boolean"
       }
     ],
     "result": {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_stopServer": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_stopServer": {
     "arguments": [
       {
         "name": "serverId",
@@ -5043,7 +5383,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Launch_$_toggleSelectionMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Launch_$_toggleSelectionMode": {
     "arguments": [
       {
         "name": "serverId",
@@ -5065,7 +5405,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_abandonBridgeEnvironment": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_abandonBridgeEnvironment": {
     "arguments": [
       {
         "name": "deregisterAll",
@@ -5075,7 +5415,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_addFolderToSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_addFolderToSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5092,7 +5432,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_addTrustedFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_addTrustedFolder": {
     "arguments": [
       {
         "name": "folder",
@@ -5102,7 +5442,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_archive": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_archive": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5117,7 +5457,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_authorizeDirectMcpServer": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_authorizeDirectMcpServer": {
     "arguments": [
       {
         "name": "name",
@@ -5129,7 +5469,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_browseAndGrantRemoteSessionFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_browseAndGrantRemoteSessionFolder": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5141,7 +5481,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_clearRemoteSessionFolderGrants": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_clearRemoteSessionFolderGrants": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5151,7 +5491,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_delete": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_delete": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5161,19 +5501,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_deleteBridgeAgentMemory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_deleteBridgeAgentMemory": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_deleteBridgeSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_deleteBridgeSession": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_deleteLocalSkill": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_deleteLocalSkill": {
     "arguments": [
       {
         "name": "name",
@@ -5185,7 +5525,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_directMcpCallTool": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_directMcpCallTool": {
     "arguments": [
       {
         "name": "name",
@@ -5202,7 +5542,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_directMcpListResources": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_directMcpListResources": {
     "arguments": [
       {
         "name": "name",
@@ -5214,7 +5554,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_directMcpReadResource": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_directMcpReadResource": {
     "arguments": [
       {
         "name": "name",
@@ -5231,7 +5571,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_disconnectDirectMcpServer": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_disconnectDirectMcpServer": {
     "arguments": [
       {
         "name": "name",
@@ -5243,13 +5583,23 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getAll": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_dismissWatchRecordPill": {
+    "arguments": [
+      {
+        "name": "holdEpoch",
+        "position": 0,
+        "validation": "number"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getAll": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getAppIconForBundleId": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getAppIconForBundleId": {
     "arguments": [
       {
         "name": "bundleId",
@@ -5261,31 +5611,31 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getBridgeConsent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getBridgeConsent": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getDefaultWorkspaceFolders": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getDefaultWorkspaceFolders": {
     "arguments": [],
     "result": {
       "validation": "string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getDirectMcpServerStatuses": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getDirectMcpServerStatuses": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getLocalMcpServers": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getLocalMcpServers": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getLocalSkillFiles": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getLocalSkillFiles": {
     "arguments": [
       {
         "name": "name",
@@ -5297,13 +5647,13 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getManagedAskToolNames": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getManagedAskToolNames": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5320,13 +5670,13 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getSessionsBridgeEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getSessionsBridgeEnabled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getSessionsForScheduledTask": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getSessionsForScheduledTask": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -5338,7 +5688,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getSupportedCommands": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getSupportedCommands": {
     "arguments": [
       {
         "name": "options",
@@ -5350,7 +5700,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getTranscript": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getTranscript": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5367,7 +5717,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getTranscriptFeedback": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getTranscriptFeedback": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5379,13 +5729,13 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_getTrustedFolders": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_getTrustedFolders": {
     "arguments": [],
     "result": {
       "validation": "string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_grantRemoteSessionFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_grantRemoteSessionFolder": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5400,7 +5750,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_grantRemoteSessionFolders": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_grantRemoteSessionFolders": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5417,7 +5767,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_isFolderTrusted": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_isFolderTrusted": {
     "arguments": [
       {
         "name": "folder",
@@ -5429,13 +5779,13 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_listLocalSkills": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_listLocalSkills": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_mcpAuthenticate": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_mcpAuthenticate": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5452,7 +5802,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_mcpCallTool": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_mcpCallTool": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5474,7 +5824,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_mcpListResources": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_mcpListResources": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5491,7 +5841,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_mcpReadResource": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_mcpReadResource": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5513,7 +5863,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_mcpReconnect": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_mcpReconnect": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5530,7 +5880,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_mcpSubmitOAuthCallbackUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_mcpSubmitOAuthCallbackUrl": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5552,7 +5902,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_noteCuWindowMentions": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_noteCuWindowMentions": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5567,7 +5917,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_onAutoModeOverrideAlwaysAllow": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_onAutoModeOverrideAlwaysAllow": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5587,7 +5937,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_onBridgePermissionPreflight": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_onBridgePermissionPreflight": {
     "arguments": [
       {
         "name": "request",
@@ -5597,7 +5947,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_onCoworkFromMain": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_onCoworkFromMain": {
     "arguments": [
       {
         "name": "request",
@@ -5607,7 +5957,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_onCuEmergencyStop": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_onCuEmergencyStop": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5622,7 +5972,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_onDirectMcpServerStatusesChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_onDirectMcpServerStatusesChanged": {
     "arguments": [
       {
         "name": "statuses",
@@ -5632,7 +5982,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_onEvent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_onEvent": {
     "arguments": [
       {
         "name": "event",
@@ -5642,7 +5992,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_onManagedAskToolNamesChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_onManagedAskToolNamesChanged": {
     "arguments": [
       {
         "name": "payload",
@@ -5652,7 +6002,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_onRemoteSessionStart": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_onRemoteSessionStart": {
     "arguments": [
       {
         "name": "request",
@@ -5662,7 +6012,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_onToolPermissionRequest": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_onToolPermissionRequest": {
     "arguments": [
       {
         "name": "request",
@@ -5672,7 +6022,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_openOutputsDir": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_openOutputsDir": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5682,7 +6032,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_releaseRemoteCuLock": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_releaseRemoteCuLock": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5697,7 +6047,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_removeTrustedFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_removeTrustedFolder": {
     "arguments": [
       {
         "name": "folder",
@@ -5707,7 +6057,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_replaceEnabledMcpTools": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_replaceEnabledMcpTools": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5724,7 +6074,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_replaceRemoteMcpServers": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_replaceRemoteMcpServers": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5741,19 +6091,13 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_requestDocumentsTccAccess": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_requestFolderTccAccess": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_requestFolderTccAccess": {
-    "arguments": [],
-    "result": {
-      "validation": "custom schema validated"
-    }
-  },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_respondBridgePermissionPreflight": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_respondBridgePermissionPreflight": {
     "arguments": [
       {
         "name": "requestId",
@@ -5768,7 +6112,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_respondDirectoryServers": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_respondDirectoryServers": {
     "arguments": [
       {
         "name": "requestId",
@@ -5783,7 +6127,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_respondPluginSearch": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_respondPluginSearch": {
     "arguments": [
       {
         "name": "requestId",
@@ -5798,7 +6142,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_respondSlashMenuSkills": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_respondSlashMenuSkills": {
     "arguments": [
       {
         "name": "requestId",
@@ -5813,7 +6157,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_respondToToolPermission": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_respondToToolPermission": {
     "arguments": [
       {
         "name": "requestId",
@@ -5828,7 +6172,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_revealLocalSkill": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_revealLocalSkill": {
     "arguments": [
       {
         "name": "name",
@@ -5838,7 +6182,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_rewind": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_rewind": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5855,7 +6199,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_saveLocalSkill": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_saveLocalSkill": {
     "arguments": [
       {
         "name": "name",
@@ -5882,7 +6226,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_searchSessions": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_searchSessions": {
     "arguments": [
       {
         "name": "query",
@@ -5899,7 +6243,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_sendMessage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_sendMessage": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5954,7 +6298,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setChromePermissionMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setChromePermissionMode": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5971,7 +6315,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setDraftSessionFolders": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setDraftSessionFolders": {
     "arguments": [
       {
         "name": "folders",
@@ -5981,7 +6325,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setEffort": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setEffort": {
     "arguments": [
       {
         "name": "sessionId",
@@ -5996,7 +6340,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setExtendedThinking": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setExtendedThinking": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6011,7 +6355,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setFocusedSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setFocusedSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6021,7 +6365,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setLocalSkillEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setLocalSkillEnabled": {
     "arguments": [
       {
         "name": "name",
@@ -6038,7 +6382,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setMcpServers": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setMcpServers": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6055,7 +6399,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setModel": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setModel": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6070,7 +6414,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setPermissionMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setPermissionMode": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6097,7 +6441,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_setSessionsBridgeEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_setSessionsBridgeEnabled": {
     "arguments": [
       {
         "name": "enabled",
@@ -6107,7 +6451,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_shareSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_shareSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6119,7 +6463,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_signalSessionIntent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_signalSessionIntent": {
     "arguments": [
       {
         "name": "intent",
@@ -6129,7 +6473,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_start": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_start": {
     "arguments": [
       {
         "name": "info",
@@ -6141,7 +6485,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_startWatchRecording": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_startWatchRecording": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6158,7 +6502,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_stop": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_stop": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6168,7 +6512,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_stopTask": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_stopTask": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6183,7 +6527,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_submitTranscriptFeedback": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_submitTranscriptFeedback": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6200,13 +6544,13 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_takeHeldWatchRecording": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_takeHeldWatchRecording": {
     "arguments": [],
     "result": {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_triggerInteractiveAuth": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_triggerInteractiveAuth": {
     "arguments": [
       {
         "name": "force",
@@ -6218,7 +6562,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_updateSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_updateSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6233,7 +6577,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalAgentModeSessions_$_watchRecordingComplete": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalAgentModeSessions_$_watchRecordingComplete": {
     "arguments": [
       {
         "name": "result",
@@ -6243,7 +6587,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_deletePlugin": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_deletePlugin": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6260,7 +6604,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_getDownloadedRemotePlugins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_getDownloadedRemotePlugins": {
     "arguments": [
       {
         "name": "pluginContext",
@@ -6272,7 +6616,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_getPluginCliBatch": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_getPluginCliBatch": {
     "arguments": [
       {
         "name": "pluginIds",
@@ -6289,7 +6633,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_getPluginCliStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_getPluginCliStatus": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6306,24 +6650,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_getPluginOAuthStatus": {
-    "arguments": [
-      {
-        "name": "pluginId",
-        "position": 0,
-        "validation": "string"
-      },
-      {
-        "name": "pluginContext",
-        "position": 1,
-        "validation": "undefined | custom schema validated"
-      }
-    ],
-    "result": {
-      "validation": "custom schema validated"
-    }
-  },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_getPlugins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_getPlugins": {
     "arguments": [
       {
         "name": "options",
@@ -6340,7 +6667,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_getPluginShimOps": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_getPluginShimOps": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6362,7 +6689,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_listSkillFiles": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_listSkillFiles": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6384,7 +6711,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_onCliOpAlwaysAllowed": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_onCliOpAlwaysAllowed": {
     "arguments": [
       {
         "name": "keys",
@@ -6394,7 +6721,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_revokePluginOAuth": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_revokePluginOAuth": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6414,7 +6741,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_setPluginEnabled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_setPluginEnabled": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6436,7 +6763,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_setPluginEnvVars": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_setPluginEnvVars": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6463,7 +6790,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_setPluginOAuthClient": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_setPluginOAuthClient": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6495,7 +6822,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_setPluginShimPermission": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_setPluginShimPermission": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6527,7 +6854,7 @@ export const IPC_VALIDATION = {
       "validation": "string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_startPluginOAuthFlow": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_startPluginOAuthFlow": {
     "arguments": [
       {
         "name": "pluginId",
@@ -6549,7 +6876,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_syncRemotePlugins": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_syncRemotePlugins": {
     "arguments": [
       {
         "name": "pluginContext",
@@ -6561,7 +6888,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalPlugins_$_uploadPlugin": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalPlugins_$_uploadPlugin": {
     "arguments": [
       {
         "name": "filename",
@@ -6593,13 +6920,13 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessionEnvironment_$_get": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessionEnvironment_$_get": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessionEnvironment_$_save": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessionEnvironment_$_save": {
     "arguments": [
       {
         "name": "envVars",
@@ -6611,7 +6938,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_addDirectories": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_addDirectories": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6628,7 +6955,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_applyFlagSettings": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_applyFlagSettings": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6638,7 +6965,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_archive": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_archive": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6653,7 +6980,22 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_beginTearOffHalo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_armAutoFixOnNextPr": {
+    "arguments": [
+      {
+        "name": "sessionId",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "branch",
+        "position": 1,
+        "validation": "string"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_beginTearOffHalo": {
     "arguments": [
       {
         "name": "title",
@@ -6668,7 +7010,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_cancelQueuedMessage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_cancelQueuedMessage": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6685,7 +7027,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_changeCwd": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_changeCwd": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6712,7 +7054,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_checkBranchSwitchConflict": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_checkBranchSwitchConflict": {
     "arguments": [
       {
         "name": "cwd",
@@ -6729,7 +7071,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_checkGhAvailable": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_checkGhAvailable": {
     "arguments": [
       {
         "name": "cwd",
@@ -6741,7 +7083,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_checkRemoteTargetTrust": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_checkRemoteTargetTrust": {
     "arguments": [
       {
         "name": "remoteTarget",
@@ -6758,7 +7100,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_checkRemoteTrust": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_checkRemoteTrust": {
     "arguments": [
       {
         "name": "config",
@@ -6775,7 +7117,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_checkStoredTrust": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_checkStoredTrust": {
     "arguments": [
       {
         "name": "cwd",
@@ -6787,7 +7129,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_checkTrust": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_checkTrust": {
     "arguments": [
       {
         "name": "cwd",
@@ -6799,7 +7141,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_classifyTccFolderKind": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_classifyTccFolderKind": {
     "arguments": [
       {
         "name": "path",
@@ -6811,7 +7153,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_cleanupAutoModeProposalFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_cleanupAutoModeProposalFile": {
     "arguments": [
       {
         "name": "path",
@@ -6823,7 +7165,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_clearSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_clearSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6838,7 +7180,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_commitAllChanges": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_closeCliTail": {
+    "arguments": [
+      {
+        "name": "handle",
+        "position": 0,
+        "validation": "string"
+      }
+    ],
+    "result": {
+      "validation": "boolean"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_commitAllChanges": {
     "arguments": [
       {
         "name": "cwd",
@@ -6855,7 +7209,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_commitWipForBranchSwitch": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_commitWipForBranchSwitch": {
     "arguments": [
       {
         "name": "cwd",
@@ -6872,7 +7226,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_createAgent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_createAgent": {
     "arguments": [
       {
         "name": "params",
@@ -6884,7 +7238,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_createLocalPr": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_createLocalPr": {
     "arguments": [
       {
         "name": "params",
@@ -6896,7 +7250,24 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_createPrReviewComment": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_createLogsHandoffBundle": {
+    "arguments": [
+      {
+        "name": "threadUrl",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "sessionId",
+        "position": 1,
+        "validation": "undefined | string"
+      }
+    ],
+    "result": {
+      "validation": "custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_createPrReviewComment": {
     "arguments": [
       {
         "name": "cwd",
@@ -6953,7 +7324,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_delete": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_delete": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6963,7 +7334,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_dequeuePr": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_dequeuePr": {
     "arguments": [
       {
         "name": "sessionId",
@@ -6990,7 +7361,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_disableAutoMerge": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_disableAutoMerge": {
     "arguments": [
       {
         "name": "cwd",
@@ -7017,7 +7388,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_discardPendingTurn": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_discardPendingTurn": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7029,7 +7400,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_discardWorkingTree": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_discardWorkingTree": {
     "arguments": [
       {
         "name": "cwd",
@@ -7041,7 +7412,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_dismissBoundPr": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_dismissBoundPr": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7066,7 +7437,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_enableAutoMerge": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_enableAutoMerge": {
     "arguments": [
       {
         "name": "cwd",
@@ -7093,7 +7464,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_ensureBranchPushed": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_ensureBranchPushed": {
     "arguments": [
       {
         "name": "cwd",
@@ -7105,7 +7476,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_ensureSSHConnected": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_ensureSSHConnected": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7117,7 +7488,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_findLocalSessionIdForBridgeId": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_findLocalSessionIdForBridgeId": {
     "arguments": [
       {
         "name": "bridgeSessionId",
@@ -7129,7 +7500,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_forkSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_forkSession": {
     "arguments": [
       {
         "name": "parentSessionId",
@@ -7156,7 +7527,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_generateLocalPrContent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_generateLocalPrContent": {
     "arguments": [
       {
         "name": "cwd",
@@ -7173,7 +7544,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getAgents": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getAgents": {
     "arguments": [
       {
         "name": "options",
@@ -7185,13 +7556,13 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getAll": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getAll": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getBusyShellPtyKeys": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getBusyShellPtyKeys": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7203,7 +7574,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getCheckRunAnnotations": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getCheckRunAnnotations": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7230,7 +7601,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getCommitDiff": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getCommitDiff": {
     "arguments": [
       {
         "name": "cwd",
@@ -7247,7 +7618,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getContextUsage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getContextUsage": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7257,13 +7628,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getCrCliStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getCrCliStatus": {
     "arguments": [],
     "result": {
       "validation": "string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getCrForSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getCrForSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7275,7 +7646,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getCrRefSummary": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getCrRefSummary": {
     "arguments": [
       {
         "name": "org",
@@ -7297,13 +7668,13 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getDefaultEffort": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getDefaultEffort": {
     "arguments": [],
     "result": {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getDefaultPermissionMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getDefaultPermissionMode": {
     "arguments": [
       {
         "name": "cwd",
@@ -7315,13 +7686,13 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getDetectedProjects": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getDetectedProjects": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getDiffFileContent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getDiffFileContent": {
     "arguments": [
       {
         "name": "cwd",
@@ -7348,7 +7719,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getEffort": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getEffort": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7360,7 +7731,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getGhIssue": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getGhIssue": {
     "arguments": [
       {
         "name": "repo",
@@ -7382,7 +7753,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getGhRefSummary": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getGhRefSummary": {
     "arguments": [
       {
         "name": "host",
@@ -7404,7 +7775,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getGitCommits": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getGitCommits": {
     "arguments": [
       {
         "name": "cwd",
@@ -7426,7 +7797,7 @@ export const IPC_VALIDATION = {
       "validation": "null | array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getGitDiff": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getGitDiff": {
     "arguments": [
       {
         "name": "cwd",
@@ -7453,7 +7824,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getGitDiffFilePatch": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getGitDiffFilePatch": {
     "arguments": [
       {
         "name": "cwd",
@@ -7480,7 +7851,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getGitDiffStats": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getGitDiffStats": {
     "arguments": [
       {
         "name": "cwd",
@@ -7502,7 +7873,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getGitInfo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getGitInfo": {
     "arguments": [
       {
         "name": "cwd",
@@ -7514,7 +7885,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getInstalledEditors": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getInstalledEditors": {
     "arguments": [
       {
         "name": "cwd",
@@ -7526,7 +7897,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getLocalBranches": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getLocalBranches": {
     "arguments": [
       {
         "name": "cwd",
@@ -7538,19 +7909,19 @@ export const IPC_VALIDATION = {
       "validation": "string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getLocalMcpServers": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getLocalMcpServers": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getMacTccRecoveryInfo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getMacTccRecoveryInfo": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getPermissionMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getPermissionMode": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7562,7 +7933,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getPlanForSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getPlanForSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7574,7 +7945,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getPrChecks": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getPrChecks": {
     "arguments": [
       {
         "name": "cwd",
@@ -7601,7 +7972,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getPrCommits": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getPrCommits": {
     "arguments": [
       {
         "name": "cwd",
@@ -7623,7 +7994,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getPrDetails": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getPrDetails": {
     "arguments": [
       {
         "name": "cwd",
@@ -7650,7 +8021,39 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getPrOverview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getPrFileContent": {
+    "arguments": [
+      {
+        "name": "cwd",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "prNumber",
+        "position": 1,
+        "validation": "number"
+      },
+      {
+        "name": "path",
+        "position": 2,
+        "validation": "string"
+      },
+      {
+        "name": "ref",
+        "position": 3,
+        "validation": "string"
+      },
+      {
+        "name": "repo",
+        "position": 4,
+        "validation": "undefined | string"
+      }
+    ],
+    "result": {
+      "validation": "custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getPrOverview": {
     "arguments": [
       {
         "name": "cwd",
@@ -7677,7 +8080,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getPrReviewComments": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getPrReviewComments": {
     "arguments": [
       {
         "name": "cwd",
@@ -7704,7 +8107,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getPrStateForBranch": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getPrStateForBranch": {
     "arguments": [
       {
         "name": "cwd",
@@ -7736,7 +8139,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getRemoteCommitDiff": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getRemoteCommitDiff": {
     "arguments": [
       {
         "name": "remoteTarget",
@@ -7758,7 +8161,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getRemoteDiffFileContent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getRemoteDiffFileContent": {
     "arguments": [
       {
         "name": "remoteTarget",
@@ -7790,7 +8193,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getRemoteGitCommits": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getRemoteGitCommits": {
     "arguments": [
       {
         "name": "remoteTarget",
@@ -7817,7 +8220,7 @@ export const IPC_VALIDATION = {
       "validation": "null | array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getRemoteGitDiff": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getRemoteGitDiff": {
     "arguments": [
       {
         "name": "remoteTarget",
@@ -7844,7 +8247,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getRemoteGitDiffStats": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getRemoteGitDiffStats": {
     "arguments": [
       {
         "name": "remoteTarget",
@@ -7871,7 +8274,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getRemoteGitInfo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getRemoteGitInfo": {
     "arguments": [
       {
         "name": "remoteTarget",
@@ -7888,7 +8291,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7900,7 +8303,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSessionMediaStreamUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSessionMediaStreamUrl": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7917,7 +8320,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSessionPanelMediaStreamUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSessionPanelMediaStreamUrl": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7934,7 +8337,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSessionsForScheduledTask": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSessionsForScheduledTask": {
     "arguments": [
       {
         "name": "scheduledTaskId",
@@ -7946,7 +8349,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getShellPtyBuffer": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getShellPtyBuffer": {
     "arguments": [
       {
         "name": "sessionId",
@@ -7958,7 +8361,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSSHCommitDiff": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSSHCommitDiff": {
     "arguments": [
       {
         "name": "config",
@@ -7980,13 +8383,13 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSSHConfigs": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSSHConfigs": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSSHDiffFileContent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSSHDiffFileContent": {
     "arguments": [
       {
         "name": "config",
@@ -8018,7 +8421,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSSHGitCommits": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSSHGitCommits": {
     "arguments": [
       {
         "name": "config",
@@ -8045,7 +8448,7 @@ export const IPC_VALIDATION = {
       "validation": "null | array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSSHGitDiff": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSSHGitDiff": {
     "arguments": [
       {
         "name": "config",
@@ -8072,7 +8475,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSSHGitDiffStats": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSSHGitDiffStats": {
     "arguments": [
       {
         "name": "config",
@@ -8099,7 +8502,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSSHGitInfo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSSHGitInfo": {
     "arguments": [
       {
         "name": "config",
@@ -8116,7 +8519,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSSHLocalBranches": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSSHLocalBranches": {
     "arguments": [
       {
         "name": "config",
@@ -8133,7 +8536,7 @@ export const IPC_VALIDATION = {
       "validation": "string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSSHSupportedCommands": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSSHSupportedCommands": {
     "arguments": [
       {
         "name": "config",
@@ -8150,7 +8553,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getSupportedCommands": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getSupportedCommands": {
     "arguments": [
       {
         "name": "options",
@@ -8162,7 +8565,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getTeleportReadiness": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getTeleportReadiness": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8174,7 +8577,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getTranscript": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getTranscript": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8186,13 +8589,30 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getTrustedSSHHosts": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getTranscriptTail": {
+    "arguments": [
+      {
+        "name": "sessionId",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "limit",
+        "position": 1,
+        "validation": "number"
+      }
+    ],
+    "result": {
+      "validation": "custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getTrustedSSHHosts": {
     "arguments": [],
     "result": {
       "validation": "string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getUncommittedChanges": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getUncommittedChanges": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8204,7 +8624,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string[]"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_getWorkingTreeStatus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_getWorkingTreeStatus": {
     "arguments": [
       {
         "name": "cwd",
@@ -8216,7 +8636,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_importCliSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_importCliSession": {
     "arguments": [
       {
         "name": "cliSessionId",
@@ -8228,13 +8648,13 @@ export const IPC_VALIDATION = {
       "validation": "string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_installGh": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_installGh": {
     "arguments": [],
     "result": {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_interrupt": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_interrupt": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8244,13 +8664,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_isVSCodeInstalled": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_isVSCodeInstalled": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_isWorkingTreeDirty": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_isWorkingTreeDirty": {
     "arguments": [
       {
         "name": "cwd",
@@ -8262,7 +8682,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_launchUltrareview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_launchUltrareview": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8284,7 +8704,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_listCliSessions": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_listCliSessions": {
     "arguments": [
       {
         "name": "limit",
@@ -8296,7 +8716,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_listGhIssues": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_listGhIssues": {
     "arguments": [
       {
         "name": "cwd",
@@ -8313,7 +8733,29 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_listSessionDirectory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_listRemoteDirectory": {
+    "arguments": [
+      {
+        "name": "remoteTarget",
+        "position": 0,
+        "validation": "custom schema validated"
+      },
+      {
+        "name": "root",
+        "position": 1,
+        "validation": "string"
+      },
+      {
+        "name": "path",
+        "position": 2,
+        "validation": "string"
+      }
+    ],
+    "result": {
+      "validation": "custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_listSessionDirectory": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8330,7 +8772,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_listSSHDirectory": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_listSSHDirectory": {
     "arguments": [
       {
         "name": "config",
@@ -8347,13 +8789,13 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_listWslDistros": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_listWslDistros": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_logCliEvent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_logCliEvent": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8368,7 +8810,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_markPrDraft": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_markPrDraft": {
     "arguments": [
       {
         "name": "cwd",
@@ -8395,7 +8837,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_markPrReady": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_markPrReady": {
     "arguments": [
       {
         "name": "cwd",
@@ -8422,7 +8864,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_mcpAuthenticate": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_mcpAuthenticate": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8444,7 +8886,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_mcpCallTool": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_mcpCallTool": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8466,7 +8908,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_mcpListResources": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_mcpListResources": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8483,7 +8925,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_mcpReadResource": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_mcpReadResource": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8505,7 +8947,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_mcpReconnect": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_mcpReconnect": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8522,7 +8964,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_mcpSubmitOAuthCallbackUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_mcpSubmitOAuthCallbackUrl": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8544,7 +8986,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_mergePr": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_mergePr": {
     "arguments": [
       {
         "name": "cwd",
@@ -8576,7 +9018,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_notifySpawnedTaskStarted": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_notifySpawnedTaskStarted": {
     "arguments": [
       {
         "name": "parentSessionId",
@@ -8606,7 +9048,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_onEvent": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_onEvent": {
     "arguments": [
       {
         "name": "event",
@@ -8616,7 +9058,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_onSSHPasswordRequired": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_onSSHPasswordRequired": {
     "arguments": [
       {
         "name": "request",
@@ -8626,7 +9068,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_onToolPermissionRequest": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_onToolPermissionRequest": {
     "arguments": [
       {
         "name": "request",
@@ -8636,7 +9078,19 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_openInEditor": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_openCliTail": {
+    "arguments": [
+      {
+        "name": "handle",
+        "position": 0,
+        "validation": "string"
+      }
+    ],
+    "result": {
+      "validation": "boolean"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_openInEditor": {
     "arguments": [
       {
         "name": "path",
@@ -8668,7 +9122,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_openInVSCode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_openInVSCode": {
     "arguments": [
       {
         "name": "cwd",
@@ -8680,7 +9134,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_openSessionFileInDefaultApp": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_openSessionFileInDefaultApp": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8697,7 +9151,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_pickFileAtCwd": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_pickFileAtCwd": {
     "arguments": [
       {
         "name": "cwd",
@@ -8709,7 +9163,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_pickSessionFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_pickSessionFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8721,7 +9175,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_popBackgroundTaskSuggestion": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_popBackgroundTaskSuggestion": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8736,7 +9190,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_popBackgroundTaskSuggestionById": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_popBackgroundTaskSuggestionById": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8758,7 +9212,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_promoteQueuedMessage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_promoteQueuedMessage": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8775,7 +9229,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_readCliTranscript": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_readCliTranscript": {
     "arguments": [
       {
         "name": "handle",
@@ -8797,7 +9251,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_readFileAtCwd": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_readFileAtCwd": {
     "arguments": [
       {
         "name": "cwd",
@@ -8814,7 +9268,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_readSessionFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_readSessionFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8836,7 +9290,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_readSessionImageAsDataUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_readSessionImageAsDataUrl": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8858,7 +9312,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_readSessionMediaAsDataUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_readSessionMediaAsDataUrl": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8875,7 +9329,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_readSessionPanelMediaAsDataUrl": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_readSessionPanelMediaAsDataUrl": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8892,7 +9346,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_reorderQueuedMessage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_reorderQueuedMessage": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8914,7 +9368,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_replaceEnabledMcpTools": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_replaceEnabledMcpTools": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8931,7 +9385,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_replaceRemoteMcpServers": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_replaceRemoteMcpServers": {
     "arguments": [
       {
         "name": "sessionId",
@@ -8948,7 +9402,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_replyToPrReviewComment": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_replyToPrReviewComment": {
     "arguments": [
       {
         "name": "cwd",
@@ -8985,7 +9439,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_reportComposerInp": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_reportComposerInp": {
     "arguments": [
       {
         "name": "timing",
@@ -8995,7 +9449,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_reportStreamRender": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_reportStreamRender": {
     "arguments": [
       {
         "name": "summary",
@@ -9005,7 +9459,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_reportSwitchTiming": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_reportSwitchTiming": {
     "arguments": [
       {
         "name": "timing",
@@ -9015,7 +9469,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_rerunPrCheck": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_rerunPrCheck": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9042,7 +9496,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_resizePty": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_resizePty": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9062,7 +9516,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_resizeShellPty": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_resizeShellPty": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9082,7 +9536,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_resolvePrReviewThread": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_resolvePrReviewThread": {
     "arguments": [
       {
         "name": "cwd",
@@ -9114,7 +9568,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_resolveSessionFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_resolveSessionFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9131,7 +9585,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_resolveSSHSettings": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_resolveSSHSettings": {
     "arguments": [
       {
         "name": "config",
@@ -9148,7 +9602,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_respondToRefusalFallbackPrompt": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_respondToRefusalFallbackPrompt": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9170,7 +9624,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_respondToSSHPassword": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_respondToSSHPassword": {
     "arguments": [
       {
         "name": "requestId",
@@ -9185,7 +9639,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_respondToToolPermission": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_respondToToolPermission": {
     "arguments": [
       {
         "name": "requestId",
@@ -9200,7 +9654,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_resumePreClearSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_resumePreClearSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9212,7 +9666,7 @@ export const IPC_VALIDATION = {
       "validation": "null | array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_revealRemotePath": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_revealRemotePath": {
     "arguments": [
       {
         "name": "remoteTarget",
@@ -9229,7 +9683,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_reviewDiff": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_reviewDiff": {
     "arguments": [
       {
         "name": "diff",
@@ -9241,7 +9695,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_rewind": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_rewind": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9258,7 +9712,7 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_rewindV2": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_rewindV2": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9275,7 +9729,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_runBashCommand": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_runBashCommand": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9292,7 +9746,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_saveTrust": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_saveTrust": {
     "arguments": [
       {
         "name": "cwd",
@@ -9302,7 +9756,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_searchSessions": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_searchSessions": {
     "arguments": [
       {
         "name": "query",
@@ -9319,7 +9773,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_sendMessage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_sendMessage": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9359,7 +9813,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_sendSideChatMessage": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_sendSideChatMessage": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9374,7 +9828,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setAccountBranchPrefix": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setAccountBranchPrefix": {
     "arguments": [
       {
         "name": "prefix",
@@ -9384,22 +9838,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setAutoFixEnabled": {
-    "arguments": [
-      {
-        "name": "sessionId",
-        "position": 0,
-        "validation": "string"
-      },
-      {
-        "name": "enabled",
-        "position": 1,
-        "validation": "boolean"
-      }
-    ],
-    "result": null
-  },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setAvailableCodeModels": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setAvailableCodeModels": {
     "arguments": [
       {
         "name": "modelIds",
@@ -9409,7 +9848,37 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setEffort": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setBoundPrAutoFix": {
+    "arguments": [
+      {
+        "name": "sessionId",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "repo",
+        "position": 1,
+        "validation": "string"
+      },
+      {
+        "name": "prNumber",
+        "position": 2,
+        "validation": "number"
+      },
+      {
+        "name": "enabled",
+        "position": 3,
+        "validation": "boolean"
+      },
+      {
+        "name": "host",
+        "position": 4,
+        "validation": "undefined | string"
+      }
+    ],
+    "result": null
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setEffort": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9424,7 +9893,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setFastMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setFastMode": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9439,7 +9908,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setFocusedSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setFocusedSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9449,7 +9918,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setMcpServers": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setMcpServers": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9466,7 +9935,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setModel": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setModel": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9481,7 +9950,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setPermissionMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setPermissionMode": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9508,7 +9977,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setSSHConfigs": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setSSHConfigs": {
     "arguments": [
       {
         "name": "configs",
@@ -9518,7 +9987,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setTearOffHalo": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setTearOffHalo": {
     "arguments": [
       {
         "name": "armed",
@@ -9528,7 +9997,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setTrustedSSHHosts": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setTrustedSSHHosts": {
     "arguments": [
       {
         "name": "hosts",
@@ -9538,7 +10007,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_setVisibility": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_setVisibility": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9558,7 +10027,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_shareSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_shareSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9570,7 +10039,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_showSessionFileInFolder": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_showSessionFileInFolder": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9587,7 +10056,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_showSessionFilePreview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_showSessionFilePreview": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9614,7 +10083,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_start": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_start": {
     "arguments": [
       {
         "name": "info",
@@ -9626,7 +10095,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_startPty": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_startPty": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9648,7 +10117,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_startShellPty": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_startShellPty": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9675,7 +10144,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_startSideChat": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_startSideChat": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9685,7 +10154,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_stashWorkingTree": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_stashWorkingTree": {
     "arguments": [
       {
         "name": "cwd",
@@ -9702,7 +10171,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_stop": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_stop": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9712,7 +10181,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_stopPty": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_stopPty": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9722,7 +10191,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_stopSessionSummary": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_stopSessionSummary": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9732,7 +10201,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_stopShellPty": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_stopShellPty": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9742,7 +10211,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_stopSideChat": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_stopSideChat": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9752,7 +10221,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_stopTask": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_stopTask": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9767,7 +10236,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_submitFeedback": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_submitFeedback": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9784,7 +10253,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_submitPrReview": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_submitPrReview": {
     "arguments": [
       {
         "name": "cwd",
@@ -9821,7 +10290,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_summarizeSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_summarizeSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9831,7 +10300,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_summarizeTranscript": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_summarizeTranscript": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9846,7 +10315,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_teleportToCloud": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_teleportToCloud": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9863,7 +10332,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_testSSHConnection": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_testSSHConnection": {
     "arguments": [
       {
         "name": "config",
@@ -9875,7 +10344,24 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_unarchive": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_toggleRemoteControl": {
+    "arguments": [
+      {
+        "name": "sessionId",
+        "position": 0,
+        "validation": "string"
+      },
+      {
+        "name": "enable",
+        "position": 1,
+        "validation": "boolean"
+      }
+    ],
+    "result": {
+      "validation": "custom schema validated"
+    }
+  },
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_unarchive": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9885,7 +10371,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_updatePrBody": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_updatePrBody": {
     "arguments": [
       {
         "name": "cwd",
@@ -9917,7 +10403,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_updatePrComment": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_updatePrComment": {
     "arguments": [
       {
         "name": "cwd",
@@ -9954,7 +10440,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_updateSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_updateSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9969,7 +10455,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_validateSSHPath": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_validateSSHPath": {
     "arguments": [
       {
         "name": "config",
@@ -9986,7 +10472,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_warmSession": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_warmSession": {
     "arguments": [
       {
         "name": "sessionId",
@@ -9996,7 +10482,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_writeAutoModeProposalFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_writeAutoModeProposalFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -10013,7 +10499,7 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_writePty": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_writePty": {
     "arguments": [
       {
         "name": "sessionId",
@@ -10028,7 +10514,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_writeSessionFile": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_writeSessionFile": {
     "arguments": [
       {
         "name": "sessionId",
@@ -10055,7 +10541,7 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_LocalSessions_$_writeShellPty": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_LocalSessions_$_writeShellPty": {
     "arguments": [
       {
         "name": "sessionId",
@@ -10070,7 +10556,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Navigation_$_navigate": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Navigation_$_navigate": {
     "arguments": [
       {
         "name": "path",
@@ -10080,7 +10566,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_NestDev_$_focus": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_NestDev_$_focus": {
     "arguments": [
       {
         "name": "cwd",
@@ -10092,7 +10578,7 @@ export const IPC_VALIDATION = {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_NestDev_$_getState": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_NestDev_$_getState": {
     "arguments": [
       {
         "name": "cwd",
@@ -10104,13 +10590,13 @@ export const IPC_VALIDATION = {
       "validation": "null | custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_OpenDocuments_$_getOpenDocuments": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_OpenDocuments_$_getOpenDocuments": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_OpenDocuments_$_readOpenDocumentAsBase64": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_OpenDocuments_$_readOpenDocumentAsBase64": {
     "arguments": [
       {
         "name": "filePath",
@@ -10122,13 +10608,13 @@ export const IPC_VALIDATION = {
       "validation": "null | string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_PluginBridgeMcp_$_listServers": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_PluginBridgeMcp_$_listServers": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_QuickEntry_$_onQuickEntrySubmit": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_QuickEntry_$_onQuickEntrySubmit": {
     "arguments": [
       {
         "name": "payload",
@@ -10138,7 +10624,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_QuickEntry_$_setRecentChats": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_QuickEntry_$_setRecentChats": {
     "arguments": [
       {
         "name": "chats",
@@ -10153,7 +10639,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Resources_$_fetchMentionOptions": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Resources_$_fetchMentionOptions": {
     "arguments": [
       {
         "name": "query",
@@ -10170,7 +10656,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Resources_$_findStepRequested": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Resources_$_findStepRequested": {
     "arguments": [
       {
         "name": "forward",
@@ -10180,7 +10666,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Resources_$_handleMentionSelect": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Resources_$_handleMentionSelect": {
     "arguments": [
       {
         "name": "optionId",
@@ -10192,13 +10678,13 @@ export const IPC_VALIDATION = {
       "validation": "custom schema validated"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Resources_$_listProjectFiles": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Resources_$_listProjectFiles": {
     "arguments": [],
     "result": {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Resources_$_searchFileContents": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Resources_$_searchFileContents": {
     "arguments": [
       {
         "name": "query",
@@ -10215,7 +10701,7 @@ export const IPC_VALIDATION = {
       "validation": "array (item schema validated)"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Resources_$_setFindInPageClaimed": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Resources_$_setFindInPageClaimed": {
     "arguments": [
       {
         "name": "claimed",
@@ -10225,7 +10711,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Resources_$_setFocusedCwd": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Resources_$_setFocusedCwd": {
     "arguments": [
       {
         "name": "cwd",
@@ -10235,7 +10721,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Resources_$_setFocusedSshTarget": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Resources_$_setFocusedSshTarget": {
     "arguments": [
       {
         "name": "cwd",
@@ -10250,7 +10736,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_Toast_$_showToast": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_Toast_$_showToast": {
     "arguments": [
       {
         "name": "message",
@@ -10270,7 +10756,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WebBuild_$_reportCommitHash": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WebBuild_$_reportCommitHash": {
     "arguments": [
       {
         "name": "commitHash",
@@ -10280,13 +10766,13 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowControl_$_captureScreenshot": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowControl_$_captureScreenshot": {
     "arguments": [],
     "result": {
       "validation": "string"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowControl_$_reportModalScrim": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowControl_$_reportModalScrim": {
     "arguments": [
       {
         "name": "active",
@@ -10301,7 +10787,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowControl_$_resize": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowControl_$_resize": {
     "arguments": [
       {
         "name": "width",
@@ -10321,7 +10807,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowControl_$_setIncognitoMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowControl_$_setIncognitoMode": {
     "arguments": [
       {
         "name": "enabled",
@@ -10331,7 +10817,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowControl_$_setModalScrimActive": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowControl_$_setModalScrimActive": {
     "arguments": [
       {
         "name": "active",
@@ -10341,7 +10827,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowControl_$_setThemeMode": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowControl_$_setThemeMode": {
     "arguments": [
       {
         "name": "mode",
@@ -10351,7 +10837,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowState_$_cuDockStateChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowState_$_cuDockStateChanged": {
     "arguments": [
       {
         "name": "isDocked",
@@ -10366,7 +10852,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowState_$_fullscreenChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowState_$_fullscreenChanged": {
     "arguments": [
       {
         "name": "isFullscreen",
@@ -10376,25 +10862,25 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowState_$_getFullscreen": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowState_$_getFullscreen": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowState_$_getVisibility": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowState_$_getVisibility": {
     "arguments": [],
     "result": {
       "validation": "boolean"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowState_$_getZoomFactor": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowState_$_getZoomFactor": {
     "arguments": [],
     "result": {
       "validation": "number"
     }
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowState_$_visibilityChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowState_$_visibilityChanged": {
     "arguments": [
       {
         "name": "isVisible",
@@ -10404,7 +10890,7 @@ export const IPC_VALIDATION = {
     ],
     "result": null
   },
-  "$eipc_message$_55a3e6c3-1a00-41ac-8a57-63da567fd7b3_$_claude.web_$_WindowState_$_zoomFactorChanged": {
+  "$eipc_message$_c2d69a85-d03c-4f19-98bf-5181071f3a66_$_claude.web_$_WindowState_$_zoomFactorChanged": {
     "arguments": [
       {
         "name": "zoomFactor",

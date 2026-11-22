@@ -25,6 +25,11 @@ export function contractValueMatches(
     );
   if (expected.some((part) => part.startsWith("array")))
     return Array.isArray(value);
+  // The recovered bundle only tells us that a private validator ran. Its
+  // schema can be an enum scalar or an object, so the strongest sound check
+  // available here is presence. Null/undefined unions were handled above.
+  if (expected.includes("custom schema validated"))
+    return value !== null && value !== undefined;
   for (const primitive of [
     "string",
     "boolean",
@@ -35,10 +40,7 @@ export function contractValueMatches(
   ] as const) {
     if (expected.includes(primitive) && typeof value === primitive) return true;
   }
-  // The original bundle delegates these cases to generated structural validators.
-  // The derived report records that boundary without pretending the minified
-  // validator name is a useful public type.
-  return expected.some((part) => part.includes("validated"));
+  return false;
 }
 
 export function assertContractArguments(

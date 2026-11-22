@@ -9,6 +9,7 @@ import { ChildProcess, spawn } from "node:child_process";
 import { MessageChannelMain, MessagePortMain, WebContents } from "electron";
 // @ts-expect-error -- untyped CommonJS dependency
 import crossSpawn from "cross-spawn";
+import { childEnvironment } from "./child-environment";
 
 interface BridgeEntry {
   child: ChildProcess;
@@ -97,7 +98,7 @@ export class LocalMcpPortBridge {
         : {};
     const child = crossSpawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...env },
+      env: childEnvironment(env),
       windowsHide: true,
     }) as ChildProcess;
     const { port1, port2 } = new MessageChannelMain();

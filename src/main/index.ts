@@ -37,7 +37,11 @@ import {
   assertTrustedIpcSender,
   registerGeneratedIpc,
 } from "./ipc";
-import { installLocalUiProtocol, registerAppScheme } from "./local-ui";
+import {
+  disposeLocalDictation,
+  installLocalUiProtocol,
+  registerAppScheme,
+} from "./local-ui";
 import { LocalBackend, type LocalSecretCodec } from "./local-backend";
 import { LocalCodeSessionManager } from "./local-code";
 import { LocalFilePreview } from "./local-file-preview";
@@ -53,6 +57,7 @@ import { LocalTrayController } from "./local-tray";
 import { LocalSandbox } from "./local-sandbox";
 import { LocalArtifactTunnel } from "./local-tunnel";
 import { LocalWebTools } from "./local-web-tools";
+import { diagnosticError, LocalDiagnostics } from "./local-diagnostics";
 import { featureMatrix, ServiceContext, ServiceDispatcher } from "./services";
 import { StateStore } from "./state";
 
@@ -76,6 +81,7 @@ const profilePaths = localProfilePaths(
   process.env[LOCAL_PROFILE_ENV] ??
     // Retain the development/test override used before the v0.0.1 rename.
     process.env.CLAUDE_LOCAL_USER_DATA_DIR,
+  { packaged: app.isPackaged, temporaryRoot: app.getPath("temp") },
 );
 for (const directory of Object.values(profilePaths))
   mkdirSync(directory, { recursive: true });
@@ -111,9 +117,27 @@ let localComputerUse: LocalComputerUse | null = null;
 let localScheduledTasks: LocalScheduledTasks | null = null;
 let localArtifactTunnel: LocalArtifactTunnel | null = null;
 let localTray: LocalTrayController | null = null;
+let diagnostics: LocalDiagnostics | null = null;
 let targetUrl = "https://claude.ai";
 const pendingOAuthDeepLinks: string[] = [];
 let oauthRuntimeReady = false;
+
+process.on("uncaughtException", (error, origin) => {
+  diagnostics?.record(
+    "main-process",
+    "uncaught-exception",
+    { origin, error: diagnosticError(error) },
+    "error",
+  );
+});
+process.on("unhandledRejection", (reason) => {
+  diagnostics?.record(
+    "main-process",
+    "unhandled-rejection",
+    { error: diagnosticError(reason) },
+    "error",
+  );
+});
 
 function preloadPath(name: "preload-main-view" | "preload-shell"): string {
   return path.join(app.getAppPath(), "dist-electron", `${name}.cjs`);
@@ -416,6 +440,15 @@ function createMainWindow(): BrowserWindow {
   });
   mainWindow = window;
   mainView = view;
+  diagnostics?.record(
+    "renderer",
+    "webcontents.created",
+    {
+      id: view.webContents.id,
+      targetUrl,
+    },
+    "info",
+  );
   // The retained client distinguishes its native Code surface from the web
   // Code product by the official desktop user-agent token. Without this it
   // redirects /code and /epitaxy into cloud-only enrollment pages. The token
@@ -456,6 +489,26 @@ function createMainWindow(): BrowserWindow {
       console.error("[local-ui-debugger]", error);
     }
   }
+  view.webContents.on(
+    "console-message",
+    (_event, level, message, lineNumber, sourceId) => {
+      diagnostics?.record(
+        "renderer",
+        "console",
+        { level, message, lineNumber, sourceId },
+        level >= 3 ? "error" : level >= 2 ? "warn" : "debug",
+      );
+    },
+  );
+  view.webContents.on("render-process-gone", (_event, details) => {
+    diagnostics?.record("renderer", "process.gone", { ...details }, "error");
+  });
+  view.webContents.on("unresponsive", () => {
+    diagnostics?.record("renderer", "unresponsive", {}, "warn");
+  });
+  view.webContents.on("responsive", () => {
+    diagnostics?.record("renderer", "responsive", {}, "info");
+  });
   window.contentView.addChildView(view);
   updateViewBounds();
   installNavigationPolicy(view.webContents);
@@ -481,6 +534,10 @@ function createMainWindow(): BrowserWindow {
       // routed page. Release it (and its consumer lock) whenever the main app
       // changes route so it cannot cover Chat or block a later reopen.
       localFilePreview?.hide();
+      diagnostics?.record("renderer", "navigation.begin", {
+        url,
+        sameDocument,
+      });
       if (process.env.CLAUDE_TRACE_LOCAL_API === "1")
         console.error(
           `[local-navigation] ${sameDocument ? "same-document" : "document"} ${url}`,
@@ -497,6 +554,16 @@ function createMainWindow(): BrowserWindow {
     "did-fail-load",
     (_event, errorCode, errorDescription, validatedUrl, isMainFrame) => {
       if (!isMainFrame || errorCode === -3) return;
+      diagnostics?.record(
+        "renderer",
+        "navigation.failed",
+        {
+          errorCode,
+          errorDescription,
+          url: validatedUrl,
+        },
+        "error",
+      );
       const channel = eventChannel(
         "claude.internal.ui.MainWindowTitleBar",
         "showLoadError",
@@ -506,6 +573,14 @@ function createMainWindow(): BrowserWindow {
     },
   );
   view.webContents.on("did-finish-load", () => {
+    diagnostics?.record(
+      "renderer",
+      "navigation.finished",
+      {
+        url: view.webContents.getURL(),
+      },
+      "info",
+    );
     const channel = eventChannel(
       "claude.internal.ui.MainWindowTitleBar",
       "hideLoadError",
@@ -626,19 +701,19 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
   ipcMain.removeHandler("open-claude-local-sessions");
   ipcMain.removeHandler("open-claude-connector-oauth");
   ipcMain.handle("list-mcp-servers", (event) => {
-    assertTrustedIpcSender(event);
+    assertLocalIpcSender(event);
     // The retained client expects an array of server names and connects to
     // each by name.
     return dispatcher.listMcpServers().map((server) => server.name);
   });
   ipcMain.handle("connect-to-mcp-server", (event, server) => {
-    assertTrustedIpcSender(event);
+    assertLocalIpcSender(event);
     if (typeof server !== "string")
       throw new Error("connect-to-mcp-server expects a server name");
     localMcpPortBridge?.connect(event.sender, server);
   });
   ipcMain.handle("request-open-mcp-settings", (event) => {
-    assertTrustedIpcSender(event);
+    assertLocalIpcSender(event);
     return undefined;
   });
   ipcMain.handle("local-pick-directory", async (event) => {
@@ -659,7 +734,7 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
     // renderer cannot screenshot itself.
     const content = typeof payload?.content === "string" ? payload.content : "";
     const type = typeof payload?.type === "string" ? payload.type : "";
-    if (!content || content.length > 2_000_000) return null;
+    if (!content || Buffer.byteLength(content, "utf8") > 2_000_000) return null;
     if (type !== "text/html" && type !== "image/svg+xml") return null;
     const html =
       type === "image/svg+xml"
@@ -680,10 +755,18 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
     let timer: NodeJS.Timeout | undefined;
     try {
       // The capture stays fully local: only data/blob/about URLs may load.
-      capture.webContents.session.webRequest.onBeforeRequest(
-        (details, callback) => {
-          callback({ cancel: !/^(data|blob|about):/i.test(details.url) });
-        },
+      const captureSession = capture.webContents.session;
+      captureSession.setPermissionCheckHandler(() => false);
+      captureSession.setPermissionRequestHandler(
+        (_webContents, _permission, callback) => callback(false),
+      );
+      captureSession.on("will-download", (event) => event.preventDefault());
+      captureSession.webRequest.onBeforeRequest((details, callback) => {
+        callback({ cancel: !/^(data|blob|about):/i.test(details.url) });
+      });
+      capture.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+      capture.webContents.on("will-attach-webview", (event) =>
+        event.preventDefault(),
       );
       const timeout = new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
@@ -726,6 +809,12 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
     assertLocalIpcSender(event);
     return dispatcher.handleChromeAction(action, event);
   });
+  ipcMain.handle("open-claude-launch-overlay", (event, open) => {
+    assertLocalIpcSender(event);
+    if (!localLaunchPreview)
+      throw new Error("The local preview manager is unavailable");
+    return localLaunchPreview.setNativePreviewOverlayOpen(open);
+  });
   ipcMain.handle("local-code-artifact-details", async (event, id) => {
     assertLocalIpcSender(event);
     if (!codeSessions || typeof id !== "string") return null;
@@ -746,6 +835,7 @@ function installSpecialIpc(dispatcher: ServiceDispatcher): void {
     "getAllArtifacts",
     "getLocalSkillFiles",
     "listLocalSkills",
+    "revealLocalSkill",
     "saveLocalSkill",
     "setLocalSkillEnabled",
   ]);
@@ -873,6 +963,18 @@ if (!gotLock) {
   app
     .whenReady()
     .then(async () => {
+      diagnostics = new LocalDiagnostics(app.getPath("logs"));
+      diagnostics.record(
+        "app",
+        "runtime.ready",
+        {
+          version: app.getVersion(),
+          platform: process.platform,
+          arch: process.arch,
+          packaged: app.isPackaged,
+        },
+        "info",
+      );
       state = new StateStore(app.getPath("userData"));
       localWebTools = new LocalWebTools(
         app.getPath("userData"),
@@ -902,6 +1004,7 @@ if (!gotLock) {
           app.getPath("userData"),
           localWebTools,
           localSecretCodec,
+          diagnostics,
         );
         localMcpOAuth = await LocalMcpOAuthManager.create(
           app.getPath("userData"),
@@ -945,6 +1048,7 @@ if (!gotLock) {
           if (channel) broadcast(channel, request);
         },
         localWebTools,
+        diagnostics,
       );
       localFilePreview = new LocalFilePreview(() => mainWindow, codeSessions);
       localLaunchPreview = new LocalLaunchPreview(
@@ -985,6 +1089,7 @@ if (!gotLock) {
           );
           if (channel) broadcast(channel, serverId, sessionId, tabId);
         },
+        diagnostics,
       );
       codeSessions.setBrowserTools(localLaunchPreview);
       if (useLocalUi && ionRoot && localBackend) {
@@ -994,7 +1099,22 @@ if (!gotLock) {
           localBackend,
           codeSessions,
           localArtifactTunnel,
+          diagnostics,
+          {
+            rendererVersion: RETAINED_DESKTOP_VERSION,
+            // Candidate mode is deliberately development-only. Installed
+            // builds always keep the complete fail-closed release gate.
+            patchMode:
+              !app.isPackaged &&
+              process.env.OPEN_CLAUDE_PATCH_MODE === "compatible"
+                ? "compatible"
+                : "strict",
+          },
         );
+        if (localBackend.publishedArtifacts().length > 0)
+          void localArtifactTunnel.ensureStarted().then(async (publicUrl) => {
+            if (!publicUrl) await localBackend?.revokePublishedArtifacts();
+          });
         // Earlier releases served app:// assets without Cache-Control while
         // keeping stable version-hashed URLs, so an upgraded install could
         // revive stale renderer chunks from the profile HTTP cache. Assets
@@ -1135,7 +1255,7 @@ if (!gotLock) {
         // always constructed; the account-level enabled_wiggle setting and
         // Docker availability gate actual use.
         localSandbox = new LocalSandbox(app.getPath("userData"));
-        localBackend.setSandboxSource(localSandbox);
+        await localBackend.setSandboxSource(localSandbox);
         if (localBackend.accountSettings().enabled_wiggle === true)
           localSandbox.startImageBuild();
         localBrowserUse = new LocalBrowserUse(app.getPath("userData"));
@@ -1145,9 +1265,6 @@ if (!gotLock) {
         localComputerUse = new LocalComputerUse(
           app.getPath("userData"),
           async () => {
-            // Probe harnesses cannot answer native modals.
-            if (process.env.CLAUDE_LOCAL_COMPUTER_AUTOCONSENT === "1")
-              return true;
             const window = mainWindow;
             if (!window || window.isDestroyed()) return false;
             window.show();
@@ -1193,7 +1310,28 @@ if (!gotLock) {
         });
       }
       const dispatcher = new ServiceDispatcher(context);
-      disposeIpc = registerGeneratedIpc(dispatcher);
+      disposeIpc = registerGeneratedIpc(dispatcher, diagnostics);
+      ipcMain.on("open-claude-diagnostic-renderer", (event, payload) => {
+        try {
+          assertLocalIpcSender(event);
+          diagnostics?.record(
+            "renderer",
+            "window.exception",
+            {
+              sender: event.senderFrame?.url ?? event.sender.getURL(),
+              payload,
+            },
+            "error",
+          );
+        } catch (error) {
+          diagnostics?.record(
+            "security",
+            "renderer.diagnostic.blocked",
+            { error: diagnosticError(error) },
+            "warn",
+          );
+        }
+      });
       installSpecialIpc(dispatcher);
       installPermissionPolicy();
       Menu.setApplicationMenu(null);
@@ -1228,6 +1366,19 @@ let shutdownComplete = false;
 let shutdownPromise: Promise<void> | null = null;
 
 async function disposeRuntime(): Promise<void> {
+  const disposalFailures: Array<{ component: string; error: unknown }> = [];
+  const dispose = async (
+    component: string,
+    operation: Promise<unknown> | undefined,
+  ): Promise<void> => {
+    if (!operation) return;
+    try {
+      await operation;
+    } catch (error) {
+      disposalFailures.push({ component, error });
+      console.error(`[shutdown] ${component} disposal failed`, error);
+    }
+  };
   localTray?.dispose();
   localTray = null;
   globalShortcut.unregisterAll();
@@ -1235,7 +1386,7 @@ async function disposeRuntime(): Promise<void> {
   disposeIpc = null;
   // Stop the scheduler first while its session starter is still alive; a
   // missed-run catch-up may already be between start() and its atomic write.
-  await localScheduledTasks?.dispose().catch(() => undefined);
+  await dispose("scheduled-tasks", localScheduledTasks?.dispose());
   localScheduledTasks = null;
   const backendDisposal = localBackend?.dispose() ?? Promise.resolve();
   const codeDisposal = codeSessions?.dispose() ?? Promise.resolve();
@@ -1245,26 +1396,45 @@ async function disposeRuntime(): Promise<void> {
   localMcpOAuth?.dispose();
   localMcpPortBridge?.disposeAll();
   localComputerUse?.dispose();
-  await Promise.allSettled([backendDisposal, codeDisposal]);
+  await Promise.all([
+    dispose("local-backend", backendDisposal),
+    dispose("local-code", codeDisposal),
+  ]);
   localBackend = null;
   codeSessions = null;
   localArtifactTunnel?.dispose();
   localArtifactTunnel = null;
+  await dispose("moonshine-dictation", disposeLocalDictation());
   localMcpManager = null;
   localMcpOAuth = null;
   localMcpPortBridge = null;
-  await localSandbox?.dispose().catch(() => undefined);
+  await dispose("sandbox", localSandbox?.dispose());
   localSandbox = null;
-  await localBrowserUse?.dispose().catch(() => undefined);
+  await dispose("browser-use", localBrowserUse?.dispose());
   localBrowserUse = null;
   localComputerUse = null;
-  await localLaunchPreview?.dispose().catch(() => undefined);
+  await dispose("launch-preview", localLaunchPreview?.dispose());
   localLaunchPreview = null;
-  await localFilePreview?.dispose().catch(() => undefined);
+  await dispose("file-preview", localFilePreview?.dispose());
   localFilePreview = null;
-  await localWebTools?.dispose().catch(() => undefined);
+  await dispose("web-tools", localWebTools?.dispose());
   localWebTools = null;
-  await state?.dispose().catch(() => undefined);
+  await dispose("state-store", state?.dispose());
+  diagnostics?.record(
+    "app",
+    "runtime.disposed",
+    {
+      disposalFailures: disposalFailures.map(({ component }) => component),
+    },
+    "info",
+  );
+  await diagnostics?.flush();
+  if (disposalFailures.length > 0)
+    console.error(
+      `[shutdown] completed with ${disposalFailures.length} disposal failure(s): ${disposalFailures
+        .map(({ component }) => component)
+        .join(", ")}`,
+    );
 }
 
 app.on("before-quit", (event) => {

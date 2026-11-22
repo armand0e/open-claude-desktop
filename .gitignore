@@ -19,5 +19,7 @@ reference/**/*.dll
 reference/**/*.exe
 
 assets/whisper/
+assets/moonshine/
+moonshine-stream.obj
 tmp-*.png
 tmp-*.mjs

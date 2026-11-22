@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   LocalScheduledTasks,
   nextCronRun,
+  shouldRetryScheduledStoreReplace,
 } from "../src/main/local-scheduled-tasks";
 
 const temporaryDirectories: string[] = [];
@@ -66,6 +67,29 @@ describe("nextCronRun", () => {
     expect(next.getMonth()).toBe(1);
     expect(next.getDate()).toBe(29);
     expect(next.getHours()).toBe(9);
+  });
+
+  it("skips nonexistent wall-clock times across a DST spring-forward gap", () => {
+    const previous = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      const beforeGap = new Date(2026, 2, 8, 1, 59, 0).getTime();
+      const next = new Date(nextCronRun("30 2 * * *", beforeGap)!);
+      expect(next.getDate()).toBe(9);
+      expect(next.getHours()).toBe(2);
+      expect(next.getMinutes()).toBe(30);
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  });
+
+  it("makes the Windows atomic-replace retry matrix explicit", () => {
+    expect(shouldRetryScheduledStoreReplace("win32", "EACCES", 0)).toBe(true);
+    expect(shouldRetryScheduledStoreReplace("win32", "EBUSY", 7)).toBe(true);
+    expect(shouldRetryScheduledStoreReplace("win32", "EPERM", 8)).toBe(false);
+    expect(shouldRetryScheduledStoreReplace("win32", "ENOSPC", 0)).toBe(false);
+    expect(shouldRetryScheduledStoreReplace("linux", "EACCES", 0)).toBe(false);
   });
 });
 

@@ -13,6 +13,7 @@ import {
 } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isRemovedCoworkPreference } from "../shared/removed-product";
 
 export interface PersistentState {
   appConfig: {
@@ -81,6 +82,7 @@ const DEFAULT_STATE: PersistentState = {
 };
 
 const MAX_STATE_BYTES = 16 * 1024 * 1024;
+class StateCorruptionError extends Error {}
 
 function samePath(left: string, right: string): boolean {
   const normalizedLeft = path.resolve(left);
@@ -104,7 +106,7 @@ function readStateFile(filePath: string): string {
     if (!info.isFile())
       throw new Error("Persistent desktop state is not a regular file");
     if (info.size > MAX_STATE_BYTES)
-      throw new Error("Persistent desktop state is too large");
+      throw new StateCorruptionError("Persistent desktop state is too large");
     const confirmed = realpathSync(expected);
     const confirmedInfo = statSync(confirmed);
     if (
@@ -115,8 +117,15 @@ function readStateFile(filePath: string): string {
       throw new Error("Persistent desktop state changed while opening");
     const bytes = readFileSync(descriptor);
     if (bytes.byteLength > MAX_STATE_BYTES)
-      throw new Error("Persistent desktop state is too large");
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      throw new StateCorruptionError("Persistent desktop state is too large");
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    } catch (error) {
+      throw new StateCorruptionError(
+        "Persistent desktop state contains invalid UTF-8",
+        { cause: error },
+      );
+    }
   } finally {
     closeSync(descriptor);
   }
@@ -148,10 +157,13 @@ function normalizeState(value: unknown): PersistentState {
     ...currentInput
   } = input;
   const appConfig = objectValue(input.appConfig);
-  const {
-    localAgentModeTrustedFolders: _removedTrustedFolders,
-    ...currentPreferences
-  } = objectValue(appConfig.preferences);
+  const currentPreferences = Object.fromEntries(
+    Object.entries(objectValue(appConfig.preferences)).filter(
+      ([key]) =>
+        key !== "localAgentModeTrustedFolders" &&
+        !isRemovedCoworkPreference(key),
+    ),
+  );
   const inputStores = objectValue(input.stores);
   const supportBundleState = objectValue(inputStores.supportBundleState);
   return {
@@ -231,7 +243,16 @@ export class StateStore {
           throw error;
       }
       if (existing) {
-        if (!existing.isFile() && !existing.isSymbolicLink()) throw error;
+        // Access errors and path changes are not evidence of corrupt content.
+        // Keep the original profile in place and let startup report the failure.
+        if (
+          !existing.isFile() ||
+          !(
+            error instanceof SyntaxError ||
+            error instanceof StateCorruptionError
+          )
+        )
+          throw error;
         try {
           renameSync(
             this.filePath,
@@ -244,7 +265,8 @@ export class StateStore {
             cause: quarantineError,
           });
         }
-      }
+      } else if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+        throw error;
       this.#state = structuredClone(DEFAULT_STATE);
     }
   }

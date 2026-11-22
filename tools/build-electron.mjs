@@ -1,4 +1,5 @@
 import path from "node:path";
+import { builtinModules } from "node:module";
 import { build } from "vite";
 
 const entries = [
@@ -40,6 +41,7 @@ for (const [index, [name, input]] of entries.entries()) {
           "node-pty",
           "pdfjs-dist/legacy/build/pdf.mjs",
           "playwright-core",
+          ...builtinModules,
           /^node:/,
         ],
         output: {

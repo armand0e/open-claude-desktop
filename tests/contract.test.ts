@@ -11,13 +11,13 @@ import { parseChannel } from "../src/shared/channels";
 
 describe("recovered IPC contract", () => {
   it("contains every unique recovered channel", () => {
-    expect(IPC_CHANNEL_COUNT).toBe(842);
-    expect(IPC_SERVICE_COUNT).toBe(71);
-    expect(PRELOAD_CHANNELS).toHaveLength(842);
+    expect(IPC_CHANNEL_COUNT).toBe(879);
+    expect(IPC_SERVICE_COUNT).toBe(74);
+    expect(PRELOAD_CHANNELS).toHaveLength(879);
     expect(new Set(PRELOAD_CHANNELS.map((entry) => entry.channel)).size).toBe(
-      842,
+      879,
     );
-    expect(Object.keys(IPC_SERVICES)).toHaveLength(71);
+    expect(Object.keys(IPC_SERVICES)).toHaveLength(74);
   });
 
   it("has a parseable service and one unambiguous public path for every channel", () => {
@@ -33,30 +33,30 @@ describe("recovered IPC contract", () => {
       PRELOAD_CHANNELS.filter((entry) =>
         (entry.files as readonly string[]).includes("mainView.js"),
       ),
-    ).toHaveLength(817);
+    ).toHaveLength(854);
     expect(
       PRELOAD_CHANNELS.filter((entry) =>
         (entry.files as readonly string[]).includes("mainWindow.js"),
       ),
-    ).toHaveLength(126);
+    ).toHaveLength(127);
   });
 
   it("retains the generated argument and result evidence", () => {
     const signatures = JSON.parse(
       readFileSync(path.resolve("analysis/ipc-signatures.json"), "utf8"),
     );
-    expect(signatures.channelsWithValidation).toBe(747);
-    expect(signatures.validationMessageCount).toBe(1701);
+    expect(signatures.channelsWithValidation).toBe(779);
+    expect(signatures.validationMessageCount).toBe(1780);
     expect(
       signatures.channels.reduce(
         (count: number, entry: { arguments: unknown[] }) =>
           count + entry.arguments.length,
         0,
       ),
-    ).toBe(1168);
+    ).toBe(1226);
     expect(
       signatures.channels.filter((entry: { result: unknown }) => entry.result)
         .length,
-    ).toBe(533);
+    ).toBe(554);
   });
 });

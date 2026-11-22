@@ -340,10 +340,21 @@ try {
       const labels = [...document.querySelectorAll("*")].filter(element =>
         element.innerText?.trim() === ${JSON.stringify(chatTitle)}
       );
-      const label = labels[0];
-      const control = document.querySelector('a[aria-label=${JSON.stringify(chatTitle)}]') || label?.closest("button,a,[role=button]") || label;
+      const expectedPath = ${JSON.stringify(`/chat/${chatSessionId}`)};
+      const control = [...document.querySelectorAll("a[href],button,[role=button]")].find(element => {
+        const href = element instanceof HTMLAnchorElement ? new URL(element.href, location.href) : null;
+        return href?.pathname === expectedPath ||
+          element.getAttribute("aria-label") === ${JSON.stringify(chatTitle)} ||
+          element.innerText?.trim() === ${JSON.stringify(chatTitle)};
+      });
       control?.click();
-      return { clicked: Boolean(control), stateSentinel, matches: labels.length };
+      return {
+        clicked: Boolean(control),
+        stateSentinel,
+        matches: labels.length,
+        tag: control?.tagName,
+        href: control instanceof HTMLAnchorElement ? control.href : null
+      };
     })()`,
   );
   await new Promise((resolve) => setTimeout(resolve, 5_000));

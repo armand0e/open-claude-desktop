@@ -4,7 +4,9 @@
 // artifact is published — publish starts it, the last unpublish stops it.
 
 import { createServer, Server } from "node:http";
+import { request as httpsRequest } from "node:https";
 import net from "node:net";
+import { setTimeout as delay } from "node:timers/promises";
 // Reuse localtunnel's socket cluster, but replace its unbounded Axios metadata
 // retry loop with the bounded, abortable bootstrap below. The package does not
 // expose this class or ship TypeScript declarations.
@@ -18,6 +20,7 @@ export interface TunnelArtifactSource {
     type: string;
     content: string;
   }>;
+  revokePublishedArtifacts?(): Promise<void>;
 }
 
 interface ActiveTunnel {
@@ -30,6 +33,12 @@ type TunnelFactory = (options: {
   port: number;
   signal?: AbortSignal;
 }) => Promise<ActiveTunnel>;
+
+type TunnelVerifier = (
+  publicUrl: string,
+  artifactSlug: string,
+  signal: AbortSignal,
+) => Promise<void>;
 
 const TUNNEL_START_TIMEOUT_MS = 30_000;
 const MAX_TUNNEL_METADATA_BYTES = 64 * 1024;
@@ -77,39 +86,67 @@ type TunnelClientInstance = ActiveTunnel & {
 async function tunnelMetadata(
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
-  const response = await fetch("https://localtunnel.me/?new", {
-    signal,
-    redirect: "error",
-    headers: { Accept: "application/json" },
+  // Electron's bundled fetch/Undici currently has a fixed 10-second connect
+  // timeout. The public relay can legitimately take slightly longer to
+  // allocate an endpoint, so use the abortable Node transport and let the
+  // caller's explicit lifecycle timeout remain the single governing bound.
+  let endpointIp = "";
+  const bytes = await new Promise<Buffer>((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error, value?: Buffer) => {
+      if (settled) return;
+      settled = true;
+      if (error) reject(error);
+      else resolve(value ?? Buffer.alloc(0));
+    };
+    const request = httpsRequest(
+      "https://localtunnel.me/?new",
+      {
+        method: "GET",
+        headers: { Accept: "application/json" },
+        signal,
+      },
+      (response) => {
+        const endpointHeader = response.headers["x-localtunnel-endpoint"];
+        endpointIp = Array.isArray(endpointHeader)
+          ? (endpointHeader[0] ?? "")
+          : (endpointHeader ?? "");
+        const status = response.statusCode ?? 0;
+        if (status < 200 || status >= 300) {
+          response.resume();
+          finish(new Error(`Public tunnel service returned HTTP ${status}`));
+          return;
+        }
+        const declared = Number(response.headers["content-length"]);
+        if (Number.isFinite(declared) && declared > MAX_TUNNEL_METADATA_BYTES) {
+          response.destroy();
+          finish(new Error("Public tunnel metadata exceeded the safety limit"));
+          return;
+        }
+        const chunks: Buffer[] = [];
+        let received = 0;
+        response.on("data", (chunk: Buffer | Uint8Array) => {
+          if (settled) return;
+          const value = Buffer.from(chunk);
+          received += value.byteLength;
+          if (received > MAX_TUNNEL_METADATA_BYTES) {
+            response.destroy();
+            finish(
+              new Error("Public tunnel metadata exceeded the safety limit"),
+            );
+            return;
+          }
+          chunks.push(value);
+        });
+        response.once("end", () => finish(undefined, Buffer.concat(chunks)));
+        response.once("error", (error) => finish(error));
+      },
+    );
+    request.once("error", (error) => finish(error));
+    request.end();
   });
-  if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new Error(`Public tunnel service returned HTTP ${response.status}`);
-  }
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_TUNNEL_METADATA_BYTES) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new Error("Public tunnel metadata exceeded the safety limit");
-  }
-  if (!response.body) throw new Error("Public tunnel service returned no data");
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      received += value.byteLength;
-      if (received > MAX_TUNNEL_METADATA_BYTES) {
-        await reader.cancel().catch(() => undefined);
-        throw new Error("Public tunnel metadata exceeded the safety limit");
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)));
+  if (bytes.byteLength === 0)
+    throw new Error("Public tunnel service returned no data");
   let parsed: unknown;
   try {
     parsed = JSON.parse(
@@ -123,7 +160,10 @@ async function tunnelMetadata(
   const value = parsed as Record<string, unknown>;
   const publicUrl = typeof value.url === "string" ? value.url : "";
   const remotePort = Number(value.port);
-  const remoteIp = typeof value.ip === "string" ? value.ip : "";
+  // The hosted service moved the endpoint address from the JSON payload to
+  // an authenticated HTTPS response header. Support both response shapes so
+  // the SSRF/public-address gate remains enforced across service revisions.
+  const remoteIp = typeof value.ip === "string" ? value.ip : endpointIp;
   const id = typeof value.id === "string" ? value.id : "";
   let parsedPublicUrl: URL;
   try {
@@ -194,6 +234,53 @@ async function openBoundedTunnel(options: {
   }
 }
 
+async function verifyPublicRelay(
+  publicUrl: string,
+  artifactSlug: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const target = new URL(
+    `/public/artifacts/${encodeURIComponent(artifactSlug)}`,
+    publicUrl,
+  );
+  let lastFailure = "no response";
+  let loggedFailure = "";
+  // localtunnel announces the public hostname before every relay socket is
+  // necessarily ready. Retry only until the lifecycle controller aborts;
+  // success still requires the exact unguessable proof header from our local
+  // server, so a relay splash/502 page can never satisfy this gate.
+  while (!signal.aborted) {
+    try {
+      const response = await fetch(target, {
+        signal,
+        redirect: "error",
+        // The hosted loca.lt relay places an interactive consent screen in
+        // front of browser-like requests. Relay verification is a service
+        // probe, not a browser navigation.
+        headers: { "Bypass-Tunnel-Reminder": "Open-Claude verification" },
+      });
+      const proof = response.headers.get("x-open-claude-artifact");
+      try {
+        if (response.ok && proof === artifactSlug) return;
+        lastFailure = `HTTP ${response.status}, proof=${proof ? "mismatch" : "missing"}`;
+      } finally {
+        await response.body?.cancel().catch(() => undefined);
+      }
+    } catch (error) {
+      if (signal.aborted) break;
+      lastFailure = error instanceof Error ? error.name : "request error";
+    }
+    if (lastFailure !== loggedFailure) {
+      loggedFailure = lastFailure;
+      console.error(
+        `[open-claude] Public artifact relay is not ready: ${lastFailure}`,
+      );
+    }
+    await delay(250, undefined, { signal }).catch(() => undefined);
+  }
+  throw new Error(`The public relay was not ready (${lastFailure})`);
+}
+
 function escapeHtml(value: string): string {
   return value.replace(
     /[&<>"]/g,
@@ -234,6 +321,7 @@ export class LocalArtifactTunnel {
     private readonly source: TunnelArtifactSource,
     private readonly openTunnel: TunnelFactory = openBoundedTunnel,
     private readonly startTimeoutMs = TUNNEL_START_TIMEOUT_MS,
+    private readonly verifyTunnel: TunnelVerifier = verifyPublicRelay,
   ) {}
 
   status(): { url: string | null; active: boolean } {
@@ -281,6 +369,7 @@ export class LocalArtifactTunnel {
             const page = artifactPage(artifact);
             response.writeHead(200, {
               "Content-Type": page.contentType,
+              "X-Open-Claude-Artifact": artifact.slug,
               "Cache-Control": "no-store",
               "X-Robots-Tag": "noindex",
               "X-Content-Type-Options": "nosniff",
@@ -341,12 +430,46 @@ export class LocalArtifactTunnel {
           tunnel.close();
           return null;
         }
+        const artifact = this.source.publishedArtifacts()[0];
+        const verifyAbort = new AbortController();
+        this.#startingAbort = verifyAbort;
+        let verifyTimeout: NodeJS.Timeout | undefined;
+        try {
+          await Promise.race([
+            this.verifyTunnel(tunnel.url, artifact.slug, verifyAbort.signal),
+            new Promise<never>((_resolve, reject) => {
+              verifyTimeout = setTimeout(() => {
+                verifyAbort.abort();
+                reject(new Error("Public relay verification timed out"));
+              }, this.startTimeoutMs);
+              verifyTimeout.unref?.();
+            }),
+          ]);
+        } catch (error) {
+          tunnel.close();
+          throw error;
+        } finally {
+          if (verifyTimeout) clearTimeout(verifyTimeout);
+          if (this.#startingAbort === verifyAbort) this.#startingAbort = null;
+        }
         this.#tunnel = tunnel;
         this.#url = tunnel.url.replace(/\/$/, "");
         tunnel.on("close", () => {
           if (this.#tunnel === tunnel) {
             this.#tunnel = null;
             this.#url = null;
+            if (
+              revision === this.#revision &&
+              this.source.publishedArtifacts().length > 0
+            )
+              void this.source
+                .revokePublishedArtifacts?.()
+                .catch((error) =>
+                  console.error(
+                    "Failed to revoke artifacts after the public relay closed",
+                    error,
+                  ),
+                );
           }
         });
         tunnel.on("error", () => {
@@ -357,7 +480,11 @@ export class LocalArtifactTunnel {
           }
         });
         return this.#url;
-      } catch {
+      } catch (error) {
+        // Keep relay failures observable in both development probes and the
+        // packaged process log. The publish transaction still rolls back and
+        // returns a bounded error to the renderer.
+        console.error("[open-claude] Public artifact relay failed", error);
         return null;
       } finally {
         if (this.#starting === starting) {

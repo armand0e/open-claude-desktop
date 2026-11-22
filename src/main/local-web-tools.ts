@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { readResponseJson } from "./bounded-response";
+import { childEnvironment } from "./child-environment";
 
 type JsonObject = Record<string, unknown>;
 const MAX_HEALTH_RESPONSE_BYTES = 64 * 1024;
@@ -142,8 +143,7 @@ export class LocalWebTools implements WebToolRunner {
       const child = spawn(process.execPath, [this.#proxyScript], {
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
-        env: {
-          ...process.env,
+        env: childEnvironment({
           ELECTRON_RUN_AS_NODE: "1",
           // Let the child keep the ephemeral listener reservation. Selecting
           // a port in the parent and closing it before spawn leaves a race in
@@ -152,7 +152,7 @@ export class LocalWebTools implements WebToolRunner {
           CHANNEL: process.env.CLAUDE_LOCAL_SEARCH_CHANNEL || "chrome",
           PROFILE_DIR: path.join(this.#userDataPath, "search-browser-profile"),
           AUTH_TOKEN: this.#authToken,
-        },
+        }),
       });
       this.#child = child;
       let spawnError = "";

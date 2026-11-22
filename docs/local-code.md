@@ -6,15 +6,15 @@ This repository supplies an independently authored local implementation behind t
 
 1. Open **Code** and choose a workspace from the native folder selector.
 2. Enter a task in the native prompt composer.
-3. `LocalSessions.start` creates a durable local session, emits the transcript/start events expected by the renderer, and runs the selected OpenAI-compatible model.
+3. `LocalSessions.start` creates a durable local session, emits the transcript/start events expected by the renderer, and runs the selected OpenAI-compatible or Anthropic Messages model.
 4. Tool requests are authorized and executed in the main process. Assistant, tool-result, filesystem, result, initialization, and session-update frames use the recovered Claude Code transcript shapes so the installed UI renders its normal cards, diffs, status rows, and completion state.
 5. Sessions and transcripts are atomically stored in `local-code-sessions.json` under Electron's user-data directory and are recoverable after restart.
 
-No account bootstrap, OAuth token, or Anthropic credential is used.
+No account bootstrap or subscription OAuth token is used. Anthropic credentials are used only when the user explicitly selects the Claude Code preset and supplies an Anthropic Console API key.
 
 ## Agent and tools
 
-Code sends streaming OpenAI-compatible chat completions with function definitions. If an endpoint rejects function tools, the session retries with a documented `<tool_call>{...}</tool_call>` text contract. The loop can be interrupted at any time and is bounded only by a runaway-safety ceiling of 1,000 model turns (override with `CLAUDE_LOCAL_MAX_AGENT_TURNS`).
+Code sends streaming structured tools through either OpenAI-compatible Chat Completions or the native Anthropic Messages transport. If an OpenAI-compatible endpoint rejects function tools, the session retries with a documented `<tool_call>{...}</tool_call>` text contract. The loop can be interrupted at any time and is bounded only by a runaway-safety ceiling of 1,000 model turns (override with `CLAUDE_LOCAL_MAX_AGENT_TURNS`).
 
 | Tool                             | Local behavior                                                                                                                       |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
@@ -25,7 +25,7 @@ Code sends streaming OpenAI-compatible chat completions with function definition
 | `Grep`                           | Regex content search through ripgrep                                                                                                 |
 | `Bash`                           | Bounded workspace command execution with stdout/stderr results                                                                       |
 | `Skill`                          | Loads a local or plugin-provided skill on demand                                                                                     |
-| `Task`                           | Runs a bounded nested workflow when Dynamic workflows is enabled                                                                     |
+| `Task`                           | Launches a durable background agent when Dynamic workflows is enabled; up to three children run concurrently by default              |
 | `web_search` / `visit_website`   | Uses the same bounded local web-tool process as Chat                                                                                 |
 | `mcp__<server>__<tool>`          | Discovers and calls configured stdio/HTTP MCP tools; normal Code permission rules apply                                              |
 | `Artifact`                       | Claude Code `2.1.210`-style publish/list for Markdown or HTML files                                                                  |
@@ -34,6 +34,16 @@ Code sends streaming OpenAI-compatible chat completions with function definition
 | `preview_start`                  | Starts a service from `.open-claude/launch.json` and opens it in the visible Code browser                                            |
 
 File tools resolve real paths and reject lexical or symlink escapes outside the selected workspace and explicitly added directories. `Bash` is intentionally a more powerful boundary and is therefore controlled by the permission mode. Model file/search tools exclude `.claude`, and model shell calls that target it or invoke the external Claude Code CLI are rejected.
+
+### Dynamic workflows
+
+When Dynamic workflows is enabled, `Task` returns a durable task ID immediately instead of blocking the parent loop. A bounded worker pool runs up to three child agents concurrently (`OPEN_CLAUDE_MAX_BACKGROUND_AGENTS`, capped at eight), queues additional children, and prevents child agents from recursively launching more agents. Each child is limited to 50 turns and 200,000 tokens by default; the aggregate session budget is 600,000 background tokens. The token limits can be configured with `OPEN_CLAUDE_MAX_BACKGROUND_TASK_TOKENS` and `OPEN_CLAUDE_MAX_BACKGROUND_SESSION_TOKENS`.
+
+The native transcript receives `task_started`, `task_progress`, and `task_notification` events, including elapsed time, token count, tool count, and the last tool. Child user, assistant, and tool-result rows are stored as sidechain entries keyed by the parent tool-use ID and are available through `readCliTranscript` without leaking into the parent's ordinary model history. Completion notifications are delivered back into the parent loop, which waits for active children and integrates their reports before producing its final result.
+
+Background task state is atomically persisted with the parent session. A task can be stopped independently through `stopTask`, including while queued, generating, executing a tool, or waiting for permission; stopping the parent still stops all of its children. Because an in-flight local provider request cannot survive an Electron process exit, restart recovery marks unfinished children as stopped and emits a durable notification instead of resurrecting a phantom-running task.
+
+The retained renderer's suggested-task queue is also durable: valid suggestions survive restart, and both the legacy head-pop and ID-specific pop APIs remove the selected item atomically. Local `Task` launches do not depend on that optional suggestion surface.
 
 ## Open-Claude project state
 
@@ -86,6 +96,8 @@ The model needs enough instruction-following ability to choose tools and consume
 ```powershell
 npm test
 npm run build
+npx vitest run tests/local-code-background-tasks.test.ts
+npm run probe:background-tasks
 npm run smoke:local-code
 npm run smoke:local-code-permission
 npm run smoke:local-code-terminal
@@ -109,4 +121,4 @@ npm run smoke:real-code-all-tools
 
 ## Current boundary
 
-This is a local compatibility harness, not a byte-for-byte copy of Anthropic's source or hosted service. Remote Claude Code sessions, SSH/WSL/pool execution, worktrees, cloud GitHub review orchestration, proprietary subagents, usage/billing, and Anthropic inference are not implemented. Configured stdio/HTTP MCP tools and the built-in desktop artifact bridge execute directly through bounded local managers.
+This is a local compatibility harness, not a byte-for-byte copy of Anthropic's source or hosted service. Local background agents are independently implemented behind the recovered task-event contract; Anthropic's proprietary subagent runtime is not used. Remote Claude Code sessions, SSH/WSL/pool execution, worktrees, cloud GitHub review orchestration, and hosted usage/billing are not implemented. Explicitly configured Anthropic Console inference, stdio/HTTP MCP tools, and the built-in desktop artifact bridge execute directly through bounded local managers.

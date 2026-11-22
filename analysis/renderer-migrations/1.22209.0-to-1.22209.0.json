@@ -1,0 +1,2317 @@
+{
+  "schemaVersion": 1,
+  "fromVersion": "1.22209.0",
+  "targetVersion": "1.22209.0",
+  "candidateRoot": "reference/claude-1.22209.0/ion-dist",
+  "deepScan": false,
+  "renderer": {
+    "fileCount": 1499,
+    "bytes": 134321304,
+    "treeSha256": "f65ef35f164cea101f369d9235e06d2bbd3deff23a2f9331cf5f9f09511e8b24"
+  },
+  "contract": {
+    "fileCount": 215,
+    "bytes": 44212079,
+    "treeSha256": "54c7a5ca2f991da58bc43592948aef9cb43e275d729e79f4c736b0de0f469640"
+  },
+  "patchSourceSha256": "a81368d34531b2dd0740be3a927c08f1489bccb00806343a1bf9e18b16f63ba9",
+  "patchCompatibility": {
+    "total": 124,
+    "applied": 124,
+    "satisfied": 0,
+    "unresolved": 0,
+    "statusCounts": {
+      "applied": 124,
+      "satisfied": 0,
+      "missing": 0,
+      "ambiguous": 0,
+      "asset-unavailable": 0
+    },
+    "results": [
+      {
+        "id": "reserve-claude-namespace-in-de-DE-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/de-DE.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/de-DE.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-de-DE-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/de-DE.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/de-DE.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-en-US-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/en-US.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/en-US.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-en-US-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/en-US.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/en-US.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-es-419-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/es-419.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/es-419.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-es-419-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/es-419.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/es-419.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-es-ES-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/es-ES.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/es-ES.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-es-ES-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/es-ES.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/es-ES.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-fr-FR-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/fr-FR.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/fr-FR.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-fr-FR-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/fr-FR.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/fr-FR.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-hi-IN-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/hi-IN.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/hi-IN.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-hi-IN-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/hi-IN.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/hi-IN.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-id-ID-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/id-ID.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/id-ID.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-id-ID-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/id-ID.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/id-ID.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-it-IT-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/it-IT.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/it-IT.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-it-IT-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/it-IT.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/it-IT.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-ja-JP-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/ja-JP.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/ja-JP.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-ja-JP-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/ja-JP.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/ja-JP.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-ko-KR-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/ko-KR.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/ko-KR.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-ko-KR-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/ko-KR.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/ko-KR.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-pt-BR-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/pt-BR.json",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "i18n/pt-BR.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-namespace-in-pt-BR-messages",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/pt-BR.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/pt-BR.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "localize-general-instructions-copy",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/en-US.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/en-US.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "simplify-local-artifact-publish-copy",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/en-US.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/en-US.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "rename-local-artifact-publish-action",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/en-US.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/en-US.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "define-local-chat-route-component",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 chat route component",
+            "assetUrlPath": "/assets/v1/index-C9LAU4f-.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "restore-web-chat-routes",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 web chat routes",
+            "assetUrlPath": "/assets/v1/index-C9LAU4f-.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "keep-chat-new-on-native-chat-landing",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 native chat landing",
+            "assetUrlPath": "/assets/v1/index-C9LAU4f-.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "keep-new-route-in-web-chat",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "bind-native-greeting-to-local-account",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "fallback-native-greeting-to-local-schedule",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "add-capabilities-settings-nav-entry",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 capabilities navigation",
+            "assetUrlPath": "/assets/v1/shared-5-UQAFGbWu.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "unlock-capabilities-settings-page",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c71860c77-BpXhwBVe.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c71860c77-BpXhwBVe.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 capabilities content",
+            "assetUrlPath": "/assets/v1/c71860c77-C7aIrG2v.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "import-native-settings-modal-router-for-extensions",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c71860c77-MIJzCkn9.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c71860c77-MIJzCkn9.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "route-extension-settings-inside-native-modal",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c71860c77-MIJzCkn9.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c71860c77-MIJzCkn9.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "load-extension-subpages-in-native-settings-modal",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/cc011544b-DNANE8Bs.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/cc011544b-DNANE8Bs.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "honor-settings-subpath-in-native-modal",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/cc011544b-DNANE8Bs.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/cc011544b-DNANE8Bs.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "route-extension-subpage-backs-inside-native-modal",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/cf4f70727-CwoxIRQl.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/cf4f70727-CwoxIRQl.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-native-unified-directory-sections",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/index-XoaBlZfC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 unified directory sections",
+            "assetUrlPath": "/assets/v1/index-C9LAU4f-.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "preserve-native-directory-section-selection",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/index-XoaBlZfC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "render-native-unified-directory-navigation",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/index-XoaBlZfC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 directory navigation",
+            "assetUrlPath": "/assets/v1/index-C9LAU4f-.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "render-native-unified-directory-results",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/index-XoaBlZfC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 directory results",
+            "assetUrlPath": "/assets/v1/index-C9LAU4f-.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-native-skills-directory-data",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/index-XoaBlZfC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "ignore-cloud-skills-directory-kill-switch",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/index-XoaBlZfC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-native-connectors-directory-data",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c2ee0272b-DPDuX889.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 connectors directory data",
+            "assetUrlPath": "/assets/v1/index-C9LAU4f-.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "use-local-native-connectors-directory-data",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c2ee0272b-DPDuX889.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "prefer-local-native-connectors-directory-data",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c2ee0272b-DPDuX889.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "wire-native-skills-directory-action",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c5e558aae-BFRrCNDr.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c5e558aae-BFRrCNDr.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "show-native-skills-directory-action",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c5e558aae-BFRrCNDr.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c5e558aae-BFRrCNDr.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "show-native-connectors-empty-state-actions",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c63a78ed4-C202DsUQ.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c63a78ed4-BI8nR_AP.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "show-native-connectors-directory-action",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c63a78ed4-C202DsUQ.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c63a78ed4-BI8nR_AP.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "show-native-connectors-directory-in-header",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/ce6f11143-DPc04jaK.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/ce6f11143-DPc04jaK.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "show-native-modal-connectors-directory-in-header",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c40525e86-D3fCSCrC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c40525e86-D3fCSCrC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "dispatch-local-chat-after-navigation",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "disable-service-workers-on-app-protocol",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-chat-tree-fetch",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "use-local-artifact-renderer",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "use-local-published-artifact-links",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "remove-local-publish-policy-card",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/cf774f0c4-BGDGm7sd.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/cf774f0c4-Cax4Hz9o.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "use-local-artifact-screenshot-capture",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "stash-artifact-content-for-screenshot",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "remove-local-publish-embed-settings",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/cf774f0c4-BGDGm7sd.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/cf774f0c4-Cax4Hz9o.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "use-skill-icon-for-local-skill-tool",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "label-code-skill-row-loaded",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-DmnMdctC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24xxx-moved-code-tool-row",
+            "assetUrlPath": "/assets/v1/c360a9e1c-CwX96mL8.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "disable-code-skill-row-expansion",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-DmnMdctC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "label-code-skill-row-link",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-DmnMdctC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "keep-projects-routes",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c1b9abf13-bG6VlbXV.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c1b9abf13-BsI3iqxB.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 projects layout",
+            "assetUrlPath": "/assets/v1/c1b9abf13-Bki1JsZ6.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "show-projects-nav-entry",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "unblock-projects-list-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 projects v2 query",
+            "assetUrlPath": "/assets/v1/shared-1-3-6x7RKF.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "unblock-project-detail-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 project detail query",
+            "assetUrlPath": "/assets/v1/shared-1-3-6x7RKF.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "unblock-project-docs-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 project docs query",
+            "assetUrlPath": "/assets/v1/shared-4-6CEyRAHb.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "unblock-project-count-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 project count query",
+            "assetUrlPath": "/assets/v1/shared-1-3-6x7RKF.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "enable-memory-feature-gate",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 memory feature gate",
+            "assetUrlPath": "/assets/v1/shared-1-3-6x7RKF.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "enable-memory-feature-registration",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 memory registry gate",
+            "assetUrlPath": "/assets/v1/shared-0-C4kdVF7Y.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "keep-customize-connectors-route",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c63a78ed4-C202DsUQ.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c63a78ed4-BI8nR_AP.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "keep-customize-memory-route",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c63a78ed4-C202DsUQ.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c63a78ed4-BI8nR_AP.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "force-memory-page-summary-view",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06a0b3df-DP2HU9yQ.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06a0b3df-DHYn39X9.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "force-memory-summary-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06a0b3df-DP2HU9yQ.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06a0b3df-DHYn39X9.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "unblock-memory-query-gates",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 memory query",
+            "assetUrlPath": "/assets/v1/shared-1-3-6x7RKF.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "enable-memory-edit-resynthesize",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 memory edit resynthesize",
+            "assetUrlPath": "/assets/v1/shared-1-3-6x7RKF.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "unblock-memory-settings-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 memory settings query",
+            "assetUrlPath": "/assets/v1/shared-1-3-6x7RKF.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "show-customize-memory-nav-entry",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 customize memory navigation",
+            "assetUrlPath": "/assets/v1/shared-5-UQAFGbWu.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": false
+          }
+        ]
+      },
+      {
+        "id": "enable-incognito-feature-gate",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-incognito-chat-toggle",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-chat-artifacts-gallery-route",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c1b9abf13-bG6VlbXV.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c1b9abf13-BsI3iqxB.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 artifacts navigation layout",
+            "assetUrlPath": "/assets/v1/c1b9abf13-Bki1JsZ6.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-native-chat-artifacts-tab",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "derive-local-chat-attachments",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-claude-code-surface",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "classify-local-code-routes-as-local",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c11959232-PSRJllna.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c11959232-PSRJllna.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "start-local-code-browser-from-toggle",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-DmnMdctC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "show-local-code-browser-toggle",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-DmnMdctC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "host-local-code-browser-native-view",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-DmnMdctC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-claude-code-routines",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "keep-scheduled-tasks-local",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/index-XoaBlZfC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "settle-empty-local-scheduled-page",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/ca82bcec9-Bk8L5wm9.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/ca82bcec9-Bk8L5wm9.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-native-local-code-artifacts",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/ca82bcec9-BHaPdnp0.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/ca82bcec9-Bk8L5wm9.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-artifact-gallery-data",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c47ad434c-D_dYPjVp.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c47ad434c-CQdY2DO-.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 chat artifacts page gate",
+            "assetUrlPath": "/assets/v1/ce569194f-C3zDrMgh.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "bind-native-artifact-gallery-to-local-desktop-store",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c47ad434c-D_dYPjVp.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c47ad434c-CQdY2DO-.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "use-local-code-artifact-gallery-source",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/ce569194f-YKjvV2xt.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/ce569194f-C-qbzwjY.js"
+            ],
+            "assetAvailable": true
+          },
+          {
+            "label": "1.24012.9 local frame gallery source",
+            "assetUrlPath": "/assets/v1/ce569194f-C3zDrMgh.js",
+            "expectedMatches": 1,
+            "occurrences": 0,
+            "matchedAssets": [],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "expose-local-code-artifact-pane-opener",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-DmnMdctC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "allow-local-code-artifact-pane-urls",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-DmnMdctC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "use-random-local-code-activity-label",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c5610fbe3-QnNBykKf.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c5610fbe3-D1ZBACY0.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "remove-cloud-model-switch-setting",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c71860c77-QKSs-TTD.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c71860c77-DALji115.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "remove-local-model-switch-setting",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c71860c77-QKSs-TTD.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c71860c77-DALji115.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-published-artifacts-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-mcp-connectors-feature",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-mcp-connectors-list-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-mcp-connectors-connection-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-mcp-connector-item-query",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-code-plugins-access",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "use-local-plugin-inventory-in-every-surface",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c2ee0272b-DPDuX889.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "enable-local-plugin-capability-without-cloud-account",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c2ee0272b-DPDuX889.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "refresh-local-plugin-inventory-on-settings-mount",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c2ee0272b-DPDuX889.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "grant-local-project-edit-permissions",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c6eedc03a-CsEFTfjy.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "activate-new-local-code-browser-tab",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-BO3xYnQU.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-code-client",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-BO3xYnQU.js",
+            "expectedMatches": 12,
+            "occurrences": 12,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-shared-client",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c2ee0272b-DPDuX889.js",
+            "expectedMatches": 9,
+            "occurrences": 9,
+            "matchedAssets": [
+              "assets/v1/c2ee0272b-DPDuX889.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-code-settings",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c71860c77-DALji115.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c71860c77-DALji115.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-directory-insights",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/ca768caa9-DXjGMACc.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/ca768caa9-DXjGMACc.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "reserve-claude-namespace-in-main-client",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/index-XoaBlZfC.js",
+            "expectedMatches": 5,
+            "occurrences": 5,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "replace-claude-local-project-namespace",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/index-XoaBlZfC.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "clarify-reserved-claude-folder-warning",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/assets/v1/c06173196-BO3xYnQU.js",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/c06173196-BO3xYnQU.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "clarify-reserved-claude-folder-warning-en-US",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "assetUrlPath": "/i18n/en-US.json",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "i18n/en-US.json"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      },
+      {
+        "id": "defer-local-terminal-pty-delivery",
+        "status": "applied",
+        "selectedVariant": "retained",
+        "variants": [
+          {
+            "label": "retained",
+            "expectedMatches": 1,
+            "occurrences": 1,
+            "matchedAssets": [
+              "assets/v1/index-XoaBlZfC.js"
+            ],
+            "assetAvailable": true
+          }
+        ]
+      }
+    ]
+  },
+  "releaseGates": {
+    "allPatchesCompatible": true,
+    "contractSnapshotPresent": true,
+    "generatedContractVersionMatches": true,
+    "retainedReferenceRoot": true
+  },
+  "releaseReady": true
+}

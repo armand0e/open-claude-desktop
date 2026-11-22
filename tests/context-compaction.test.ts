@@ -5,8 +5,11 @@ import {
   COMPACTION_TRIGGER_RATIO,
   compactionSummaryText,
   compactionTranscript,
+  contextResponseReserve,
+  emergencyCompactionSummary,
   estimateMessageTokens,
   estimateTokens,
+  isContextLengthError,
   planCompaction,
   summarizeForCompaction,
 } from "../src/main/context-compaction";
@@ -58,8 +61,27 @@ describe("planCompaction", () => {
 
 describe("estimates", () => {
   it("estimates tokens from characters", () => {
-    expect(estimateTokens("abcd")).toBe(1);
-    expect(estimateTokens("abcde")).toBe(2);
+    expect(estimateTokens("abc")).toBe(1);
+    expect(estimateTokens("abcd")).toBe(2);
+  });
+
+  it("reserves response headroom and recognizes provider context errors", () => {
+    expect(contextResponseReserve(131_072)).toBeGreaterThanOrEqual(15_000);
+    expect(
+      isContextLengthError(
+        400,
+        "request (133529 tokens) exceeds the available context size (131072 tokens), type=exceed_context_size_error, n_ctx=131072",
+      ),
+    ).toBe(true);
+    expect(isContextLengthError(400, "tools are unsupported")).toBe(false);
+  });
+
+  it("can force a plan below the normal trigger after a provider rejection", () => {
+    const messages = Array.from({ length: 30 }, (_, index) =>
+      message(index % 2 === 0 ? "user" : "assistant", 1_000),
+    );
+    expect(planCompaction(500, messages, 32_000)).toBeNull();
+    expect(planCompaction(500, messages, 32_000, true)).not.toBeNull();
   });
 
   it("includes tool calls in message estimates", () => {
@@ -97,6 +119,16 @@ describe("compactionTranscript", () => {
     expect(transcript).toContain("start-marker");
     expect(transcript).toContain("end-marker");
     expect(transcript).toContain("middle of the transcript omitted");
+  });
+
+  it("builds a bounded deterministic summary for emergency recovery", () => {
+    const summary = emergencyCompactionSummary([
+      { role: "user", content: "current-task-marker" + "x".repeat(100_000) },
+      { role: "assistant", content: "y".repeat(100_000) + "recent-marker" },
+    ]);
+    expect(summary.length).toBeLessThan(30_000);
+    expect(summary).toContain("current-task-marker");
+    expect(summary).toContain("recent-marker");
   });
 });
 

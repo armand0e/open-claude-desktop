@@ -25,96 +25,95 @@
     "./event-target",
     "./eventEmitter2",
     "./extension",
-    "./heavyWorkWorker-DqPY9Vla.js",
+    "./heavyWorkWorker-C-B3hI-D.js",
     "./helpers",
-    "./index-DWndt_Ec.js",
-    "./index.chunk--Nyt9iU9.js",
-    "./index.chunk--uv1TrnK.js",
-    "./index.chunk-0vQj-giW.js",
-    "./index.chunk-3Rl6oWCC.js",
-    "./index.chunk-5AU6UOR_.js",
-    "./index.chunk-6XX44bMJ.js",
-    "./index.chunk-93moHpLh.js",
-    "./index.chunk-AVw6Vjfe.js",
-    "./index.chunk-B-hegxho.js",
-    "./index.chunk-B1bQaELy.js",
-    "./index.chunk-B1THHPGH.js",
-    "./index.chunk-B8RFBELV.js",
-    "./index.chunk-B8TrKVme.js",
-    "./index.chunk-BE6xXGPm.js",
-    "./index.chunk-BffyrsM1.js",
-    "./index.chunk-BHASsVnf.js",
-    "./index.chunk-BJZ8LRVd.js",
-    "./index.chunk-BllL82T4.js",
-    "./index.chunk-BlsFbP81.js",
-    "./index.chunk-Bm_uyTan.js",
-    "./index.chunk-BMrs96mZ.js",
-    "./index.chunk-BrWQl3MX.js",
-    "./index.chunk-Bwyu1Jht.js",
-    "./index.chunk-BZxFdSLN.js",
-    "./index.chunk-BZZDBfHn.js",
-    "./index.chunk-C-Y2laBb.js",
-    "./index.chunk-C1803kG3.js",
-    "./index.chunk-C2h4R1NC.js",
-    "./index.chunk-C2ZQlYlD.js",
-    "./index.chunk-C5FpLq-b.js",
-    "./index.chunk-C6R0C_73.js",
-    "./index.chunk-C83lLjd1.js",
-    "./index.chunk-CBolX4qR.js",
-    "./index.chunk-CcMSsy7d.js",
-    "./index.chunk-CcPFRLTp.js",
-    "./index.chunk-CcRFD3A3.js",
-    "./index.chunk-CEIbArLT.js",
-    "./index.chunk-CFy3yhWr.js",
-    "./index.chunk-CHpwUwtT.js",
-    "./index.chunk-CHT1EBNC.js",
-    "./index.chunk-CIo1YOZW.js",
-    "./index.chunk-CIrjhck6.js",
-    "./index.chunk-CIvPHjbO.js",
-    "./index.chunk-Cr-17X6C.js",
-    "./index.chunk-CSB9yX1X.js",
-    "./index.chunk-CSKg_7F-.js",
-    "./index.chunk-CsVIQhpd.js",
-    "./index.chunk-CX7M5s_r.js",
-    "./index.chunk-CXZzvIy6.js",
-    "./index.chunk-Cz1l-Hdo.js",
-    "./index.chunk-D06iXS0i.js",
-    "./index.chunk-D2Dsbg_1.js",
-    "./index.chunk-D4eNMRV-.js",
-    "./index.chunk-DCBDQ3v8.js",
-    "./index.chunk-DdYfpaW-.js",
-    "./index.chunk-DDZd5Vp7.js",
-    "./index.chunk-DE21m-NQ.js",
-    "./index.chunk-Dfz_KgC0.js",
-    "./index.chunk-Dg2TkQu2.js",
-    "./index.chunk-DhA4Y4sl.js",
-    "./index.chunk-DhJl-RT6.js",
-    "./index.chunk-DI0dOUHS.js",
-    "./index.chunk-DKV8ECIP.js",
-    "./index.chunk-Dnm7hmdz.js",
-    "./index.chunk-DPHuE6Qn.js",
-    "./index.chunk-DqiH2czz.js",
-    "./index.chunk-DTyBoElb.js",
-    "./index.chunk-DupfOLb1.js",
-    "./index.chunk-DviXPowO.js",
-    "./index.chunk-Dx6FpM5s.js",
-    "./index.chunk-DywOJ4FI.js",
-    "./index.chunk-DZ1bcV55.js",
-    "./index.chunk-gZtQ-rh_.js",
-    "./index.chunk-HAY01GgA.js",
-    "./index.chunk-HJHdZatW.js",
-    "./index.chunk-iPP8YJHd.js",
-    "./index.chunk-jsuCjkR3.js",
-    "./index.chunk-nGPLNYRn.js",
-    "./index.chunk-Nz3qNJpm.js",
-    "./index.chunk-oKt1jpzu.js",
-    "./index.chunk-oUfwpN52.js",
-    "./index.chunk-ovct5Tp9.js",
-    "./index.chunk-VPvh7cOW.js",
-    "./index.chunk-wVPVIGcM.js",
-    "./index.chunk-Y4fuBAfx.js",
-    "./index.chunk-YRJWMSDg.js",
-    "./index.chunk-yvIZ2T2i.js",
+    "./index-BdPokCe0.js",
+    "./index.chunk-_cNKMOnt.js",
+    "./index.chunk--AZqZ5PZ.js",
+    "./index.chunk--XEXXb93.js",
+    "./index.chunk-4Ae3KRNj.js",
+    "./index.chunk-813no6nB.js",
+    "./index.chunk-aKKwVHoL.js",
+    "./index.chunk-aMrmmVz9.js",
+    "./index.chunk-B-H-lvU9.js",
+    "./index.chunk-B4r9CN4N.js",
+    "./index.chunk-B8pRccJC.js",
+    "./index.chunk-BbRzDFmB.js",
+    "./index.chunk-BcohOZRv.js",
+    "./index.chunk-BEhd5Aoy.js",
+    "./index.chunk-BGIKPrEH.js",
+    "./index.chunk-Bi3rgbaN.js",
+    "./index.chunk-Bik8Yzov.js",
+    "./index.chunk-BIu7SQ0l.js",
+    "./index.chunk-BJYGO6y-.js",
+    "./index.chunk-BLoONn5S.js",
+    "./index.chunk-Bpf2OmnN.js",
+    "./index.chunk-BPl-zeU8.js",
+    "./index.chunk-BqhtCkhg.js",
+    "./index.chunk-BRuELMwn.js",
+    "./index.chunk-BrVfHjP6.js",
+    "./index.chunk-BtQxujnJ.js",
+    "./index.chunk-BuBpeCXg.js",
+    "./index.chunk-Bwa_sTgs.js",
+    "./index.chunk-Bz_QzvUR.js",
+    "./index.chunk-C0l8M1i8.js",
+    "./index.chunk-C3w411yt.js",
+    "./index.chunk-C4ufQzve.js",
+    "./index.chunk-C55n7AuA.js",
+    "./index.chunk-C9fKFmcy.js",
+    "./index.chunk-C9hU3nqb.js",
+    "./index.chunk-CbEiLUwb.js",
+    "./index.chunk-CbxkNH8C.js",
+    "./index.chunk-CBYjVI1T.js",
+    "./index.chunk-CCJ6YIb_.js",
+    "./index.chunk-CetipWf5.js",
+    "./index.chunk-CIn4_NWS.js",
+    "./index.chunk-CIXzYVyc.js",
+    "./index.chunk-ClfXXkiw.js",
+    "./index.chunk-CNqcaV8A.js",
+    "./index.chunk-CPIoQy7A.js",
+    "./index.chunk-CprN6fNp.js",
+    "./index.chunk-CPs2mZqo.js",
+    "./index.chunk-CqZFu16x.js",
+    "./index.chunk-CRdaEBCx.js",
+    "./index.chunk-CtYG9fEf.js",
+    "./index.chunk-Cv9YRHM6.js",
+    "./index.chunk-CYO3idNq.js",
+    "./index.chunk-D0YyPt7o.js",
+    "./index.chunk-D2980j2g.js",
+    "./index.chunk-D40mk3rV.js",
+    "./index.chunk-Dc9OEKFh.js",
+    "./index.chunk-Ddd_2WzG.js",
+    "./index.chunk-DDJpVDLz.js",
+    "./index.chunk-DdWdYJp7.js",
+    "./index.chunk-DFWfQSBZ.js",
+    "./index.chunk-DG74AvKO.js",
+    "./index.chunk-DGt1t8pw.js",
+    "./index.chunk-DNO83Mdh.js",
+    "./index.chunk-Dp3FyB5D.js",
+    "./index.chunk-DqQS0rwW.js",
+    "./index.chunk-DQt1ceQG.js",
+    "./index.chunk-DuR14Nbw.js",
+    "./index.chunk-Dvyk6UHM.js",
+    "./index.chunk-DWh2Cbb4.js",
+    "./index.chunk-DYl6OJw9.js",
+    "./index.chunk-DyWY3uLy.js",
+    "./index.chunk-DzoMno1m.js",
+    "./index.chunk-FLbJauSA.js",
+    "./index.chunk-fpH7ang0.js",
+    "./index.chunk-gfMP3YG-.js",
+    "./index.chunk-ln0835Ju.js",
+    "./index.chunk-mRrGZwTV.js",
+    "./index.chunk-OJqco4Y2.js",
+    "./index.chunk-ORQtoj_D.js",
+    "./index.chunk-q-VplytL.js",
+    "./index.chunk-Rd0A5gYv.js",
+    "./index.chunk-vjnPPhov.js",
+    "./index.chunk-WcXeviHo.js",
+    "./index.chunk-X1_RL4-v.js",
+    "./index.chunk-X4XjmLB1.js",
+    "./index.chunk-xb48lTMo.js",
+    "./index.chunk-ZxZLJAZH.js",
     "./index.js",
     "./lib/extension",
     "./lib/permessage-deflate",
@@ -140,7 +139,6 @@
     "./windowsTerminal",
     "@ant/claude-native",
     "@ant/claude-swift",
-    "@emotion/is-prop-valid",
     "%s",
     "ajv-formats/dist/formats",
     "ajv/dist/runtime/equal",
@@ -170,6 +168,7 @@
     "net",
     "node-pty",
     "node:assert",
+    "node:async_hooks",
     "node:buffer",
     "node:child_process",
     "node:crypto",
@@ -221,11 +220,9 @@
   "environmentKeys": [
     "ALACRITTY_LOG",
     "ALIYUN_REGION_ID",
-    "ANDROID_HOME",
-    "ANDROID_SDK_ROOT",
+    "ANDROID_AVD_HOME",
     "ANTHROPIC_CUSTOM_HEADERS",
     "ANTHROPIC_LOG",
-    "ANTHROPIC_UNIX_SOCKET",
     "API_FORCE_IDLE_TIMEOUT",
     "APP_URL",
     "APPDATA",
@@ -250,26 +247,21 @@
     "CLAUDE_CODE_CUSTOM_OAUTH_URL",
     "CLAUDE_CODE_DEBUG_LOG_LEVEL",
     "CLAUDE_CODE_DEBUG_LOGS_DIR",
-    "CLAUDE_CODE_DIAGNOSTICS_FILE",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
-    "CLAUDE_CODE_DISABLE_PRECOMPACT_SKIP",
     "CLAUDE_CODE_EFFORT_LEVEL",
-    "CLAUDE_CODE_ENABLE_XAA",
     "CLAUDE_CODE_ENTRYPOINT",
     "CLAUDE_CODE_GIT_BASH_PATH",
     "CLAUDE_CODE_LOCAL_BINARY",
     "CLAUDE_CODE_OAUTH_CLIENT_ID",
     "CLAUDE_CODE_ORGANIZATION_UUID",
-    "CLAUDE_CODE_REMOTE",
-    "CLAUDE_CODE_REMOTE_SEND_KEEPALIVES",
     "CLAUDE_CODE_REMOTE_SESSION_ID",
     "CLAUDE_CODE_SESSION_ACCESS_TOKEN",
     "CLAUDE_CODE_SLOW_OPERATION_THRESHOLD_MS",
     "CLAUDE_CODE_SUPERVISED",
     "CLAUDE_CODE_TMPDIR",
     "CLAUDE_CODE_USE_ANTHROPIC_AWS",
+    "CLAUDE_CODE_USE_ANTHROPIC_GOOGLE_CLOUD",
     "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_COWORK_PLUGINS",
     "CLAUDE_CODE_USE_FOUNDRY",
     "CLAUDE_CODE_USE_MANTLE",
     "CLAUDE_CODE_USE_VERTEX",
@@ -278,10 +270,13 @@
     "CLAUDE_CONFIG_DIR",
     "CLAUDE_CUSTOM3P_REFRESH_FLOOR_MS",
     "CLAUDE_DESKTOP_ALLOW_WSL1",
+    "CLAUDE_DESKTOP_BACKGROUND_LAUNCH",
     "CLAUDE_DESKTOP_LOCAL_FRAME_SHELL",
+    "CLAUDE_E2E_PKCE_LOG",
     "CLAUDE_ENABLE_LOGGING",
     "CLAUDE_EXTRA_HEADERS_TOKEN",
     "CLAUDE_FORCE_HOST_LOOP",
+    "CLAUDE_HARNESS_RESIZE",
     "CLAUDE_LOCAL_OAUTH_API_BASE",
     "CLAUDE_LOCAL_OAUTH_APPS_BASE",
     "CLAUDE_LOCAL_OAUTH_CONSOLE_BASE",
@@ -300,7 +295,6 @@
     "CURSOR_TRACE_ID",
     "DAYTONA_WS_ID",
     "DEBUG",
-    "DEBUG_CLAUDE_AGENT_SDK",
     "DEBUG_SDK",
     "DENO_DEPLOYMENT_ID",
     "DESKTOP_LOG_LEVEL",
@@ -333,6 +327,7 @@
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "IBM_CLOUD_REGION",
+    "JAVA_HOME",
     "JEST_WORKER_ID",
     "K_SERVICE",
     "KITTY_WINDOW_ID",
@@ -425,88 +420,41 @@
     "XTERM_VERSION"
   ],
   "networkOrigins": [
-    "http://0.0.0.0",
-    "http://0.0.0.0:8080",
     "http://1.1.1.1",
-    "http://10.0.0.1",
-    "http://10.1.2.3:8080",
-    "http://10.255.255.255",
-    "http://100.100.100.100",
-    "http://100.127.255.255",
-    "http://100.64.0.1",
     "http://127.0.0.1",
     "http://127.0.0.1:1",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:40342",
     "http://127.0.0.1:8000",
-    "http://127.0.0.1:8080",
-    "http://127.1.2.3",
-    "http://127.255.255.255",
-    "http://169.254.0.1",
     "http://169.254.169.254",
     "http://169.254.169.254$",
-    "http://169.254.255.255",
-    "http://172.16.0.1",
-    "http://172.20.30.40:8080",
-    "http://172.31.255.255",
-    "http://192.168.0.1",
-    "http://192.168.1.1",
-    "http://192.168.1.100",
-    "http://192.168.1.100:8080",
-    "http://192.168.255.255",
-    "http://api.internal",
     "http://app.localhost:3000",
-    "http://bellard.org",
     "http://cds-relative-href.invalid",
     "http://clau.de",
     "http://claude.turbovote.org",
     "http://custom-3p-unused.invalid",
-    "http://db.internal:5432",
-    "http://dev.localhost:8080",
-    "http://en.wikipedia.org",
-    "http://engelschall.com)",
     "http://example.com",
     "http://example.com:3000",
     "http://fb.me",
-    "http://jedwatson.github.io",
     "http://json-schema.org",
     "http://localhost",
     "http://localhost:3000",
-    "http://localhost:3001",
     "http://localhost:4000",
-    "http://localhost:4040",
-    "http://localhost:5432",
-    "http://localhost:6379",
     "http://localhost:8000",
-    "http://localhost:8080",
     "http://localhost:8205",
-    "http://localhost:8888",
     "http://localhost:8969",
     "http://localhost:9999",
     "http://localhost.",
-    "http://myhost.lan",
-    "http://myprinter.local",
-    "http://myserver.local:8080",
     "http://n",
-    "http://nas.home.arpa",
     "http://ns.adobe.com",
-    "http://opensource.org",
     "http://placeholder",
     "http://proxy.example.com:8080",
-    "http://raspberrypi.local",
-    "http://router.home.arpa",
     "http://s.io",
-    "http://server.local",
-    "http://server.localdomain",
-    "http://service.corp.internal",
     "http://sfrecpark.org",
     "http://stackoverflow.com",
     "http://strip",
-    "http://stuartk.com",
     "http://tools.ietf.org",
-    "http://underscorejs.org",
     "http://web.mit.edu",
-    "http://wiki.intranet",
     "http://www.apache.org",
     "http://www.apple.com",
     "http://www.microsoft.com",
@@ -516,6 +464,7 @@
     "https://a",
     "https://a');",
     "https://accounts.google.com",
+    "https://acme.okta.com",
     "https://admin.teams.microsoft.com",
     "https://ads.google.com",
     "https://agent-proxy.internal.example.com:8080",
@@ -525,6 +474,7 @@
     "https://anthropic.enterprise.slack.com",
     "https://anthropic.qualtrics.com",
     "https://anthropic.skilljar.com",
+    "https://anthropic.slack.com",
     "https://anthropic.turbovote.org",
     "https://api-staging.anthropic.com",
     "https://api.$",
@@ -535,6 +485,7 @@
     "https://api.github.com",
     "https://api.slack.com",
     "https://api.vimeo.com",
+    "https://app.example.com",
     "https://apps.apple.com",
     "https://assets.claude.ai",
     "https://aws.amazon.com",
@@ -560,7 +511,6 @@
     "https://chevrotain.io",
     "https://chromewebstore.google.com",
     "https://claude-ai.staging.ant.dev",
-    "https://claude-ema-test.invalid",
     "https://claude-staging.fedstart.com",
     "https://claude.ai",
     "https://claude.ai$",
@@ -584,6 +534,7 @@
     "https://d-1234567890.awsapps.com",
     "https://d20xtzwzcl0ceb.cloudfront.net",
     "https://d3uc069fcn7uxw.cloudfront.net",
+    "https://developer.android.com",
     "https://developer.mozilla.org",
     "https://developers.asana.com",
     "https://developers.hubspot.com",
@@ -591,6 +542,7 @@
     "https://dlp.example.com",
     "https://dns.google",
     "https://docs.anthropic.com",
+    "https://docs.aws.amazon.com",
     "https://docs.claude.com",
     "https://docs.datadoghq.com",
     "https://docs.example.com",
@@ -601,7 +553,6 @@
     "https://docs.microsoft.com",
     "https://docs.sentry.io",
     "https://docs.stripe.com",
-    "https://doi.org",
     "https://downloads.claude.ai",
     "https://drive.google.com",
     "https://drivemcp.googleapis.com",
@@ -612,7 +563,6 @@
     "https://eu.mcp.example.com",
     "https://evilmartians.com",
     "https://example.com",
-    "https://example.com',",
     "https://f.a.k",
     "https://fcmregistrations.googleapis.com",
     "https://feross.org",
@@ -625,6 +575,7 @@
     "https://gist.github.com",
     "https://git-scm.com",
     "https://git.new",
+    "https://github",
     "https://github.com",
     "https://gmail.mcp.claude.com",
     "https://gmailmcp.googleapis.com",
@@ -634,7 +585,6 @@
     "https://help.goodstack.org",
     "https://hooks.example.com",
     "https://html.spec.whatwg.org",
-    "https://httpbin.org",
     "https://instagram.com",
     "https://intranet.example.com",
     "https://issues.chromium.org",
@@ -649,13 +599,12 @@
     "https://linear.app",
     "https://llm-gateway.example.com",
     "https://localhost",
-    "https://lodash.com",
+    "https://localhost:8443",
     "https://login.chinacloudapi.cn",
     "https://login.microsoftonline.com",
     "https://login.microsoftonline.de",
     "https://login.microsoftonline.us",
     "https://login.windows-ppe.net",
-    "https://m.stripe.network",
     "https://mail.google.com",
     "https://mail.proton.me",
     "https://mail.yahoo.com",
@@ -678,7 +627,6 @@
     "https://o1158394.ingest.us.sentry.io",
     "https://oauth2.googleapis.com",
     "https://oidc.us-east-1.amazonaws.com",
-    "https://openjsf.org",
     "https://otel.example.com",
     "https://outlook.live.com",
     "https://pivot.claude.ai",
@@ -693,15 +641,14 @@
     "https://probe.invalid",
     "https://prosemirror.net",
     "https://proxy.internal:8080",
-    "https://pubmed.ncbi.nlm.nih.gov",
     "https://purecatamphetamine.github.io",
     "https://radix-ui.com",
-    "https://raw.github.com",
     "https://raw.githubusercontent.com",
     "https://react.dev",
     "https://reactjs.org",
     "https://region-aiplatform-endpoint_id.p.googleapis.com",
     "https://reviews.example.com",
+    "https://rolldown.rs",
     "https://sandbox.claudemcpcontent.com",
     "https://schema.org",
     "https://sdk-configuration.$",
@@ -722,7 +669,6 @@
     "https://support.pagerduty.com",
     "https://t0.gstatic.com",
     "https://tailwindcss.com",
-    "https://tanstack.com",
     "https://tc39.es",
     "https://tools.ietf.org",
     "https://trust.anthropic.com",
@@ -736,7 +682,6 @@
     "https://vpce-0123-abcd.bedrock-runtime.us-east-1.vpce.amazonaws.com",
     "https://webidl.spec.whatwg.org",
     "https://www.anthropic.com",
-    "https://www.chartjs.org",
     "https://www.cl.cam.ac.uk",
     "https://www.claude.com",
     "https://www.claudemcpclient.com",
@@ -804,443 +749,438 @@
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk--Nyt9iU9.js",
-      "map": "index.chunk--Nyt9iU9.js.map"
+      "file": ".vite/build/index.chunk--AZqZ5PZ.js",
+      "map": "index.chunk--AZqZ5PZ.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk--uv1TrnK.js",
-      "map": "index.chunk--uv1TrnK.js.map"
+      "file": ".vite/build/index.chunk--XEXXb93.js",
+      "map": "index.chunk--XEXXb93.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-0vQj-giW.js",
-      "map": "index.chunk-0vQj-giW.js.map"
+      "file": ".vite/build/index.chunk-4Ae3KRNj.js",
+      "map": "index.chunk-4Ae3KRNj.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-3Rl6oWCC.js",
-      "map": "index.chunk-3Rl6oWCC.js.map"
+      "file": ".vite/build/index.chunk-813no6nB.js",
+      "map": "index.chunk-813no6nB.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-5AU6UOR_.js",
-      "map": "index.chunk-5AU6UOR_.js.map"
+      "file": ".vite/build/index.chunk-aKKwVHoL.js",
+      "map": "index.chunk-aKKwVHoL.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-6XX44bMJ.js",
-      "map": "index.chunk-6XX44bMJ.js.map"
+      "file": ".vite/build/index.chunk-aMrmmVz9.js",
+      "map": "index.chunk-aMrmmVz9.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-93moHpLh.js",
-      "map": "index.chunk-93moHpLh.js.map"
+      "file": ".vite/build/index.chunk-B-H-lvU9.js",
+      "map": "index.chunk-B-H-lvU9.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-AVw6Vjfe.js",
-      "map": "index.chunk-AVw6Vjfe.js.map"
+      "file": ".vite/build/index.chunk-B4r9CN4N.js",
+      "map": "index.chunk-B4r9CN4N.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-B-hegxho.js",
-      "map": "index.chunk-B-hegxho.js.map"
+      "file": ".vite/build/index.chunk-B8pRccJC.js",
+      "map": "index.chunk-B8pRccJC.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-B1bQaELy.js",
-      "map": "index.chunk-B1bQaELy.js.map"
+      "file": ".vite/build/index.chunk-BbRzDFmB.js",
+      "map": "index.chunk-BbRzDFmB.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-B1THHPGH.js",
-      "map": "index.chunk-B1THHPGH.js.map"
+      "file": ".vite/build/index.chunk-BcohOZRv.js",
+      "map": "index.chunk-BcohOZRv.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-B8RFBELV.js",
-      "map": "index.chunk-B8RFBELV.js.map"
+      "file": ".vite/build/index.chunk-BEhd5Aoy.js",
+      "map": "index.chunk-BEhd5Aoy.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-B8TrKVme.js",
-      "map": "index.chunk-B8TrKVme.js.map"
+      "file": ".vite/build/index.chunk-BGIKPrEH.js",
+      "map": "index.chunk-BGIKPrEH.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BE6xXGPm.js",
-      "map": "index.chunk-BE6xXGPm.js.map"
+      "file": ".vite/build/index.chunk-Bi3rgbaN.js",
+      "map": "index.chunk-Bi3rgbaN.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BffyrsM1.js",
-      "map": "index.chunk-BffyrsM1.js.map"
+      "file": ".vite/build/index.chunk-Bik8Yzov.js",
+      "map": "index.chunk-Bik8Yzov.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BHASsVnf.js",
-      "map": "index.chunk-BHASsVnf.js.map"
+      "file": ".vite/build/index.chunk-BIu7SQ0l.js",
+      "map": "index.chunk-BIu7SQ0l.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BJZ8LRVd.js",
-      "map": "index.chunk-BJZ8LRVd.js.map"
+      "file": ".vite/build/index.chunk-BJYGO6y-.js",
+      "map": "index.chunk-BJYGO6y-.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BllL82T4.js",
-      "map": "index.chunk-BllL82T4.js.map"
+      "file": ".vite/build/index.chunk-BLoONn5S.js",
+      "map": "index.chunk-BLoONn5S.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BlsFbP81.js",
-      "map": "index.chunk-BlsFbP81.js.map"
+      "file": ".vite/build/index.chunk-Bpf2OmnN.js",
+      "map": "index.chunk-Bpf2OmnN.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BMrs96mZ.js",
-      "map": "index.chunk-BMrs96mZ.js.map"
+      "file": ".vite/build/index.chunk-BPl-zeU8.js",
+      "map": "index.chunk-BPl-zeU8.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Bm_uyTan.js",
-      "map": "index.chunk-Bm_uyTan.js.map"
+      "file": ".vite/build/index.chunk-BqhtCkhg.js",
+      "map": "index.chunk-BqhtCkhg.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BrWQl3MX.js",
-      "map": "index.chunk-BrWQl3MX.js.map"
+      "file": ".vite/build/index.chunk-BRuELMwn.js",
+      "map": "index.chunk-BRuELMwn.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Bwyu1Jht.js",
-      "map": "index.chunk-Bwyu1Jht.js.map"
+      "file": ".vite/build/index.chunk-BrVfHjP6.js",
+      "map": "index.chunk-BrVfHjP6.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BZxFdSLN.js",
-      "map": "index.chunk-BZxFdSLN.js.map"
+      "file": ".vite/build/index.chunk-BtQxujnJ.js",
+      "map": "index.chunk-BtQxujnJ.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-BZZDBfHn.js",
-      "map": "index.chunk-BZZDBfHn.js.map"
+      "file": ".vite/build/index.chunk-BuBpeCXg.js",
+      "map": "index.chunk-BuBpeCXg.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-C-Y2laBb.js",
-      "map": "index.chunk-C-Y2laBb.js.map"
+      "file": ".vite/build/index.chunk-Bwa_sTgs.js",
+      "map": "index.chunk-Bwa_sTgs.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-C1803kG3.js",
-      "map": "index.chunk-C1803kG3.js.map"
+      "file": ".vite/build/index.chunk-Bz_QzvUR.js",
+      "map": "index.chunk-Bz_QzvUR.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-C2h4R1NC.js",
-      "map": "index.chunk-C2h4R1NC.js.map"
+      "file": ".vite/build/index.chunk-C0l8M1i8.js",
+      "map": "index.chunk-C0l8M1i8.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-C2ZQlYlD.js",
-      "map": "index.chunk-C2ZQlYlD.js.map"
+      "file": ".vite/build/index.chunk-C3w411yt.js",
+      "map": "index.chunk-C3w411yt.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-C5FpLq-b.js",
-      "map": "index.chunk-C5FpLq-b.js.map"
+      "file": ".vite/build/index.chunk-C4ufQzve.js",
+      "map": "index.chunk-C4ufQzve.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-C6R0C_73.js",
-      "map": "index.chunk-C6R0C_73.js.map"
+      "file": ".vite/build/index.chunk-C55n7AuA.js",
+      "map": "index.chunk-C55n7AuA.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-C83lLjd1.js",
-      "map": "index.chunk-C83lLjd1.js.map"
+      "file": ".vite/build/index.chunk-C9fKFmcy.js",
+      "map": "index.chunk-C9fKFmcy.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CBolX4qR.js",
-      "map": "index.chunk-CBolX4qR.js.map"
+      "file": ".vite/build/index.chunk-C9hU3nqb.js",
+      "map": "index.chunk-C9hU3nqb.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CcMSsy7d.js",
-      "map": "index.chunk-CcMSsy7d.js.map"
+      "file": ".vite/build/index.chunk-CbEiLUwb.js",
+      "map": "index.chunk-CbEiLUwb.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CcPFRLTp.js",
-      "map": "index.chunk-CcPFRLTp.js.map"
+      "file": ".vite/build/index.chunk-CbxkNH8C.js",
+      "map": "index.chunk-CbxkNH8C.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CcRFD3A3.js",
-      "map": "index.chunk-CcRFD3A3.js.map"
+      "file": ".vite/build/index.chunk-CBYjVI1T.js",
+      "map": "index.chunk-CBYjVI1T.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CEIbArLT.js",
-      "map": "index.chunk-CEIbArLT.js.map"
+      "file": ".vite/build/index.chunk-CCJ6YIb_.js",
+      "map": "index.chunk-CCJ6YIb_.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CFy3yhWr.js",
-      "map": "index.chunk-CFy3yhWr.js.map"
+      "file": ".vite/build/index.chunk-CetipWf5.js",
+      "map": "index.chunk-CetipWf5.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CHpwUwtT.js",
-      "map": "index.chunk-CHpwUwtT.js.map"
+      "file": ".vite/build/index.chunk-CIn4_NWS.js",
+      "map": "index.chunk-CIn4_NWS.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CHT1EBNC.js",
-      "map": "index.chunk-CHT1EBNC.js.map"
+      "file": ".vite/build/index.chunk-CIXzYVyc.js",
+      "map": "index.chunk-CIXzYVyc.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CIo1YOZW.js",
-      "map": "index.chunk-CIo1YOZW.js.map"
+      "file": ".vite/build/index.chunk-ClfXXkiw.js",
+      "map": "index.chunk-ClfXXkiw.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CIrjhck6.js",
-      "map": "index.chunk-CIrjhck6.js.map"
+      "file": ".vite/build/index.chunk-CNqcaV8A.js",
+      "map": "index.chunk-CNqcaV8A.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CIvPHjbO.js",
-      "map": "index.chunk-CIvPHjbO.js.map"
+      "file": ".vite/build/index.chunk-CPIoQy7A.js",
+      "map": "index.chunk-CPIoQy7A.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Cr-17X6C.js",
-      "map": "index.chunk-Cr-17X6C.js.map"
+      "file": ".vite/build/index.chunk-CprN6fNp.js",
+      "map": "index.chunk-CprN6fNp.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CSB9yX1X.js",
-      "map": "index.chunk-CSB9yX1X.js.map"
+      "file": ".vite/build/index.chunk-CPs2mZqo.js",
+      "map": "index.chunk-CPs2mZqo.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CSKg_7F-.js",
-      "map": "index.chunk-CSKg_7F-.js.map"
+      "file": ".vite/build/index.chunk-CqZFu16x.js",
+      "map": "index.chunk-CqZFu16x.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CsVIQhpd.js",
-      "map": "index.chunk-CsVIQhpd.js.map"
+      "file": ".vite/build/index.chunk-CRdaEBCx.js",
+      "map": "index.chunk-CRdaEBCx.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CX7M5s_r.js",
-      "map": "index.chunk-CX7M5s_r.js.map"
+      "file": ".vite/build/index.chunk-CtYG9fEf.js",
+      "map": "index.chunk-CtYG9fEf.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-CXZzvIy6.js",
-      "map": "index.chunk-CXZzvIy6.js.map"
+      "file": ".vite/build/index.chunk-Cv9YRHM6.js",
+      "map": "index.chunk-Cv9YRHM6.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Cz1l-Hdo.js",
-      "map": "index.chunk-Cz1l-Hdo.js.map"
+      "file": ".vite/build/index.chunk-CYO3idNq.js",
+      "map": "index.chunk-CYO3idNq.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-D06iXS0i.js",
-      "map": "index.chunk-D06iXS0i.js.map"
+      "file": ".vite/build/index.chunk-D0YyPt7o.js",
+      "map": "index.chunk-D0YyPt7o.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-D2Dsbg_1.js",
-      "map": "index.chunk-D2Dsbg_1.js.map"
+      "file": ".vite/build/index.chunk-D2980j2g.js",
+      "map": "index.chunk-D2980j2g.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-D4eNMRV-.js",
-      "map": "index.chunk-D4eNMRV-.js.map"
+      "file": ".vite/build/index.chunk-D40mk3rV.js",
+      "map": "index.chunk-D40mk3rV.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DCBDQ3v8.js",
-      "map": "index.chunk-DCBDQ3v8.js.map"
+      "file": ".vite/build/index.chunk-Dc9OEKFh.js",
+      "map": "index.chunk-Dc9OEKFh.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DdYfpaW-.js",
-      "map": "index.chunk-DdYfpaW-.js.map"
+      "file": ".vite/build/index.chunk-Ddd_2WzG.js",
+      "map": "index.chunk-Ddd_2WzG.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DDZd5Vp7.js",
-      "map": "index.chunk-DDZd5Vp7.js.map"
+      "file": ".vite/build/index.chunk-DDJpVDLz.js",
+      "map": "index.chunk-DDJpVDLz.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DE21m-NQ.js",
-      "map": "index.chunk-DE21m-NQ.js.map"
+      "file": ".vite/build/index.chunk-DdWdYJp7.js",
+      "map": "index.chunk-DdWdYJp7.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Dfz_KgC0.js",
-      "map": "index.chunk-Dfz_KgC0.js.map"
+      "file": ".vite/build/index.chunk-DFWfQSBZ.js",
+      "map": "index.chunk-DFWfQSBZ.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Dg2TkQu2.js",
-      "map": "index.chunk-Dg2TkQu2.js.map"
+      "file": ".vite/build/index.chunk-DG74AvKO.js",
+      "map": "index.chunk-DG74AvKO.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DhA4Y4sl.js",
-      "map": "index.chunk-DhA4Y4sl.js.map"
+      "file": ".vite/build/index.chunk-DGt1t8pw.js",
+      "map": "index.chunk-DGt1t8pw.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DhJl-RT6.js",
-      "map": "index.chunk-DhJl-RT6.js.map"
+      "file": ".vite/build/index.chunk-DNO83Mdh.js",
+      "map": "index.chunk-DNO83Mdh.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DI0dOUHS.js",
-      "map": "index.chunk-DI0dOUHS.js.map"
+      "file": ".vite/build/index.chunk-Dp3FyB5D.js",
+      "map": "index.chunk-Dp3FyB5D.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DKV8ECIP.js",
-      "map": "index.chunk-DKV8ECIP.js.map"
+      "file": ".vite/build/index.chunk-DqQS0rwW.js",
+      "map": "index.chunk-DqQS0rwW.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Dnm7hmdz.js",
-      "map": "index.chunk-Dnm7hmdz.js.map"
+      "file": ".vite/build/index.chunk-DQt1ceQG.js",
+      "map": "index.chunk-DQt1ceQG.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DPHuE6Qn.js",
-      "map": "index.chunk-DPHuE6Qn.js.map"
+      "file": ".vite/build/index.chunk-Du4c-uu4.js",
+      "map": "index.chunk-Du4c-uu4.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DqiH2czz.js",
-      "map": "index.chunk-DqiH2czz.js.map"
+      "file": ".vite/build/index.chunk-DuR14Nbw.js",
+      "map": "index.chunk-DuR14Nbw.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Dtx5mYHn.js",
-      "map": "index.chunk-Dtx5mYHn.js.map"
+      "file": ".vite/build/index.chunk-Dvyk6UHM.js",
+      "map": "index.chunk-Dvyk6UHM.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DTyBoElb.js",
-      "map": "index.chunk-DTyBoElb.js.map"
+      "file": ".vite/build/index.chunk-DWh2Cbb4.js",
+      "map": "index.chunk-DWh2Cbb4.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DupfOLb1.js",
-      "map": "index.chunk-DupfOLb1.js.map"
+      "file": ".vite/build/index.chunk-DYl6OJw9.js",
+      "map": "index.chunk-DYl6OJw9.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DviXPowO.js",
-      "map": "index.chunk-DviXPowO.js.map"
+      "file": ".vite/build/index.chunk-DyWY3uLy.js",
+      "map": "index.chunk-DyWY3uLy.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Dx6FpM5s.js",
-      "map": "index.chunk-Dx6FpM5s.js.map"
+      "file": ".vite/build/index.chunk-DzoMno1m.js",
+      "map": "index.chunk-DzoMno1m.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DywOJ4FI.js",
-      "map": "index.chunk-DywOJ4FI.js.map"
+      "file": ".vite/build/index.chunk-FLbJauSA.js",
+      "map": "index.chunk-FLbJauSA.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-DZ1bcV55.js",
-      "map": "index.chunk-DZ1bcV55.js.map"
+      "file": ".vite/build/index.chunk-fpH7ang0.js",
+      "map": "index.chunk-fpH7ang0.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-gZtQ-rh_.js",
-      "map": "index.chunk-gZtQ-rh_.js.map"
+      "file": ".vite/build/index.chunk-gfMP3YG-.js",
+      "map": "index.chunk-gfMP3YG-.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-HAY01GgA.js",
-      "map": "index.chunk-HAY01GgA.js.map"
+      "file": ".vite/build/index.chunk-ln0835Ju.js",
+      "map": "index.chunk-ln0835Ju.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-HJHdZatW.js",
-      "map": "index.chunk-HJHdZatW.js.map"
+      "file": ".vite/build/index.chunk-mRrGZwTV.js",
+      "map": "index.chunk-mRrGZwTV.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-iPP8YJHd.js",
-      "map": "index.chunk-iPP8YJHd.js.map"
+      "file": ".vite/build/index.chunk-OJqco4Y2.js",
+      "map": "index.chunk-OJqco4Y2.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-jsuCjkR3.js",
-      "map": "index.chunk-jsuCjkR3.js.map"
+      "file": ".vite/build/index.chunk-ORQtoj_D.js",
+      "map": "index.chunk-ORQtoj_D.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-nGPLNYRn.js",
-      "map": "index.chunk-nGPLNYRn.js.map"
+      "file": ".vite/build/index.chunk-q-VplytL.js",
+      "map": "index.chunk-q-VplytL.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Nz3qNJpm.js",
-      "map": "index.chunk-Nz3qNJpm.js.map"
+      "file": ".vite/build/index.chunk-Rd0A5gYv.js",
+      "map": "index.chunk-Rd0A5gYv.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-oKt1jpzu.js",
-      "map": "index.chunk-oKt1jpzu.js.map"
+      "file": ".vite/build/index.chunk-vjnPPhov.js",
+      "map": "index.chunk-vjnPPhov.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-oUfwpN52.js",
-      "map": "index.chunk-oUfwpN52.js.map"
+      "file": ".vite/build/index.chunk-WcXeviHo.js",
+      "map": "index.chunk-WcXeviHo.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-ovct5Tp9.js",
-      "map": "index.chunk-ovct5Tp9.js.map"
+      "file": ".vite/build/index.chunk-X1_RL4-v.js",
+      "map": "index.chunk-X1_RL4-v.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-VPvh7cOW.js",
-      "map": "index.chunk-VPvh7cOW.js.map"
+      "file": ".vite/build/index.chunk-X4XjmLB1.js",
+      "map": "index.chunk-X4XjmLB1.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-wVPVIGcM.js",
-      "map": "index.chunk-wVPVIGcM.js.map"
+      "file": ".vite/build/index.chunk-xb48lTMo.js",
+      "map": "index.chunk-xb48lTMo.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-Y4fuBAfx.js",
-      "map": "index.chunk-Y4fuBAfx.js.map"
+      "file": ".vite/build/index.chunk-ZxZLJAZH.js",
+      "map": "index.chunk-ZxZLJAZH.js.map"
     },
     {
       "source": "asar",
-      "file": ".vite/build/index.chunk-YRJWMSDg.js",
-      "map": "index.chunk-YRJWMSDg.js.map"
-    },
-    {
-      "source": "asar",
-      "file": ".vite/build/index.chunk-yvIZ2T2i.js",
-      "map": "index.chunk-yvIZ2T2i.js.map"
+      "file": ".vite/build/index.chunk-_cNKMOnt.js",
+      "map": "index.chunk-_cNKMOnt.js.map"
     },
     {
       "source": "asar",

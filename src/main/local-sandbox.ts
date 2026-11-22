@@ -14,10 +14,11 @@ import {
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
-// Chat-mode code execution ("wiggle" in the retained client): a Docker-backed
-// Linux runtime with node/npm and python/uv preinstalled. Each conversation
-// gets its own container whose /workspace is a bind-mounted host directory
-// under the profile, so uploads flow in and generated files flow out without
+// Chat-mode file processing and data analysis ("wiggle" in the retained
+// client): a Docker-backed Linux runtime with node/npm and python/uv
+// preinstalled. Each conversation gets a private, persistent /workspace under
+// the profile, while every command uses a short-lived container bind-mounted
+// to that directory. Uploads flow in and generated files flow out without
 // docker cp. The image builds once from the embedded Dockerfile below.
 
 const IMAGE_REPOSITORY = "open-claude-sandbox";
@@ -32,8 +33,11 @@ const STATUS_CACHE_MS = 3_000;
 const MAX_SKILL_FILE_BYTES = 1024 * 1024;
 const MAX_SKILL_TOTAL_BYTES = 16 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_FILES = 100;
+const MAX_UPLOAD_TOTAL_BYTES = 200 * 1024 * 1024;
 const MAX_COMMAND_CHARS = 100_000;
 const MAX_SKILL_FILES = 100;
+const UPLOAD_MANIFEST = "_open_claude_manifest.json";
 
 // Preinstalled: node 22 + npm, python 3.12 + uv/pip, pandas, numpy, openpyxl,
 // pillow, matplotlib, requests, plus ffmpeg/git/zip/jq CLI tools.
@@ -263,6 +267,75 @@ async function replaceWorkspaceFile(
     if (!backupContainsOriginal)
       await rm(backup, { force: true }).catch(() => undefined);
   }
+}
+
+async function readUploadSource(sourcePath: string): Promise<Buffer> {
+  if (typeof sourcePath !== "string")
+    throw new Error("Sandbox upload details are invalid");
+  const expectedSource = await realpath(sourcePath);
+  if (!isWithin(expectedSource, path.resolve(sourcePath)))
+    throw new Error("Sandbox upload source cannot be a symbolic link");
+  const sourceHandle = await open(
+    expectedSource,
+    constants.O_RDONLY |
+      (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
+  );
+  try {
+    const source = await sourceHandle.stat();
+    if (!source.isFile() || source.size > MAX_UPLOAD_BYTES)
+      throw new Error(
+        "Sandbox uploads must be regular files no larger than 50 MB",
+      );
+    const confirmed = await realpath(expectedSource);
+    const confirmedInfo = await stat(confirmed);
+    if (
+      !isWithin(expectedSource, confirmed) ||
+      confirmedInfo.dev !== source.dev ||
+      confirmedInfo.ino !== source.ino
+    )
+      throw new Error("Sandbox upload source changed while being opened");
+    const sourceBytes = await sourceHandle.readFile();
+    if (sourceBytes.byteLength > MAX_UPLOAD_BYTES)
+      throw new Error(
+        "Sandbox uploads must be regular files no larger than 50 MB",
+      );
+    return sourceBytes;
+  } finally {
+    await sourceHandle.close();
+  }
+}
+
+function uniqueUploadName(fileName: string, used: Set<string>): string {
+  const cleaned = path
+    .basename(fileName.replaceAll("\\", "/"))
+    .replaceAll("\0", "")
+    .slice(0, 255);
+  const initial = safeRelativePath(cleaned || "attachment");
+  const comparable = (value: string) => value.toLowerCase();
+  if (!used.has(comparable(initial))) {
+    used.add(comparable(initial));
+    return initial;
+  }
+  const extension = path.posix.extname(initial);
+  const stem = initial.slice(0, initial.length - extension.length);
+  for (let suffix = 2; suffix < 10_000; suffix += 1) {
+    const marker = ` (${suffix})`;
+    const candidate = `${stem.slice(0, 255 - extension.length - marker.length)}${marker}${extension}`;
+    if (used.has(comparable(candidate))) continue;
+    used.add(comparable(candidate));
+    return candidate;
+  }
+  throw new Error("Could not assign a unique sandbox upload name");
+}
+
+function sanitizeCommandOutput(value: string): string {
+  return value
+    .replace(/\u001b\][^\u0007]*(?:\u0007|\u001b\\)/g, "")
+    .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g,
+      "",
+    );
 }
 
 async function walkWorkspace(
@@ -559,6 +632,17 @@ export class LocalSandbox {
             "--label",
             `${CONTAINER_LABEL}.owner=${this.#ownerId}`,
             ...(allowNetwork ? [] : ["--network", "none"]),
+            "--read-only",
+            "--tmpfs",
+            "/tmp:rw,nosuid,nodev,size=512m",
+            "--tmpfs",
+            "/run:rw,nosuid,nodev,size=16m",
+            "--env",
+            "HOME=/tmp/home",
+            "--env",
+            "XDG_CACHE_HOME=/tmp/cache",
+            "--env",
+            "MPLCONFIGDIR=/tmp/matplotlib",
             "--memory",
             "2g",
             "--cpus",
@@ -569,6 +653,10 @@ export class LocalSandbox {
             "ALL",
             "--security-opt",
             "no-new-privileges",
+            "--ulimit",
+            "core=0:0",
+            "--ulimit",
+            "fsize=209715200:209715200",
             "-v",
             `${workspace}:/workspace`,
             "-w",
@@ -721,7 +809,7 @@ export class LocalSandbox {
     const combined = [exec.stdout.trim(), exec.stderr.trim()]
       .filter(Boolean)
       .join("\n");
-    let output = combined;
+    let output = sanitizeCommandOutput(combined);
     if (output.length > MAX_OUTPUT_CHARS)
       output = `${output.slice(0, MAX_OUTPUT_CHARS)}\n… output truncated`;
     if (exec.code === 124 || exec.code === 137)
@@ -739,42 +827,117 @@ export class LocalSandbox {
     if (this.#disposed) throw new Error("Sandbox is shutting down");
     if (typeof fileName !== "string" || typeof sourcePath !== "string")
       throw new Error("Sandbox upload details are invalid");
-    const expectedSource = await realpath(sourcePath);
-    if (!isWithin(expectedSource, path.resolve(sourcePath)))
-      throw new Error("Sandbox upload source cannot be a symbolic link");
-    const sourceHandle = await open(
-      expectedSource,
-      constants.O_RDONLY |
-        (process.platform === "win32" ? 0 : constants.O_NOFOLLOW),
-    );
-    let sourceBytes: Buffer;
-    try {
-      const source = await sourceHandle.stat();
-      if (!source.isFile() || source.size > MAX_UPLOAD_BYTES)
-        throw new Error(
-          "Sandbox uploads must be regular files no larger than 50 MB",
-        );
-      const confirmed = await realpath(expectedSource);
-      const confirmedInfo = await stat(confirmed);
-      if (
-        !isWithin(expectedSource, confirmed) ||
-        confirmedInfo.dev !== source.dev ||
-        confirmedInfo.ino !== source.ino
-      )
-        throw new Error("Sandbox upload source changed while being opened");
-      sourceBytes = await sourceHandle.readFile();
-      if (sourceBytes.byteLength > MAX_UPLOAD_BYTES)
-        throw new Error(
-          "Sandbox uploads must be regular files no larger than 50 MB",
-        );
-    } finally {
-      await sourceHandle.close();
-    }
+    const sourceBytes = await readUploadSource(sourcePath);
     const workspace = this.workspaceDir(conversationUuid);
     const safeName = safeRelativePath(path.basename(fileName));
     await replaceWorkspaceFile(workspace, `uploads/${safeName}`, (temporary) =>
       writeFile(temporary, sourceBytes, { flag: "wx", mode: 0o600 }),
     );
+  }
+
+  // Atomically reconcile /workspace/uploads to the active conversation branch.
+  // This prevents files from abandoned branches remaining model-visible and
+  // preserves same-named uploads under deterministic disambiguated names.
+  async syncUploads(
+    conversationUuid: string,
+    files: readonly {
+      id: string;
+      fileName: string;
+      sourcePath: string;
+    }[],
+  ): Promise<void> {
+    if (this.#disposed) throw new Error("Sandbox is shutting down");
+    if (files.length > MAX_UPLOAD_FILES)
+      throw new Error(
+        `The Chat file workspace supports at most ${MAX_UPLOAD_FILES} uploads`,
+      );
+    const workspace = this.workspaceDir(conversationUuid);
+    const workspaceRoot = await safeDirectory(workspace, "");
+    const staging = path.join(
+      workspaceRoot,
+      `.open-claude-${randomUUID()}.uploads.tmp`,
+    );
+    const backup = path.join(
+      workspaceRoot,
+      `.open-claude-${randomUUID()}.uploads.bak`,
+    );
+    const target = path.join(workspaceRoot, "uploads");
+    const used = new Set<string>([UPLOAD_MANIFEST.toLowerCase()]);
+    const manifest: Array<{
+      id: string;
+      original_name: string;
+      path: string;
+      size_bytes: number;
+    }> = [];
+    let totalBytes = 0;
+    let movedExisting = false;
+    try {
+      await mkdir(staging);
+      for (const file of files) {
+        if (
+          typeof file?.id !== "string" ||
+          typeof file.fileName !== "string" ||
+          typeof file.sourcePath !== "string"
+        )
+          throw new Error("Sandbox upload details are invalid");
+        const sourceBytes = await readUploadSource(file.sourcePath);
+        totalBytes += sourceBytes.byteLength;
+        if (totalBytes > MAX_UPLOAD_TOTAL_BYTES)
+          throw new Error(
+            "Chat file workspace uploads exceed the 200 MB total limit",
+          );
+        const workspaceName = uniqueUploadName(file.fileName, used);
+        await replaceWorkspaceFile(staging, workspaceName, (temporary) =>
+          writeFile(temporary, sourceBytes, { flag: "wx", mode: 0o600 }),
+        );
+        manifest.push({
+          id: file.id.slice(0, 256),
+          original_name: path
+            .basename(file.fileName.replaceAll("\\", "/"))
+            .replaceAll("\0", "")
+            .slice(0, 255),
+          path: `/workspace/uploads/${workspaceName}`,
+          size_bytes: sourceBytes.byteLength,
+        });
+      }
+      await replaceWorkspaceFile(staging, UPLOAD_MANIFEST, (temporary) =>
+        writeFile(
+          temporary,
+          `${JSON.stringify({ version: 1, files: manifest }, null, 2)}\n`,
+          { encoding: "utf8", flag: "wx", mode: 0o600 },
+        ),
+      );
+      const existing = await lstat(target).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return null;
+          throw error;
+        },
+      );
+      if (existing) {
+        await rename(target, backup);
+        movedExisting = true;
+      }
+      try {
+        await rename(staging, target);
+      } catch (error) {
+        if (movedExisting) await rename(backup, target);
+        movedExisting = false;
+        throw error;
+      }
+      if (movedExisting) {
+        await rm(backup, { recursive: true, force: true });
+        movedExisting = false;
+      }
+    } finally {
+      await rm(staging, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+      // Preserve the last good upload snapshot if rollback itself fails.
+      if (!movedExisting)
+        await rm(backup, { recursive: true, force: true }).catch(
+          () => undefined,
+        );
+    }
   }
 
   async stageSkillFiles(
@@ -915,6 +1078,47 @@ export class LocalSandbox {
       this.#ephemeralWorkspaces.add(this.workspaceDir(conversationUuid));
     } catch {
       // Invalid ids never created a workspace.
+    }
+  }
+
+  // Remove durable workspaces that no persisted conversation owns. This also
+  // clears incognito workspaces left by a crash; links are unlinked rather than
+  // followed, and every recursive target is canonicalized under #rootDir.
+  async reconcileWorkspaces(
+    activeConversationUuids: readonly string[],
+  ): Promise<void> {
+    if (this.#disposed) return;
+    const active = new Set(
+      activeConversationUuids.map((uuid) => conversationKey(uuid)),
+    );
+    await mkdir(this.#rootDir, { recursive: true });
+    const canonicalRoot = await realpath(this.#rootDir);
+    const names = await readdir(this.#rootDir);
+    for (const name of names) {
+      let key: string;
+      try {
+        key = conversationKey(name);
+      } catch {
+        continue;
+      }
+      const candidate = path.join(this.#rootDir, name);
+      const info = await lstat(candidate).catch(() => null);
+      if (!info) continue;
+      if (info.isSymbolicLink()) {
+        await rm(candidate, { force: true }).catch(() => undefined);
+        continue;
+      }
+      if (!info.isDirectory() || active.has(key)) continue;
+      const canonicalCandidate = await realpath(candidate).catch(() => null);
+      if (
+        !canonicalCandidate ||
+        !isWithin(canonicalRoot, canonicalCandidate) ||
+        canonicalCandidate === canonicalRoot
+      )
+        continue;
+      await rm(canonicalCandidate, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
     }
   }
 

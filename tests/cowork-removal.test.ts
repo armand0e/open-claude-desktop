@@ -39,7 +39,7 @@ describe("removed Cowork routes", () => {
 
   it("removes obsolete desktop services while retaining LocalSessions", () => {
     expect(isRemovedCoworkService("claude.web", "LocalAgentModeSessions")).toBe(
-      true,
+      false,
     );
     expect(isRemovedCoworkService("claude.web", "CoworkScheduledTasks")).toBe(
       true,

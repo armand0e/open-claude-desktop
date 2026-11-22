@@ -175,7 +175,6 @@ const child = spawn(
       CLAUDE_DESKTOP_LOCAL_UI: "1",
       CLAUDE_LOCAL_BASE_URL: `http://127.0.0.1:${providerPort}/v1`,
       CLAUDE_LOCAL_MODEL: "smoke-model",
-      CLAUDE_LOCAL_COMPUTER_AUTOCONSENT: "1",
     },
   },
 );

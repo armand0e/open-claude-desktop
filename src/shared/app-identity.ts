@@ -14,13 +14,39 @@ export interface LocalProfilePaths {
   crashDumps: string;
 }
 
+export interface LocalProfilePathOptions {
+  packaged?: boolean;
+  temporaryRoot?: string;
+}
+
+function isInside(root: string, candidate: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return (
+    relative.length > 0 &&
+    !relative.startsWith("..") &&
+    !path.isAbsolute(relative)
+  );
+}
+
 export function localProfilePaths(
   appDataPath: string,
   override?: string,
+  options: LocalProfilePathOptions = {},
 ): LocalProfilePaths {
-  const userData = path.resolve(
-    override || path.join(appDataPath, LOCAL_APP_STORAGE_DIRECTORY),
-  );
+  const defaultProfile = path.join(appDataPath, LOCAL_APP_STORAGE_DIRECTORY);
+  const requestedProfile = override?.trim()
+    ? path.resolve(override)
+    : path.resolve(defaultProfile);
+  if (
+    override?.trim() &&
+    options.packaged === true &&
+    (!options.temporaryRoot ||
+      !isInside(options.temporaryRoot, requestedProfile))
+  )
+    throw new Error(
+      `${LOCAL_PROFILE_ENV} may only select an isolated temporary profile in packaged builds`,
+    );
+  const userData = requestedProfile;
   return {
     userData,
     sessionData: path.join(userData, "Session Data"),

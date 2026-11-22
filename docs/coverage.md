@@ -12,9 +12,9 @@ The same counts and per-service lists are available in [`analysis/implementation
 | Callable TypeScript declarations     |      11 namespaces | All recovered services and nested store APIs           |
 | Preload operations                   |          842 / 842 | Exact operation metadata in the generated contract     |
 | Generated validation evidence        | 747 / 842 channels | 1,168 arguments, 533 results                           |
-| Explicit dispatcher service branches |   36 / 71 services | 611 contract methods enter a service-specific adapter  |
-| Event-backed service branches        |    2 / 71 services | Deep-link and menu events live in lifecycle code       |
-| Compatibility-only fallback services |   33 / 71 services | 227 methods report truthful absence or fail closed     |
+| Explicit dispatcher service branches |   32 / 71 services | 571 contract methods enter a service-specific adapter  |
+| Event-backed service branches        |    2 / 71 services | 4 methods live in application lifecycle code           |
+| Explicit compatibility-only services |   37 / 71 services | 267 methods report truthful absence or fail closed     |
 | Build and unit tests                 |            Passing | Typecheck, unit tests, production bundle               |
 | Hosted and local-SPA smoke           |            Passing | Isolated Electron profiles                             |
 | Local packaged-UX chat smoke         |            Passing | Provider stream, disk persistence, and reload render   |
@@ -33,13 +33,13 @@ The following service families have concrete behavior rather than only a generic
 - settings: `AppConfig`, `AppFeatures`, `AppPreferences`, `Startup`, `GlobalShortcut`, `FilePickers`, `DesktopInfo`, `MCP`, and `Extensions`;
 - hybrid/internal UI: locale, About, and main title-bar controls;
 - web shell: window controls/state, browser navigation, trusted navigation, external authentication, updater hooks, notifications, filesystem, local environment, Claude Code availability, Launch and artifact panes, and plugin MCP listing;
-- local Code: durable `LocalSessions`, native launcher, transcript events, OpenAI-compatible agent loop, permission decisions, workspace file/search/shell tools, artifact tools, terminal PTYs, a model-drivable native multi-tab Browser, git status/diff/history, file previews, editor launch, and persisted scheduled routines;
+- local Code: durable `LocalSessions`, native launcher, transcript events, OpenAI Chat Completions and Anthropic Messages agent transports, permission decisions, workspace file/search/shell tools, artifact tools, terminal PTYs, a model-drivable native multi-tab Browser, git status/diff/history, file previews, editor launch, and persisted scheduled routines;
 - local MCP: connector management, live status, bounded stdio and remote transports, renderer-isolated bridges, and tool discovery/calls in both Chat and Code;
 - window manager: state query, focus, and close actions.
 
 Some branches are intentionally partial. For example, Extensions exposes settings and folders but does not install proprietary DXT runtimes, and AutoUpdater delegates only where Electron supplies an updater.
 
-## Safe fallbacks
+## Explicit compatibility policies
 
 The remaining services still exist at every recovered preload path, but return stable empty, false, null, or unavailable states where a real implementation would require missing private components. The largest groups are:
 
@@ -50,7 +50,7 @@ The remaining services still exist at every recovered preload path, but return s
 - GitHub operations that depend on a live agent session;
 - wake scheduling, feedback upload, support bundles, and native buddy transport.
 
-Unsupported mutation-shaped fallback methods throw an explicit local-mode error. Enumeration-shaped methods return empty lists. Capability and status checks return false, null, or an explicit unavailable feature state. A narrow allowlist of renderer-only synchronization signals is acknowledged without claiming persistence. This is deliberate: a compatibility path must not claim that work occurred.
+Every compatibility-only service is declared by full service name. A newly recovered service with no policy throws instead of inheriting behavior from its method spelling. Unsupported mutation-shaped methods throw an explicit local-mode error. Enumeration-shaped methods return empty lists. Capability and status checks return false, null, or an explicit unavailable feature state. A narrow allowlist of renderer-only synchronization signals is acknowledged without claiming persistence. This is deliberate: a compatibility path must not claim that work occurred.
 
 The keep/trim/port decision and code-placement rules are documented in [`product-boundary.md`](product-boundary.md).
 
@@ -58,7 +58,7 @@ The keep/trim/port decision and code-placement rules are documented in [`product
 
 Primitive, optional, nullable, and array validators are enforced before dispatch. The report preserves a SHA-256 identity for every observed generated validation expression. Minified custom validator function names are not treated as recovered public schemas, so those values are marked `custom schema validated` and allowed through to the service implementation.
 
-Result validation is available through `CLAUDE_STRICT_RESULT_VALIDATION=1`. It is disabled by default because generic fallback services intentionally do not fabricate complex result objects merely to satisfy a structural validator.
+Recovered result validation is enabled by default. `CLAUDE_DISABLE_RESULT_VALIDATION=1` is an emergency diagnostic escape hatch, not a release setting. Recovered custom-schema guards enforce at least object-versus-array shape even where private field-level schemas cannot be reconstructed.
 
 ## Definition of done for a deeper service
 

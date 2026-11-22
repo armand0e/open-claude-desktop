@@ -13,7 +13,13 @@ import path from "node:path";
 import electron from "electron";
 
 const proofText = "sandbox-proof-1234567890";
-const command = `echo ${proofText} > proof.txt && cat proof.txt`;
+const command = [
+  "test -f uploads/_open_claude_manifest.json",
+  "if touch /root/open-claude-rootfs-leak 2>/dev/null; then echo ROOTFS-WRITABLE; exit 88; fi",
+  "if curl --max-time 3 -fsS https://example.com >/dev/null 2>&1; then echo NETWORK-LEAK; exit 89; fi",
+  `echo ${proofText} > proof.txt`,
+  "cat proof.txt",
+].join(" && ");
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -271,7 +277,7 @@ try {
       return {
         toolMissing: text.includes("TOOL-MISSING"),
         noLink: text.includes("NO-LINK-FOUND"),
-        ranCodeRow: text.includes("Ran code"),
+        workspaceRow: text.includes("File/data workspace"),
         finalVisible: text.includes("Wrote the file"),
         anchorFound: Boolean(anchor),
         downloaded,
@@ -280,9 +286,54 @@ try {
     120_000,
   );
   console.log("rendered:", JSON.stringify(rendered, null, 2));
+  const initialRequest = requests[0];
+  const systemPrompt = String(
+    initialRequest?.messages?.find((message) => message.role === "system")
+      ?.content || "",
+  );
+  const codeToolDescription = String(
+    initialRequest?.tools?.find(
+      (tool) => tool.function?.name === "bash_code_execution",
+    )?.function?.description || "",
+  );
+  const toolResult = String(
+    requests.at(-1)?.messages?.findLast((message) => message.role === "tool")
+      ?.content || "",
+  );
   assert(!rendered.toolMissing, "bash_code_execution missing from tools");
+  assert(
+    systemPrompt.includes(
+      "This is not Code mode and not a general software-development environment",
+    ),
+    "Chat received no file-workspace scope boundary",
+  );
+  assert(
+    systemPrompt.includes("Only files under /workspace persist between calls"),
+    "Chat received an inaccurate sandbox persistence contract",
+  );
+  assert(
+    codeToolDescription.includes(
+      "must not be used for project development, dev servers, deployment, general browsing, or ordinary text-only answers",
+    ),
+    "Code tool description did not reinforce the chat-only scope",
+  );
   assert(!rendered.noLink, "Tool result carried no download link");
-  assert(rendered.ranCodeRow, "'Ran code' chain row did not render");
+  assert(
+    !toolResult.includes("ROOTFS-WRITABLE"),
+    "Sandbox root filesystem is writable",
+  );
+  assert(
+    !toolResult.includes("NETWORK-LEAK"),
+    "Offline sandbox reached the public internet",
+  );
+  assert(
+    toolResult.includes(proofText),
+    "Sandbox hardening checks prevented the bounded file task",
+  );
+  assert(
+    rendered.workspaceRow,
+    "'File/data workspace' chain row did not render",
+  );
   assert(rendered.finalVisible, "Final assistant text did not render");
   assert(rendered.anchorFound, "Download link did not render as an anchor");
   assert(
@@ -298,7 +349,9 @@ try {
     "Download is not served as an attachment",
   );
 
-  console.log("PROBE PASS: sandbox code execution works end to end in chat");
+  console.log(
+    "PROBE PASS: chat file/data workspace works end to end in its sandbox",
+  );
 } catch (error) {
   console.error("PROBE FAIL:", error.message);
   console.error(output.join("").slice(-4000));

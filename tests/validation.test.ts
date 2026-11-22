@@ -12,6 +12,12 @@ describe("recovered runtime validators", () => {
     expect(contractValueMatches(["a", "b"], "string[]")).toBe(true);
     expect(contractValueMatches(["a", 1], "string[]")).toBe(false);
     expect(contractValueMatches({}, "custom schema validated")).toBe(true);
+    expect(contractValueMatches("enum-value", "custom schema validated")).toBe(
+      true,
+    );
+    expect(contractValueMatches(undefined, "custom schema validated")).toBe(
+      false,
+    );
   });
 
   it("identifies the recovered argument name and position on failure", () => {

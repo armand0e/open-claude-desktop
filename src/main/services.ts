@@ -33,6 +33,7 @@ import {
   WebContentsView,
 } from "electron";
 import { PRELOAD_CHANNELS } from "../generated/ipc-contract";
+import compatibilityPolicy from "../../analysis/compatibility-policy.json";
 import { LOCAL_APP_NAME } from "../shared/app-identity";
 import {
   ParsedChannel,
@@ -40,7 +41,10 @@ import {
   storeNameFromMethod,
 } from "../shared/channels";
 import { originOf, TRUSTED_REMOTE_ORIGINS } from "../shared/security";
-import { isRemovedCoworkService } from "../shared/removed-product";
+import {
+  isRemovedCoworkPreference,
+  isRemovedCoworkService,
+} from "../shared/removed-product";
 import { StateStore } from "./state";
 import { FileAccessPolicy } from "./file-access";
 import type { LocalCodeSessionManager } from "./local-code";
@@ -51,10 +55,21 @@ import type { LocalScheduledTasks } from "./local-scheduled-tasks";
 import type { LocalLaunchPreview } from "./local-launch-preview";
 import type { LocalMcpManager } from "./local-mcp";
 import { writeResponseFile } from "./bounded-response";
+import { createZipBundle, type ZipBundleEntry } from "./zip-bundle";
 
 const execFileAsync = promisify(execFile);
 const MAX_DESKTOP_DOWNLOAD_BYTES = 200 * 1024 * 1024;
 const MAX_PASTED_FILE_BYTES = 50 * 1024 * 1024;
+const MAX_HANDOFF_LOG_BYTES = 2 * 1024 * 1024;
+const MAX_HANDOFF_TOTAL_LOG_BYTES = 8 * 1024 * 1024;
+
+const MANAGED_RENDERER_CONFIG = Object.freeze({
+  // Open-Claude has no organization policy fetcher. Fail closed for
+  // telemetry and for native mobile-simulator automation that is not bundled.
+  disableEssentialTelemetry: true,
+  disableNonessentialTelemetry: true,
+  disableMobileSimulatorTools: true,
+});
 
 export interface ServiceContext {
   readonly state: StateStore;
@@ -442,43 +457,77 @@ function defaultStoreValue(
   return context.state.get("stores")[storeName] ?? null;
 }
 
+function validHandoffThreadUrl(input: unknown): input is string {
+  if (typeof input !== "string" || input.length > 8_192) return false;
+  try {
+    const url = new URL(input);
+    return (
+      url.protocol === "https:" &&
+      ["claude.ai", "claude.com"].some(
+        (domain) =>
+          url.hostname === domain || url.hostname.endsWith(`.${domain}`),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function boundedHandoffLog(filePath: string): Promise<Buffer | null> {
+  const handle = await open(
+    filePath,
+    fsConstants.O_RDONLY |
+      (process.platform === "win32" ? 0 : fsConstants.O_NOFOLLOW),
+  ).catch(() => null);
+  if (!handle) return null;
+  try {
+    const details = await handle.stat();
+    if (!details.isFile() || details.size > MAX_HANDOFF_LOG_BYTES) return null;
+    const bytes = await handle.readFile();
+    return bytes.byteLength <= MAX_HANDOFF_LOG_BYTES ? bytes : null;
+  } finally {
+    await handle.close();
+  }
+}
+
+type CompatibilityOutcome =
+  "empty-array" | "false" | "null" | "renderer-signal" | "unavailable";
+
+const COMPATIBILITY_ONLY_SERVICES = new Set(
+  compatibilityPolicy.compatibilityOnlyServices,
+);
+const DECLARED_COMPATIBILITY_SERVICES = new Set([
+  ...compatibilityPolicy.compatibilityOnlyServices,
+  ...compatibilityPolicy.fallbackServices,
+]);
+const COMPATIBILITY_METHOD_POLICY = compatibilityPolicy.methods as Record<
+  string,
+  CompatibilityOutcome
+>;
+
+export function isCompatibilityOnlyService(
+  namespace: string,
+  service: string,
+): boolean {
+  return COMPATIBILITY_ONLY_SERVICES.has(`${namespace}.${service}`);
+}
+
 function genericDefault(parsed: ParsedChannel): unknown {
   const { method, service } = parsed;
-  if (
-    /^(list|getAll|getAgents|getDetectedProjects|getPlugins|getExtensions|getInstalled|getAvailable|getRunningLocalSessions|getTrusted|getSupportedCommands|getSSHConfigs|getLocalBranches|getGitCommits|getPrCommits|getCheckRunAnnotations|getWatcherHistory|getConfiguredServices|getPreviewTabs|getPreviewAllowedOrigins|getConnectedFiles|getOpenDocuments|scanDevices)/.test(
-      method,
-    )
-  ) {
-    return [];
-  }
-  if (/^(is|has|check|can|should)/.test(method)) return false;
-  // These calls only synchronize ephemeral renderer state. They are safe to
-  // acknowledge even when their optional host surface (quick entry, resource
-  // mentions, or the hosted build reporter) is not present locally.
-  const compatibilitySignals = new Set([
-    "claude.web.Account.setAccountDetails",
-    "claude.web.CustomPlugins.syncLocalOrgPlugins",
-    "claude.web.FindInPageProvider.reportFindResult",
-    "claude.web.FindInPageProvider.setProviderActive",
-    "claude.web.QuickEntry.setRecentChats",
-    "claude.web.Resources.setFindInPageClaimed",
-    "claude.web.Resources.setFocusedCwd",
-    "claude.web.Resources.setFocusedSshTarget",
-    "claude.web.WebBuild.reportCommitHash",
-  ]);
-  if (compatibilitySignals.has(`${parsed.namespace}.${service}.${method}`))
-    return undefined;
-  if (
-    /^(delete|remove|set|update|write|save|archive|unarchive|stop|interrupt|cancel|clear|report|notify|mark|revoke|respond|replace|disconnect|detach|close|hide|show|focus|resize|navigate|open|request|submit|sync|warm|prepare|patch|apply|add|install|uninstall|start|run)/.test(
-      method,
-    )
-  ) {
+  const qualifiedService = `${parsed.namespace}.${service}`;
+  if (!DECLARED_COMPATIBILITY_SERVICES.has(qualifiedService))
     throw new Error(
-      `${parsed.namespace}.${service}.${method} is unavailable in local mode`,
+      `${qualifiedService}.${method} has no declared local compatibility policy`,
     );
-  }
-  if (service === "LocalSessions") return null;
-  return null;
+  const qualifiedMethod = `${qualifiedService}.${method}`;
+  const outcome = COMPATIBILITY_METHOD_POLICY[qualifiedMethod];
+  if (!outcome)
+    throw new Error(`${qualifiedMethod} has no explicit compatibility policy`);
+  if (outcome === "empty-array") return [];
+  if (outcome === "false") return false;
+  if (outcome === "renderer-signal") return undefined;
+  if (outcome === "null") return null;
+  throw new Error(`${qualifiedMethod} is unavailable in local mode`);
 }
 
 export class ServiceDispatcher {
@@ -526,6 +575,11 @@ export class ServiceDispatcher {
       storeNameFromMethod(parsed.method) === "navigationState"
     )
       return this.browserNavigation(parsed.method, event);
+    if (
+      key === "claude.web.ManagedConfig" &&
+      storeNameFromMethod(parsed.method) === "managedRendererConfig"
+    )
+      return structuredClone(MANAGED_RENDERER_CONFIG);
     if (storeNameFromMethod(parsed.method))
       return defaultStoreValue(this.context, parsed);
 
@@ -549,6 +603,8 @@ export class ServiceDispatcher {
         );
       case "claude.settings.DesktopInfo":
         return this.desktopInfo(parsed.method);
+      case "claude.settings.Custom3pUsage":
+        return this.custom3pUsage(args[0]);
       case "claude.settings.MCP":
         return this.mcp(parsed.method, args);
       case "claude.settings.Extensions":
@@ -579,8 +635,17 @@ export class ServiceDispatcher {
         return this.fileSystem(parsed.method, args, event);
       case "claude.web.LocalSessionEnvironment":
         return this.localSessionEnvironment(parsed.method, args);
+      case "claude.simulator.Simulator":
+        return this.simulator(parsed.method);
+      case "claude.web.ForgeState":
+        return this.forgeState(parsed.method, args);
       case "claude.web.ClaudeCode":
         return this.claudeCode(parsed.method, args);
+      // The retained native Skills settings screen still uses the historical
+      // LocalAgentModeSessions bridge for its local-skill CRUD methods. It is
+      // a compatibility transport for the shared LocalSessions manager, not
+      // the removed Cowork product or a second session implementation.
+      case "claude.web.LocalAgentModeSessions":
       case "claude.web.LocalSessions":
         return this.localSessions(parsed.method, args, event);
       case "claude.web.Launch":
@@ -679,6 +744,11 @@ export class ServiceDispatcher {
       args[0].includes("\0")
     )
       return undefined;
+    // The retained renderer still submits defaults for its removed Cowork
+    // product. Treat those as display synchronization only: persisting them
+    // resurrects dead feature state and makes later audits/profile upgrades
+    // believe the removed product is configured.
+    if (isRemovedCoworkPreference(args[0])) return undefined;
     return this.context.state
       .update((draft) => {
         draft.appConfig.preferences[args[0] as string] = args[1];
@@ -813,6 +883,84 @@ export class ServiceDispatcher {
     };
   }
 
+  private async custom3pUsage(windowDays: unknown): Promise<unknown> {
+    const days = Number.isFinite(windowDays)
+      ? Math.min(365, Math.max(1, Math.floor(windowDays as number)))
+      : 30;
+    const summary = await this.context.codeSessions
+      .invoke("getCustom3pUsageSummary", [days])
+      .catch(() => null);
+    if (summary && typeof summary === "object") return summary;
+    const emptyTotals = {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      webSearchRequests: 0,
+    };
+    return {
+      windowDays: days,
+      generatedAtMs: Date.now(),
+      turns: 0,
+      errorTurns: 0,
+      surfaces: {
+        chat: { ...emptyTotals },
+        cowork: { ...emptyTotals },
+        code: { ...emptyTotals },
+      },
+      models: [],
+      tools: [],
+      daily: [],
+    };
+  }
+
+  private simulator(method: string): unknown {
+    if (method === "checkSetup") return { xcode: false };
+    if (method === "checkAndroidSetup") return { studioInstalled: false };
+    if (method === "listDevices") return [];
+    if (
+      method === "openXcode" ||
+      method === "openAppStore" ||
+      method === "openAndroidStudio" ||
+      method === "requestDeviceToolsRepin"
+    )
+      return false;
+    if (
+      method === "attach" ||
+      method === "requestDeviceConsent" ||
+      method === "shutdown" ||
+      method === "startRecording"
+    )
+      return null;
+    if (method === "saveScreenshot" || method === "stopRecording")
+      return {
+        error: "Mobile simulator tools are unavailable in local mode",
+        code: "unsupported",
+      };
+    // Telemetry and simulator-control calls are acknowledged without claiming
+    // that a device operation occurred. Availability is reported by AppFeatures.
+    return undefined;
+  }
+
+  private forgeState(
+    method: string,
+    args: unknown[],
+  ): unknown | Promise<unknown> {
+    if (method === "getForgeStateSnapshot") return [];
+    if (method !== "setForgeStateVisibleKeys") return undefined;
+    const keys = Array.isArray(args[0])
+      ? args[0].filter(
+          (entry): entry is string =>
+            typeof entry === "string" && entry.length <= 256,
+        )
+      : [];
+    return this.context.state
+      .update((draft) => {
+        draft.stores.forgeStateVisibleKeys = [...new Set(keys)].slice(0, 512);
+      })
+      .then(() => undefined);
+  }
+
   // The Local MCP servers settings page renders each server's config plus a
   // status badge ("initializing" | "running" | "failed"). Statuses come from
   // the MCP manager's last listing; servers it has not tried yet report
@@ -881,32 +1029,23 @@ export class ServiceDispatcher {
     args: unknown[],
     event?: IpcMainInvokeEvent,
   ): unknown | Promise<unknown> {
+    if (method === "isDesktopExtensionSignatureRequired") return true;
     if (
       [
         "isExtensionsEnabled",
         "isLocalExtensionInstallAllowed",
         "isDirectoryEnabled",
+        "isDesktopExtensionDirectoryEnabled",
       ].includes(method)
     )
-      return true;
-    if (method === "isDesktopExtensionSignatureRequired") return false;
-    if (method === "isDesktopExtensionDirectoryEnabled") return true;
+      return false;
     if (
       method === "getInstalledExtensionsWithState" ||
       method === "getExtensions" ||
       method === "getExtensionVersions"
     )
       return [];
-    if (method === "getAvailableExtensionRuntimes") {
-      return [
-        {
-          name: "Node.js",
-          versions: [process.versions.node],
-          builtInVersion: process.versions.node,
-        },
-        { name: "Python", versions: [], builtInVersion: null },
-      ];
-    }
+    if (method === "getAvailableExtensionRuntimes") return [];
     if (
       method === "getIsUpdateAvailable" ||
       method === "getExtension" ||
@@ -914,27 +1053,16 @@ export class ServiceDispatcher {
     )
       return null;
     if (method === "getExtensionSettings") return {};
-    if (method === "getDirectoryUrl")
-      return "https://claude.ai/settings/connectors";
-    if (method === "showInstallDxtDialog")
-      return pickPaths(this.context, event, false, false, "Install extension");
+    if (method === "getDirectoryUrl") return null;
+    if (method === "refreshAllowlistCheck") return false;
     if (
-      method === "openExtensionsFolder" ||
-      method === "openExtensionSettingsFolder"
-    ) {
-      const folder = path.join(
-        app.getPath("userData"),
-        method === "openExtensionsFolder" ? "extensions" : "extension-settings",
-      );
-      return mkdir(folder, { recursive: true }).then(() =>
-        shell.openPath(folder),
-      );
-    }
-    if (
-      (method === "showExtensionInFolder" || method === "deleteExtension") &&
-      typeof args[0] === "string"
+      /^(showInstallDxtDialog|handleDxtFile|install|delete|update|uninstall|openExtensionsFolder|openExtensionSettingsFolder|showExtensionInFolder|setExtensionSettings)/.test(
+        method,
+      )
     )
-      return undefined;
+      throw new Error(
+        `Desktop extensions are unavailable in ${LOCAL_APP_NAME}`,
+      );
     return null;
   }
 
@@ -1084,6 +1212,10 @@ export class ServiceDispatcher {
     args: unknown[],
     event?: IpcMainInvokeEvent,
   ): unknown {
+    if (method === "show") {
+      this.context.showMainWindow();
+      return undefined;
+    }
     const window =
       focusedWindow(this.context, event) ?? this.context.mainWindow();
     if (!window || window.isDestroyed()) return undefined;
@@ -1172,13 +1304,12 @@ export class ServiceDispatcher {
 
   private updater(method: string): unknown {
     if (method === "checkForUpdates") {
-      if (app.isPackaged) void autoUpdater.checkForUpdates();
-      return undefined;
+      throw new Error(
+        "Automatic updates are unavailable because no signed update feed is configured",
+      );
     }
     if (method === "restartToUpdate" || method === "restartToUpdateWhenIdle") {
-      if (!app.isPackaged) return false;
-      autoUpdater.quitAndInstall();
-      return true;
+      return false;
     }
     if (method === "cancelPendingRestart") return undefined;
     if (method === "getRunningLocalSessionCount") return 0;
@@ -1245,17 +1376,26 @@ export class ServiceDispatcher {
       return selected;
     }
     if (method === "browseFolder") {
+      const title = typeof args[0] === "string" ? args[0] : undefined;
       const selected =
-        (
-          await pickPaths(
-            this.context,
-            event,
-            true,
-            false,
-            typeof args[0] === "string" ? args[0] : undefined,
-          )
-        )?.[0] ?? null;
-      if (selected) await this.fileAccess.grantRoot(selected);
+        (await pickPaths(this.context, event, true, false, title))?.[0] ?? null;
+      if (selected) {
+        await this.fileAccess.grantRoot(selected);
+        // The retained renderer keeps draft additional roots in a separate
+        // LocalSessions call. Choosing a new primary workspace must invalidate
+        // that old draft; otherwise unrelated roots from an abandoned draft
+        // silently leak into the next session.
+        if (
+          new Set([
+            "select folder for local session",
+            "select a folder for this task",
+          ]).has(title?.trim().toLowerCase() ?? "")
+        )
+          await this.context.codeSessions.invoke(
+            "resetDraftSessionFolders",
+            [],
+          );
+      }
       return selected;
     }
     if (method === "browseFolders") {
@@ -1441,6 +1581,8 @@ export class ServiceDispatcher {
     args: unknown[],
     event?: IpcMainInvokeEvent,
   ): Promise<unknown> {
+    if (method === "createLogsHandoffBundle")
+      return this.createLogsHandoffBundle(args[0], args[1]);
     if (method === "getAllArtifacts") {
       const codeArtifacts = await this.context.codeSessions.invoke(
         "getAllArtifacts",
@@ -1509,6 +1651,90 @@ export class ServiceDispatcher {
     return this.context.codeSessions.invoke(method, args);
   }
 
+  private async createLogsHandoffBundle(
+    threadUrl: unknown,
+    sessionId: unknown,
+  ): Promise<unknown> {
+    if (!validHandoffThreadUrl(threadUrl))
+      return {
+        success: false,
+        errorCode: "invalid_thread_url",
+        error: "A valid Claude task URL is required",
+      };
+    try {
+      const entries: ZipBundleEntry[] = [];
+      const id = typeof sessionId === "string" ? sessionId : undefined;
+      const session = id
+        ? await this.context.codeSessions.invoke("getSession", [id])
+        : null;
+      const transcript = id
+        ? await this.context.codeSessions.invoke("getTranscript", [id])
+        : [];
+      entries.push({
+        name: "manifest.json",
+        data: `${JSON.stringify(
+          {
+            product: LOCAL_APP_NAME,
+            appVersion: app.getVersion(),
+            generatedAt: new Date().toISOString(),
+            threadUrl,
+            sessionId: id,
+            platform: process.platform,
+            arch: process.arch,
+          },
+          null,
+          2,
+        )}\n`,
+      });
+      if (id)
+        entries.push({
+          name: "session.json",
+          data: `${JSON.stringify({ session, transcript }, null, 2)}\n`,
+        });
+
+      const logsDirectory = app.getPath("logs");
+      let includedLogBytes = 0;
+      const logEntries = await readdir(logsDirectory, {
+        withFileTypes: true,
+      }).catch(() => []);
+      for (const entry of logEntries
+        .filter((candidate) => candidate.isFile())
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .slice(-16)) {
+        const archiveName = safeDownloadName(entry.name);
+        if (!archiveName) continue;
+        const bytes = await boundedHandoffLog(
+          path.join(logsDirectory, entry.name),
+        );
+        if (
+          !bytes ||
+          includedLogBytes + bytes.byteLength > MAX_HANDOFF_TOTAL_LOG_BYTES
+        )
+          continue;
+        includedLogBytes += bytes.byteLength;
+        entries.push({ name: `logs/${archiveName}`, data: bytes });
+      }
+
+      const directory = path.join(app.getPath("temp"), "open-claude-handoffs");
+      await mkdir(directory, { recursive: true });
+      const destination = path.join(
+        directory,
+        `open-claude-logs-${Date.now()}-${crypto.randomUUID()}.zip`,
+      );
+      await writeFile(destination, createZipBundle(entries), {
+        flag: "wx",
+        mode: 0o600,
+      });
+      return { success: true, zipPath: destination };
+    } catch (error) {
+      return {
+        success: false,
+        errorCode: "bundle_failed",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
   private launch(method: string, args: unknown[]): unknown | Promise<unknown> {
     const preview = this.context.launchPreview;
     switch (method) {
@@ -1518,6 +1744,8 @@ export class ServiceDispatcher {
         return false;
       case "startBrowserPreview":
         return preview.startBrowserPreview(args[0], args[1]);
+      case "ensureRemoteBlankPreview":
+        return preview.ensureRemoteBlankPreview(args[0]);
       case "loadHtmlPreview":
         return preview.loadHtmlPreview(args[0], args[1], args[2]);
       case "loadHtmlPreviewContent":
@@ -1542,6 +1770,8 @@ export class ServiceDispatcher {
         return preview.getPreviewNavState(args[0], args[1]);
       case "navigatePreview":
         return preview.navigatePreview(args[0], args[1], args[2]);
+      case "navigatePreviewFromModel":
+        return preview.navigatePreviewFromModel(args[0], args[1]);
       case "goBack":
         return preview.goBack(args[0], args[1]);
       case "goForward":
@@ -1551,6 +1781,14 @@ export class ServiceDispatcher {
       case "capturePreviewScreenshot":
       case "capturePreviewScreenshotIfChanged":
         return preview.capturePreviewScreenshot(args[0], args[1]);
+      case "previewModelScreenshot":
+        return preview.previewModelScreenshot(args[0]);
+      case "previewSnapshot":
+        return preview.previewSnapshot(args[0]);
+      case "previewInspect":
+        return preview.previewInspect(args[0], args[1], args[2]);
+      case "previewConsoleLogs":
+        return preview.previewConsoleLogs(args[0], args[1]);
       case "setPreviewViewport":
         return preview.setPreviewViewport(args[0], args[1], args[2], args[3]);
       case "clearPreviewViewport":
@@ -1584,19 +1822,21 @@ export class ServiceDispatcher {
       case "closeAllPreviewTabs":
         return preview.closeAllPreviewTabs(args[0]);
       case "clearPreviewAllowedOrigins":
-        return true;
+        return preview.clearPreviewAllowedOrigins();
       case "toggleSelectionMode":
         return preview.toggleSelectionMode(args[0], args[1], args[2]);
       case "getPreviewAllowedOrigins":
-        return [];
+        return preview.getPreviewAllowedOrigins();
       case "addPreviewAllowedOrigin":
-        return "allowed";
+        return preview.addPreviewAllowedOrigin(args[0]);
       case "removePreviewAllowedOrigin":
-        return false;
+        return preview.removePreviewAllowedOrigin(args[0]);
       case "exportPreview":
+        return preview.exportPreview(args[0], args[1]);
       case "focusOrOpenPreviewTab":
+        return preview.focusOrOpenPreviewTab(args[0], args[1], args[2]);
       case "openExternalLinkInPreview":
-        return null;
+        return preview.openExternalLinkInPreview(args[0], args[1], args[2]);
       case "loadClaudePagePreview":
         return preview.loadArtifactPreview(args[0], args[1], args[2]);
       case "sendClaudePageShareCommand":

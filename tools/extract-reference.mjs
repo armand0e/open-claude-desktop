@@ -15,6 +15,10 @@ const installRoot = path.resolve(
   process.env.CLAUDE_INSTALL_ROOT ?? defaultInstallRoot,
 );
 const requestedVersion = process.env.CLAUDE_DESKTOP_VERSION;
+const metadataOutput = path.resolve(
+  process.env.CLAUDE_REFERENCE_METADATA_OUTPUT ??
+    "analysis/reference-metadata.json",
+);
 
 async function installedVersions() {
   const { readdir } = await import("node:fs/promises");
@@ -80,11 +84,8 @@ const metadata = {
   },
   installResources: resources,
 };
-await mkdir(path.resolve("analysis"), { recursive: true });
-await writeFile(
-  path.resolve("analysis/reference-metadata.json"),
-  `${JSON.stringify(metadata, null, 2)}\n`,
-);
+await mkdir(path.dirname(metadataOutput), { recursive: true });
+await writeFile(metadataOutput, `${JSON.stringify(metadata, null, 2)}\n`);
 process.stdout.write(
   `${JSON.stringify(
     {
@@ -96,6 +97,7 @@ process.stdout.write(
           ? ionOutput
           : path.join(resources, "ion-dist"),
       metadata,
+      metadataOutput,
     },
     null,
     2,

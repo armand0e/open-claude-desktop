@@ -114,6 +114,16 @@ describe("LocalCodeSessionManager rewind and fork", () => {
         forkedId,
       ])) as Array<Record<string, unknown>>;
       expect(forkedAfter.length).toBe(transcript.length);
+
+      // The current renderer uses rewindV2 and reads result.prefill. Keep the
+      // legacy string contract separate so neither client generation loses
+      // the selected prompt after the transcript has been truncated.
+      await expect(
+        manager.invoke("rewindV2", [forkedId, secondUser.uuid]),
+      ).resolves.toEqual({ prefill: "second request" });
+      await expect(
+        manager.invoke("rewindV2", [forkedId, "nope"]),
+      ).resolves.toBeNull();
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

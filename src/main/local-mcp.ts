@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 // The package does not ship TypeScript declarations.
 // @ts-expect-error -- untyped CommonJS dependency
 import crossSpawn from "cross-spawn";
+import { childEnvironment } from "./child-environment";
 
 type JsonObject = Record<string, unknown>;
 
@@ -276,7 +277,7 @@ class McpConnection {
     const initialized = (async () => {
       const child = crossSpawn(this.command, this.args, {
         stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, ...this.env },
+        env: childEnvironment(this.env),
         windowsHide: true,
       }) as ChildProcess;
       this.#child = child;
@@ -610,7 +611,10 @@ class RemoteMcpConnection {
           `MCP server "${this.serverName}" redirected; configure its final URL directly`,
         );
       }
-      if (response.status === 202) return null;
+      if (response.status === 202) {
+        await response.body?.cancel().catch(() => undefined);
+        return null;
+      }
       if (response.status === 401 || response.status === 403) {
         await response.body?.cancel().catch(() => undefined);
         if (accessToken && allowAuthRetry) {
@@ -638,7 +642,9 @@ class RemoteMcpConnection {
           await response.body?.cancel().catch(() => undefined);
           return null;
         }
-        return sseResponse(response, expectedId);
+        // Keep the deadline and shutdown controller active until the body
+        // yields our response, not merely until the HTTP headers arrive.
+        return await sseResponse(response, expectedId);
       }
       const text = await responseText(response);
       let body: unknown;

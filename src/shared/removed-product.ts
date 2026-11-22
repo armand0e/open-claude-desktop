@@ -8,7 +8,6 @@ export function isRemovedCoworkService(
   return (
     namespace.startsWith("claude.cowork") ||
     service.startsWith("Cowork") ||
-    service === "LocalAgentModeSessions" ||
     service === "AgentModeFeedback" ||
     service === "ClaudeVM"
   );
@@ -16,4 +15,8 @@ export function isRemovedCoworkService(
 
 export function isRemovedCoworkHttpPath(pathname: string): boolean {
   return /(?:^|\/)cowork(?:\/|$)/i.test(pathname);
+}
+
+export function isRemovedCoworkPreference(key: string): boolean {
+  return /^cowork/i.test(key);
 }

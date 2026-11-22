@@ -1,14 +1,14 @@
 {
   "contract": {
-    "channelCount": 842,
-    "serviceCount": 71,
-    "channelsWithGeneratedValidation": 747,
-    "namedArgumentCount": 1168,
-    "validatedResultCount": 533
+    "channelCount": 879,
+    "serviceCount": 74,
+    "channelsWithGeneratedValidation": 779,
+    "namedArgumentCount": 1226,
+    "validatedResultCount": 554
   },
   "serviceSpecificDispatch": {
-    "serviceCount": 36,
-    "methodCount": 611,
+    "serviceCount": 34,
+    "methodCount": 605,
     "services": [
       {
         "service": "claude.hybrid.DesktopIntl",
@@ -39,6 +39,10 @@
         "methodCount": 3
       },
       {
+        "service": "claude.settings.Custom3pUsage",
+        "methodCount": 1
+      },
+      {
         "service": "claude.settings.DesktopInfo",
         "methodCount": 2
       },
@@ -63,6 +67,10 @@
         "methodCount": 4
       },
       {
+        "service": "claude.simulator.Simulator",
+        "methodCount": 27
+      },
+      {
         "service": "claude.web.Auth",
         "methodCount": 1
       },
@@ -83,28 +91,8 @@
         "methodCount": 7
       },
       {
-        "service": "claude.web.ClaudeVM",
-        "methodCount": 19
-      },
-      {
-        "service": "claude.web.CoworkArtifacts",
-        "methodCount": 22
-      },
-      {
-        "service": "claude.web.CoworkFilePreview",
-        "methodCount": 7
-      },
-      {
-        "service": "claude.web.CoworkMemory",
-        "methodCount": 7
-      },
-      {
-        "service": "claude.web.CoworkScheduledTasks",
-        "methodCount": 11
-      },
-      {
-        "service": "claude.web.CoworkUserFiles",
-        "methodCount": 4
+        "service": "claude.web.CustomPlugins",
+        "methodCount": 18
       },
       {
         "service": "claude.web.DesktopNotifications",
@@ -115,8 +103,12 @@
         "methodCount": 18
       },
       {
+        "service": "claude.web.ForgeState",
+        "methodCount": 3
+      },
+      {
         "service": "claude.web.Launch",
-        "methodCount": 56
+        "methodCount": 62
       },
       {
         "service": "claude.web.LocalAgentModeSessions",
@@ -124,7 +116,7 @@
       },
       {
         "service": "claude.web.LocalPlugins",
-        "methodCount": 17
+        "methodCount": 16
       },
       {
         "service": "claude.web.LocalSessionEnvironment",
@@ -132,7 +124,7 @@
       },
       {
         "service": "claude.web.LocalSessions",
-        "methodCount": 203
+        "methodCount": 212
       },
       {
         "service": "claude.web.Navigation",
@@ -144,7 +136,7 @@
       },
       {
         "service": "claude.web.WindowControl",
-        "methodCount": 8
+        "methodCount": 9
       },
       {
         "service": "claude.web.WindowState",
@@ -170,9 +162,9 @@
       }
     ]
   },
-  "safeFallbackDispatch": {
-    "serviceCount": 33,
-    "methodCount": 227,
+  "explicitCompatibilityDispatch": {
+    "serviceCount": 38,
+    "methodCount": 270,
     "services": [
       {
         "service": "claude.buddy.Buddy",
@@ -219,10 +211,6 @@
         "methodCount": 2
       },
       {
-        "service": "claude.simulator.Simulator",
-        "methodCount": 12
-      },
-      {
         "service": "claude.skills.Skills",
         "methodCount": 1
       },
@@ -243,20 +231,40 @@
         "methodCount": 3
       },
       {
+        "service": "claude.web.ClaudeVM",
+        "methodCount": 19
+      },
+      {
         "service": "claude.web.ComputerUseTcc",
         "methodCount": 7
+      },
+      {
+        "service": "claude.web.CoworkArtifacts",
+        "methodCount": 22
       },
       {
         "service": "claude.web.CoworkFeedback",
         "methodCount": 5
       },
       {
+        "service": "claude.web.CoworkFilePreview",
+        "methodCount": 7
+      },
+      {
+        "service": "claude.web.CoworkMemory",
+        "methodCount": 7
+      },
+      {
+        "service": "claude.web.CoworkScheduledTasks",
+        "methodCount": 11
+      },
+      {
         "service": "claude.web.CoworkSpaces",
         "methodCount": 26
       },
       {
-        "service": "claude.web.CustomPlugins",
-        "methodCount": 18
+        "service": "claude.web.CoworkUserFiles",
+        "methodCount": 4
       },
       {
         "service": "claude.web.DeviceRegistry",
@@ -281,6 +289,10 @@
       {
         "service": "claude.web.GrandPrix",
         "methodCount": 8
+      },
+      {
+        "service": "claude.web.ManagedConfig",
+        "methodCount": 3
       },
       {
         "service": "claude.web.NestDev",

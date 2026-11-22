@@ -54,6 +54,18 @@ interface CodeSessionStarter {
   invoke(method: string, args: unknown[]): Promise<unknown> | unknown;
 }
 
+export function shouldRetryScheduledStoreReplace(
+  platform: NodeJS.Platform,
+  code: string,
+  attempt: number,
+): boolean {
+  return (
+    platform === "win32" &&
+    new Set(["EACCES", "EBUSY", "EPERM"]).has(code) &&
+    attempt < 8
+  );
+}
+
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -214,18 +226,13 @@ export class LocalScheduledTasks {
   }
 
   async #replaceStore(temporary: string): Promise<void> {
-    const retryable = new Set(["EACCES", "EBUSY", "EPERM"]);
     for (let attempt = 0; ; attempt += 1) {
       try {
         await rename(temporary, this.filePath);
         return;
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code ?? "";
-        if (
-          process.platform !== "win32" ||
-          !retryable.has(code) ||
-          attempt >= 8
-        )
+        if (!shouldRetryScheduledStoreReplace(process.platform, code, attempt))
           throw error;
         // Windows can deny replacement briefly while antivirus, indexing, or
         // another local reader has the old JSON file open. Keep the temp file

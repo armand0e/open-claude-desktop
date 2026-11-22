@@ -66,16 +66,14 @@ const port = await unusedPort();
 const output = [];
 const child = spawn(
   executable,
-  [
-    ...(appImage ? ["--appimage-extract-and-run"] : []),
-    `--remote-debugging-port=${port}`,
-  ],
+  [...(appImage ? ["--no-sandbox"] : []), `--remote-debugging-port=${port}`],
   {
     env: {
       ...process.env,
       OPEN_CLAUDE_USER_DATA_DIR: profile,
       CLAUDE_TRACE_APP_IDENTITY: "1",
       CLAUDE_DESKTOP_LOCAL_UI: "1",
+      ...(appImage ? { TMPDIR: testRoot } : {}),
     },
     detached: appImage && process.platform !== "win32",
     windowsHide: false,

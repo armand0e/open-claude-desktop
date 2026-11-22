@@ -1,9 +1,9 @@
 // Probe: dictation must transcribe WHILE recording (streaming partials),
-// not only after the mic is toggled off. Uses Chromium's fake audio device;
-// asserts multiple /api/local/dictation/transcribe calls occur while the
-// recorder is still running, then a final pass on stop, with the button
-// returning to idle and no error surfaced.
-import { spawn } from "node:child_process";
+// not only after the mic is toggled off. Uses Chromium's built-in spoken fake
+// microphone and asserts meaningful text reaches the composer. The separate
+// probe:moonshine gate feeds an exact official WAV fixture to the native
+// sidecar and checks its expected transcript.
+import { execFileSync, spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -104,14 +104,31 @@ const providerPort = provider.address().port;
 
 const debuggerPort = await unusedPort();
 const profile = await mkdtemp(path.join(os.tmpdir(), "claude-dictation-"));
+const fixtureArchive = path.join(
+  os.tmpdir(),
+  "open-claude-v0.0.69-windows-cli-transcriber.tar.gz",
+);
+execFileSync("tar", [
+  "-xzf",
+  fixtureArchive,
+  "-C",
+  profile,
+  "--strip-components=1",
+  "cli-transcriber/beckett.wav",
+]);
+const fixture = path.join(profile, "beckett.wav");
 const output = [];
+const packagedExecutable = process.env.OPEN_CLAUDE_TEST_EXECUTABLE
+  ? path.resolve(process.env.OPEN_CLAUDE_TEST_EXECUTABLE)
+  : null;
 const child = spawn(
-  electron,
+  packagedExecutable ?? electron,
   [
-    ".",
+    ...(packagedExecutable ? [] : ["."]),
     `--remote-debugging-port=${debuggerPort}`,
-    "--use-fake-device-for-media-capture",
-    "--use-fake-ui-for-media-capture",
+    "--use-fake-device-for-media-stream",
+    "--use-fake-ui-for-media-stream",
+    `--use-file-for-fake-audio-capture=${fixture}%noloop`,
   ],
   {
     cwd: process.cwd(),
@@ -148,13 +165,21 @@ try {
       // Preload fetches are invisible here; the dictation code announces
       // each transcription pass as a DOM event instead.
       if (!window.__dictationProbe) {
-        window.__dictationProbe = { during: 0, after: 0 };
+        window.__dictationProbe = { during: 0, after: 0, text: "", engine: "", bytes: 0, error: "" };
         document.addEventListener("local-dictation-pass", (event) => {
           if (event.detail?.phase === "final") window.__dictationProbe.after += 1;
           else window.__dictationProbe.during += 1;
+          window.__dictationProbe.text = event.detail?.text ?? "";
+          window.__dictationProbe.engine = event.detail?.engine ?? "";
+        });
+        document.addEventListener("local-dictation-status", (event) => {
+          window.__dictationProbe.bytes = Math.max(
+            window.__dictationProbe.bytes,
+            event.detail?.bytes ?? 0,
+          );
+          window.__dictationProbe.error = event.detail?.error ?? "";
         });
       }
-      button.title = "Dictate (on-device transcription)";
       button.click();
       const stateDeadline = Date.now() + 5000;
       while (button.dataset.state !== "recording" && Date.now() < stateDeadline)
@@ -170,11 +195,16 @@ try {
   const streamed = await evaluateEventually(
     debuggerPort,
     `(async () => {
-      // Two partial cadences plus transcription time.
-      await new Promise(resolve => setTimeout(resolve, 9000));
+      // The official fixture is just under ten seconds; leave two seconds of
+      // trailing processing time so the final "Fail better" line completes.
+      await new Promise(resolve => setTimeout(resolve, 12000));
       const button = document.querySelector('[data-testid="local-dictate-button"]');
       return {
         during: window.__dictationProbe.during,
+        text: window.__dictationProbe.text,
+        engine: window.__dictationProbe.engine,
+        bytes: window.__dictationProbe.bytes,
+        error: window.__dictationProbe.error,
         state: button?.dataset.state ?? null,
       };
     })()`,
@@ -184,11 +214,6 @@ try {
     streamed.state === "recording",
     `Recorder stopped early: ${JSON.stringify(streamed)}`,
   );
-  assert(
-    streamed.during >= 2,
-    `Expected >=2 partial transcriptions while recording, saw ${streamed.during}`,
-  );
-
   const stopped = await evaluateEventually(
     debuggerPort,
     `(async () => {
@@ -201,16 +226,45 @@ try {
         state: button.dataset.state ?? null,
         after: window.__dictationProbe.after,
         during: window.__dictationProbe.during,
+        text: window.__dictationProbe.text,
+        engine: window.__dictationProbe.engine,
+        composer: document.querySelector('[contenteditable="true"][aria-label="Write your prompt to Claude"], [contenteditable="true"][aria-label="Prompt"]')?.textContent ?? "",
         title: button.title,
       };
     })()`,
     45_000,
   );
   console.log("dictation probe:", JSON.stringify(stopped, null, 2));
+  assert(
+    streamed.during >= 2,
+    `Expected >=2 partial transcriptions while recording: ${JSON.stringify(streamed)}`,
+  );
+  assert(
+    streamed.engine === "moonshine-voice",
+    `Wrong engine: ${streamed.engine}`,
+  );
+  assert(
+    typeof streamed.text === "string" && streamed.text.trim().length > 0,
+    `Streaming produced no dictated text: ${JSON.stringify(streamed)}`,
+  );
   assert(stopped.state === null, "Button did not return to idle after stop");
   assert(stopped.after >= 1, "No final transcription pass ran on stop");
+  const transcript = stopped.text.toLowerCase();
+  for (const phrase of ["ever", "no matter", "try again"])
+    assert(
+      transcript.includes(phrase),
+      `Final transcript omitted ${phrase}: ${stopped.text}`,
+    );
   assert(
-    stopped.title === "Dictate (on-device transcription)",
+    /\bfail(?:ed)? better\b/u.test(transcript),
+    `Final transcript omitted the fail-better line: ${stopped.text}`,
+  );
+  assert(
+    stopped.composer.toLowerCase().includes(transcript.trim()),
+    `Composer did not receive the exact final Moonshine text: ${stopped.composer}`,
+  );
+  assert(
+    stopped.title === "Dictate with Moonshine (on-device streaming)",
     `An error surfaced on the button: ${stopped.title}`,
   );
 

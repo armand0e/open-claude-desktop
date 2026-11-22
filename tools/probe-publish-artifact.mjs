@@ -153,7 +153,10 @@ const child = spawn(
 child.stdout.setEncoding("utf8");
 child.stdout.on("data", (chunk) => output.push(chunk));
 child.stderr.setEncoding("utf8");
-child.stderr.on("data", (chunk) => output.push(chunk));
+child.stderr.on("data", (chunk) => {
+  output.push(chunk);
+  if (chunk.includes("Public artifact relay")) process.stderr.write(chunk);
+});
 
 const popoverAudit = `(() => {
   const visible = el => el.getClientRects().length > 0;
@@ -267,7 +270,19 @@ try {
       if (!action) return { itemLabel, failed: "no-action-button" };
       const actionLabel = (action.textContent || "").trim();
       action.click();
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      // Public sharing is acknowledged only after the relay has served the
+      // exact artifact back to us. The external relay commonly takes longer
+      // than three seconds to allocate, so observe the terminal UI/network
+      // state instead of misclassifying an in-flight publish as a failure.
+      const deadline = Date.now() + 65000;
+      while (Date.now() < deadline) {
+        const audit = ${popoverAudit};
+        const publishRequest = audit.requests.find(entry =>
+          /publish_artifact/.test(entry.call));
+        if (audit.hasUnpublish ||
+            (publishRequest && publishRequest.status !== "pending")) break;
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
       return { itemLabel, actionLabel, after: ${popoverAudit} };
     })()`,
   );

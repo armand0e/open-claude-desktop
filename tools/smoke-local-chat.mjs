@@ -452,6 +452,12 @@ try {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       capture();
+      const bootstrap = await fetch("/edge-api/bootstrap")
+        .then(async response => ({ status: response.status, body: await response.json() }))
+        .catch(error => ({ status: 0, error: String(error) }));
+      const bootstrapStateStore = window["claude.settings"]?.Custom3pSetup?.bootstrapStateStore;
+      const desktopBootstrapState = await bootstrapStateStore?.getState?.()
+        .catch(error => ({ error: String(error) }));
       return {
         path: location.pathname,
         rendered: document.body?.innerText?.includes(${JSON.stringify(replyMarker)}),
@@ -492,6 +498,14 @@ try {
           }))
           .filter(block => /mermaid|Cell input|flowchart/.test(block.text || "")),
         localArtifactRendered: window.__localArtifactRendered,
+        bootstrap: {
+          status: bootstrap.status,
+          accountUuid: bootstrap.body?.account?.uuid,
+          modelSelectorConfig: bootstrap.body?.model_selector_config,
+          modelSelectorState: bootstrap.body?.model_selector_state,
+          desktopBootstrapState,
+          error: bootstrap.error
+        },
         streamTimeline
       };
     })()`,

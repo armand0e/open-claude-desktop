@@ -20,7 +20,9 @@ flowchart LR
 npm start
 ```
 
-The default endpoint is `http://127.0.0.1:11434/v1`, which is suitable for an Ollama OpenAI-compatible server. **Settings → Local model** opens an isolated configuration panel that can change the endpoint, model, and optional bearer token and can discover models through `GET /models`.
+The default endpoint is `http://127.0.0.1:11434/v1`, which is suitable for an Ollama OpenAI-compatible server. **Settings → Local model** provides presets for local servers, OpenRouter, OpenAI Codex, and Claude Code API keys. OpenAI-compatible presets use `/chat/completions`; the Claude Code preset uses Anthropic's native `/messages` request, authentication, tool, and SSE event shapes. Model discovery uses each provider's configured `/models` endpoint.
+
+The OpenAI Codex preset uses an OpenAI Platform API key. The Claude Code preset uses an Anthropic Console API key through the native Anthropic Messages API; it does **not** read, proxy, or reuse Claude.ai/Claude Code subscription OAuth credentials.
 
 Environment variables override persisted settings:
 
@@ -65,7 +67,7 @@ The packaged client is bootstrapped with a stable synthetic account and organiza
 - multipart document conversion/upload, local file persistence, file preview/download, and attachment metadata in conversation trees;
 - persistence before and after provider execution so a reload reconstructs the conversation.
 
-The provider request contains the configured model and text history as OpenAI `user` and `assistant` messages. UTF-8/UTF-16 text, source code, CSV, JSON, HTML, SVG, and Markdown attachments are extracted locally and included in the user message. Other binary formats can be stored, but are represented to a text-only provider as binary metadata until a format-specific parser or vision adapter is added.
+The provider request contains the configured model and text history in the selected transport's native message shape. UTF-8/UTF-16 text, source code, CSV, JSON, HTML, SVG, and Markdown attachments are extracted locally and included in the user message. Other binary formats can be stored, but are represented to a text-only provider as binary metadata until a format-specific parser or vision adapter is added.
 
 HTML and SVG artifacts render entirely inside the local sandbox. Markdown, plain text, and code have native local renderers. React and Mermaid artifacts currently show their source with an explicit fallback notice rather than loading a remote runtime. Web search and page visits run locally and do not use Anthropic's hosted search service. Claude-hosted billing and Anthropic-managed connectors remain unavailable; local streamable-HTTP MCP connectors and the three user-owned OAuth presets above are supported. The Cowork surface is removed; stale Cowork HTTP calls fail explicitly with `410`, while other unknown server APIs fail closed with a JSON `503` response.
 
@@ -82,7 +84,7 @@ The retained frontend still contains the ordinary Claude chat components, but it
 7. point artifact previews at the local sandbox;
 8. derive staged composer files into persistent local file references before send.
 
-Every transformation must match exactly once across the module graph declared by `index.html`. Startup aborts when a marker is missing or duplicated. This makes a changed vendor build an explicit compatibility failure instead of silently patching the wrong code. The files in the Claude installation are never modified.
+Every transformation must select exactly one compatible anchor and match its declared count across the module graph declared by `index.html`. A stable patch intent may retain labeled alternate anchors for later renderer families, so unchanged work carries forward instead of being recopied into a new patch table. Startup aborts when an intent is missing or ambiguous. The separate development-only candidate mode applies compatible rules in memory and emits a complete drift report, but packaged builds always remain strict. The files in the Claude installation are never modified. See [Renderer snapshot upgrades](renderer-upgrades.md) for the inspect, adapt, verify, and promote workflow.
 
 ## What “reverse engineered” means here
 

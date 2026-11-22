@@ -36,16 +36,23 @@ function windowsPathToWsl(candidate) {
 
 if (process.platform === "win32") {
   const wslWorkspace = windowsPathToWsl(process.cwd());
-  const npmCli = path.join(
-    path.dirname(process.execPath),
-    "node_modules",
-    "npm",
-    "bin",
-    "npm-cli.js",
-  );
-  if (!existsSync(npmCli))
-    throw new Error(`The Windows Node installation is missing npm: ${npmCli}`);
+  const npmCandidates = [
+    process.env.npm_execpath,
+    path.join(
+      path.dirname(process.execPath),
+      "node_modules",
+      "npm",
+      "bin",
+      "npm-cli.js",
+    ),
+  ].filter((candidate) => typeof candidate === "string" && candidate.length);
+  const npmCli = npmCandidates.find((candidate) => existsSync(candidate));
+  if (!npmCli)
+    throw new Error(
+      `The active Windows Node/npm installation has no npm CLI at: ${npmCandidates.join(", ")}`,
+    );
   const wslNpmCli = windowsPathToWsl(npmCli);
+  const wslPath = `${wslWorkspace}/tools/wsl-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`;
   // Do not let WSL import the Windows PATH here. In particular, a user-level
   // `node_modules/.bin/node` shim can precede WSL's native Node and later make
   // electron-builder's dependency collector execute a Windows package shim as
@@ -56,7 +63,16 @@ if (process.platform === "win32") {
     wslWorkspace,
     "--",
     "/usr/bin/env",
-    `PATH=${wslWorkspace}/tools/wsl-bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin`,
+    `PATH=${wslPath}`,
+    "/usr/bin/node",
+    "tools/fetch-moonshine.mjs",
+  ]);
+  await run("wsl.exe", [
+    "--cd",
+    wslWorkspace,
+    "--",
+    "/usr/bin/env",
+    `PATH=${wslPath}`,
     `OPEN_CLAUDE_WSL_NPM_CLI=${wslNpmCli}`,
     "/usr/bin/node",
     "./node_modules/electron-builder/out/cli/cli.js",

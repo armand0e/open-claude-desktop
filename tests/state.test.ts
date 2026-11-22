@@ -1,12 +1,18 @@
 import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import * as fs from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
+});
 import { StateStore } from "../src/main/state";
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(
     temporaryDirectories
       .splice(0)
@@ -15,6 +21,21 @@ afterEach(async () => {
 });
 
 describe("persistent desktop state", () => {
+  it("preserves a valid profile when reading it fails transiently", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "claude-state-"));
+    temporaryDirectories.push(root);
+    const file = path.join(root, "claude-local-desktop.json");
+    const original = JSON.stringify({ locale: "fr-FR" });
+    await writeFile(file, original);
+    vi.spyOn(fs, "readFileSync").mockImplementationOnce(() => {
+      throw Object.assign(new Error("Temporarily locked"), { code: "EACCES" });
+    });
+    expect(() => new StateStore(root)).toThrow("Temporarily locked");
+    expect(await readFile(file, "utf8")).toBe(original);
+    expect(await readdir(root)).toEqual(["claude-local-desktop.json"]);
+    expect(new StateStore(root).get("locale")).toBe("fr-FR");
+  });
+
   it("serializes concurrent updates through an atomic file", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "claude-state-"));
     temporaryDirectories.push(root);
@@ -49,6 +70,11 @@ describe("persistent desktop state", () => {
         coworkGlobalInstructions: "legacy instructions",
         appConfig: {
           features: { enabled: true, poisoned: "yes" },
+          preferences: {
+            theme: "dark",
+            coworkHipaaRestricted: true,
+            coworkScheduledTasksEnabled: true,
+          },
           isUsingBuiltInNodeForMcp: "yes",
           isDxtAutoUpdatesEnabled: null,
         },
@@ -64,6 +90,13 @@ describe("persistent desktop state", () => {
         .coworkGlobalInstructions,
     ).toBeUndefined();
     expect(state.get("appConfig").features).toEqual({ enabled: true });
+    expect(state.get("appConfig").preferences).toMatchObject({ theme: "dark" });
+    expect(
+      state.get("appConfig").preferences.coworkHipaaRestricted,
+    ).toBeUndefined();
+    expect(
+      state.get("appConfig").preferences.coworkScheduledTasksEnabled,
+    ).toBeUndefined();
     expect(state.get("appConfig").isUsingBuiltInNodeForMcp).toBe(true);
     expect(state.get("appConfig").isDxtAutoUpdatesEnabled).toBe(true);
   });

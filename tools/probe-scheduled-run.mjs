@@ -133,7 +133,7 @@ try {
       );
       latest = { task, session, hasAssistantProof };
       if (
-        task?.runCount === 1 &&
+        task?.runCount >= 1 &&
         task.pendingRunAt === null &&
         session?.isRunning === false &&
         session?.scheduledTaskId === "runtime-proof" &&

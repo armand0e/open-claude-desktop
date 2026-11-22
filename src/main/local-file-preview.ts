@@ -7,6 +7,7 @@ import {
   session as electronSession,
   WebContentsView,
   type Rectangle,
+  type Session,
 } from "electron";
 import { isPathInside } from "./file-access";
 import type { LocalCodeSessionManager } from "./local-code";
@@ -16,6 +17,8 @@ type JsonObject = Record<string, unknown>;
 const PREVIEW_EXTENSIONS = new Set([".html", ".htm", ".svg", ".pdf"]);
 const MAX_PREVIEW_BYTES = 50 * 1024 * 1024;
 const MAX_SCREENSHOT_BASE64 = 4 * 1024 * 1024;
+const PDF_VIEWER_EXTENSION_ID = "mhjfbmdgcfjbbpaeojofohoefgiehjai";
+const hardenedPreviewSessions = new WeakSet<Session>();
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".gif": "image/gif",
@@ -41,7 +44,25 @@ const MIME_TYPES: Record<string, string> = {
   ".xml": "application/xml; charset=utf-8",
 };
 
-function rectangle(value: unknown): Rectangle | null {
+function isSafeEmbeddedScheme(url: URL): boolean {
+  return (
+    ["data:", "blob:", "about:"].includes(url.protocol) ||
+    (url.protocol === "chrome-extension:" &&
+      url.hostname === PDF_VIEWER_EXTENSION_ID)
+  );
+}
+
+function hardenPreviewSession(target: Session): void {
+  if (hardenedPreviewSessions.has(target)) return;
+  hardenedPreviewSessions.add(target);
+  target.setPermissionCheckHandler(() => false);
+  target.setPermissionRequestHandler((_webContents, _permission, callback) =>
+    callback(false),
+  );
+  target.on("will-download", (event) => event.preventDefault());
+}
+
+export function previewRectangle(value: unknown): Rectangle | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as JsonObject;
   const values = [candidate.x, candidate.y, candidate.width, candidate.height];
@@ -60,7 +81,10 @@ function rectangle(value: unknown): Rectangle | null {
   };
 }
 
-function previewUrl(token: string, relativePath: string): string {
+export function localFilePreviewUrl(
+  token: string,
+  relativePath: string,
+): string {
   const encoded = relativePath
     .split(path.sep)
     .filter(Boolean)
@@ -89,15 +113,14 @@ export class LocalFilePreview {
   ) {
     this.#window = window;
     this.#codeSessions = codeSessions;
+    hardenPreviewSession(this.#session);
     this.#session.webRequest.onBeforeRequest((details, callback) => {
       try {
         const url = new URL(details.url);
         const allowed =
           (url.protocol === "claude-local-preview:" &&
             this.#roots.has(url.hostname)) ||
-          ["data:", "blob:", "about:", "chrome-extension:"].includes(
-            url.protocol,
-          );
+          isSafeEmbeddedScheme(url);
         callback({ cancel: !allowed });
       } catch {
         callback({ cancel: true });
@@ -190,6 +213,9 @@ export class LocalFilePreview {
       },
     });
     view.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    view.webContents.on("will-attach-webview", (event) =>
+      event.preventDefault(),
+    );
     view.webContents.on("will-navigate", (event, url) => {
       if (!url.startsWith(`claude-local-preview://${this.#token}/`))
         event.preventDefault();
@@ -207,11 +233,13 @@ export class LocalFilePreview {
     const view = this.#view;
     if (!owner || owner.isDestroyed() || !view) return;
     const [windowWidth, windowHeight] = owner.getContentSize();
+    const x = Math.min(bounds.x, Math.max(0, windowWidth - 1));
+    const y = Math.min(bounds.y, Math.max(0, windowHeight - 1));
     view.setBounds({
-      x: bounds.x,
-      y: bounds.y,
-      width: Math.min(bounds.width, Math.max(1, windowWidth - bounds.x)),
-      height: Math.min(bounds.height, Math.max(1, windowHeight - bounds.y)),
+      x,
+      y,
+      width: Math.min(bounds.width, Math.max(1, windowWidth - x)),
+      height: Math.min(bounds.height, Math.max(1, windowHeight - y)),
     });
     view.setBorderRadius(8);
   }
@@ -228,7 +256,7 @@ export class LocalFilePreview {
       typeof filePath !== "string"
     )
       return { ok: false, declineReason: "invalid_path" };
-    const bounds = rectangle(rawBounds);
+    const bounds = previewRectangle(rawBounds);
     if (!bounds) return { ok: false, declineReason: "invalid_bounds" };
     const requestedConsumer =
       typeof consumerId === "string" ? consumerId : undefined;
@@ -277,7 +305,9 @@ export class LocalFilePreview {
       let timer: NodeJS.Timeout | undefined;
       try {
         await Promise.race([
-          view.webContents.loadURL(previewUrl(token, path.basename(resolved))),
+          view.webContents.loadURL(
+            localFilePreviewUrl(token, path.basename(resolved)),
+          ),
           new Promise<never>((_resolve, reject) => {
             timer = setTimeout(() => {
               if (!view.webContents.isDestroyed()) view.webContents.stop();
@@ -328,7 +358,7 @@ export class LocalFilePreview {
       consumerId !== this.#consumerId
     )
       return null;
-    const bounds = rectangle(rawBounds);
+    const bounds = previewRectangle(rawBounds);
     if (bounds) this.#setBounds(bounds);
     if (!this.#view || this.#view.webContents.isDestroyed()) return null;
     try {
@@ -348,6 +378,7 @@ export class LocalFilePreview {
     if (this.#view && !this.#view.webContents.isDestroyed())
       this.#view.webContents.close();
     this.#view = null;
+    this.#session.webRequest.onBeforeRequest(null);
     await this.#session.protocol.unhandle("claude-local-preview");
   }
 }

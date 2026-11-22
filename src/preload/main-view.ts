@@ -14,6 +14,7 @@ const LOCAL_SESSION_EXTENSION_METHODS = [
   "getAllArtifacts",
   "getLocalSkillFiles",
   "listLocalSkills",
+  "revealLocalSkill",
   "saveLocalSkill",
   "setLocalSkillEnabled",
 ] as const;
@@ -24,6 +25,9 @@ const namespaces = exposeContract("mainView.js", (contract) => {
     localSessions[method] = (...args: unknown[]) =>
       ipcRenderer.invoke("open-claude-local-sessions", method, ...args);
   }
+  const launch = (web.Launch ??= {}) as Record<string, unknown>;
+  launch.setNativePreviewOverlayOpen = (open: boolean) =>
+    ipcRenderer.invoke("open-claude-launch-overlay", open);
 });
 const appVersion =
   process.argv
@@ -35,19 +39,35 @@ const bootFeatures = argumentJson("--desktop-features=");
 const enterpriseConfig = argumentJson("--desktop-enterprise-config=");
 const telemetryConfig = argumentJson("--desktop-telemetry-config=");
 const localBackend = process.argv.includes("--desktop-local-backend");
-if (process.argv.includes("--desktop-trace-local-api")) {
+if (localBackend) {
   window.addEventListener("error", (event) => {
-    console.error(
-      "[local-ui-window-error]",
-      event.error?.stack ?? event.message,
-    );
+    const payload = {
+      kind: "error",
+      message: event.message,
+      source: event.filename,
+      line: event.lineno,
+      column: event.colno,
+      stack: event.error instanceof Error ? event.error.stack : undefined,
+    };
+    ipcRenderer.send("open-claude-diagnostic-renderer", payload);
+    if (process.argv.includes("--desktop-trace-local-api"))
+      console.error(
+        "[local-ui-window-error]",
+        event.error?.stack ?? event.message,
+      );
   });
   window.addEventListener("unhandledrejection", (event) => {
     const reason = event.reason;
-    console.error(
-      "[local-ui-unhandled-rejection]",
-      reason instanceof Error ? reason.stack : String(reason),
-    );
+    ipcRenderer.send("open-claude-diagnostic-renderer", {
+      kind: "unhandledrejection",
+      message: reason instanceof Error ? reason.message : String(reason),
+      stack: reason instanceof Error ? reason.stack : undefined,
+    });
+    if (process.argv.includes("--desktop-trace-local-api"))
+      console.error(
+        "[local-ui-unhandled-rejection]",
+        reason instanceof Error ? reason.stack : String(reason),
+      );
   });
 }
 if (bootFeatures !== undefined)
@@ -81,10 +101,15 @@ if (localBackend) {
             overwrite: boolean,
           ) => unknown;
           setLocalSkillEnabled?: (name: string, enabled: boolean) => unknown;
+          deleteLocalSkill?: (name: string) => unknown;
+          getLocalSkillFiles?: (name: string) => unknown;
+          revealLocalSkill?: (name: string) => unknown;
         };
         LocalPlugins?: {
           getPlugins?: () => unknown;
           installCatalogPlugin?: (catalogId: string) => unknown;
+          setPluginEnabled?: (pluginId: string, enabled: boolean) => unknown;
+          deletePlugin?: (pluginId: string) => unknown;
         };
       }
     | undefined;
@@ -132,7 +157,10 @@ if (localBackend) {
     localSkills:
       typeof localSessions?.listLocalSkills === "function" &&
       typeof localSessions?.saveLocalSkill === "function" &&
-      typeof localSessions?.setLocalSkillEnabled === "function"
+      typeof localSessions?.setLocalSkillEnabled === "function" &&
+      typeof localSessions?.deleteLocalSkill === "function" &&
+      typeof localSessions?.getLocalSkillFiles === "function" &&
+      typeof localSessions?.revealLocalSkill === "function"
         ? {
             listLocalSkills: () =>
               Promise.resolve(localSessions.listLocalSkills!()),
@@ -149,15 +177,29 @@ if (localBackend) {
               Promise.resolve(
                 localSessions.setLocalSkillEnabled!(name, enabled),
               ),
+            deleteLocalSkill: (name) =>
+              Promise.resolve(localSessions.deleteLocalSkill!(name)),
+            getLocalSkillFiles: (name) =>
+              Promise.resolve(localSessions.getLocalSkillFiles!(name)),
+            revealLocalSkill: (name) =>
+              Promise.resolve(localSessions.revealLocalSkill!(name)),
           }
         : undefined,
     localPlugins:
       typeof localPlugins?.getPlugins === "function" &&
-      typeof localPlugins?.installCatalogPlugin === "function"
+      typeof localPlugins?.installCatalogPlugin === "function" &&
+      typeof localPlugins?.setPluginEnabled === "function" &&
+      typeof localPlugins?.deletePlugin === "function"
         ? {
             getPlugins: () => Promise.resolve(localPlugins.getPlugins!()),
             installCatalogPlugin: (catalogId) =>
               Promise.resolve(localPlugins.installCatalogPlugin!(catalogId)),
+            setPluginEnabled: (pluginId, enabled) =>
+              Promise.resolve(
+                localPlugins.setPluginEnabled!(pluginId, enabled),
+              ),
+            deletePlugin: (pluginId) =>
+              Promise.resolve(localPlugins.deletePlugin!(pluginId)),
           }
         : undefined,
     connectorOAuth: {

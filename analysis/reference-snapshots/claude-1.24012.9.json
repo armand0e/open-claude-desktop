@@ -1,0 +1,13 @@
+{
+  "productName": "Claude",
+  "packageName": "@ant/desktop",
+  "version": "1.24012.9",
+  "author": "Anthropic PBC",
+  "main": ".vite/build/index.pre.js",
+  "sentryRelease": "03c61d06f8e01a4db2273b9514e225f21d2ba62e",
+  "appAsar": {
+    "bytes": 38901972,
+    "sha256": "b3990de6613f0b6a30ddd610e8ae315df43fcb92b0e561734f2f58c66f24341c"
+  },
+  "installResources": "C:\\ProgramData\\aranr\\AnthropicClaude\\app-1.24012.9\\resources"
+}

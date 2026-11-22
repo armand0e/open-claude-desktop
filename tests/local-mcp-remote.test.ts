@@ -1,5 +1,5 @@
 import { createServer, type Server } from "node:http";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocalMcpManager, qualifiedToolName } from "../src/main/local-mcp";
 import { growthbookFeatureKey } from "../src/shared/growthbook";
 
@@ -14,6 +14,7 @@ interface FakeRemoteMcpOptions {
   crlf?: boolean;
   keepSseOpen?: boolean;
   wrongId?: boolean;
+  stallSse?: boolean;
 }
 
 interface FakeRemoteMcp {
@@ -64,7 +65,9 @@ async function fakeRemoteMcp(
         });
         // A ping frame first, then the JSON-RPC response frame.
         const newline = options.crlf ? "\r\n" : "\n";
-        const frames = `: keepalive${newline}${newline}event: message${newline}data: ${payload}${newline}${newline}`;
+        const frames = options.stallSse
+          ? `: keepalive${newline}${newline}`
+          : `: keepalive${newline}${newline}event: message${newline}data: ${payload}${newline}${newline}`;
         if (options.keepSseOpen) response.write(frames);
         else response.end(frames);
       } else {
@@ -171,6 +174,19 @@ function managerFor(
 }
 
 describe("remote MCP connectors", () => {
+  it("aborts a pending SSE body when the connector is disposed", async () => {
+    const remote = await fakeRemoteMcp({
+      sse: true,
+      keepSseOpen: true,
+      stallSse: true,
+    });
+    const manager = managerFor([{ name: "stalled-sse", url: remote.url }]);
+    const listing = manager.listTools();
+    await vi.waitFor(() => expect(remote.seenMethods).toContain("initialize"));
+    manager.disposeAll();
+    await expect(listing).resolves.toEqual([]);
+  }, 1500);
+
   it("loads plugin-provided HTTP MCP configs through the shared tool source", async () => {
     const remote = await fakeRemoteMcp();
     const manager = new LocalMcpManager(

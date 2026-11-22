@@ -30,10 +30,10 @@ tar \
 
 cp -a "$SOURCE_DIR/.package-assets/ion-dist/." "$UI_DIR/"
 
-# NTFS strips the exec bit; the bundled whisper binary must stay executable
+# NTFS strips the exec bit; the bundled Moonshine sidecar must stay executable
 # inside the AppImage.
-if [ -f "$BUILD_DIR/assets/whisper/linux/whisper-cli" ]; then
-  chmod +x "$BUILD_DIR/assets/whisper/linux/whisper-cli"
+if [ -f "$BUILD_DIR/assets/moonshine/linux/moonshine-stream" ]; then
+  chmod +x "$BUILD_DIR/assets/moonshine/linux/moonshine-stream"
 fi
 
 cd "$BUILD_DIR"

@@ -12,7 +12,10 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LocalCodeSessionManager } from "../src/main/local-code";
+import {
+  type CodeSession,
+  LocalCodeSessionManager,
+} from "../src/main/local-code";
 
 const temporaryDirectories: string[] = [];
 
@@ -40,6 +43,86 @@ async function waitForResult(
 }
 
 describe("LocalCodeSessionManager", () => {
+  it("publishes stopped only after a transient store failure is retried durably", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-stop-store-"),
+    );
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-stop-store-ws-"),
+    );
+    temporaryDirectories.push(directory, workspace);
+    const events: Array<Record<string, unknown>> = [];
+    let failures = 0;
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      (event) => events.push(event),
+      () => undefined,
+      undefined,
+      undefined,
+      {
+        writeStore: async (target, serialized) => {
+          if (failures-- > 0) throw new Error("injected rename failure");
+          await writeFile(target, serialized, "utf8");
+        },
+      },
+    );
+    const { sessionId } = (await manager.invoke("start", [
+      { cwd: workspace, message: "wait" },
+    ])) as { sessionId: string };
+    failures = 1;
+    events.length = 0;
+    await manager.invoke("stop", [sessionId]);
+    const eventTypes = events.map((event) => event.type);
+    expect(eventTypes).toContain("stopped");
+    expect(eventTypes).not.toContain("stop_persistence_failed");
+    const stored = JSON.parse(
+      await readFile(path.join(directory, "local-code-sessions.json"), "utf8"),
+    ) as { sessions: Array<{ sessionId: string; isRunning: boolean }> };
+    expect(
+      stored.sessions.find((session) => session.sessionId === sessionId)
+        ?.isRunning,
+    ).toBe(false);
+    await manager.dispose();
+  });
+
+  it("emits an explicit recovery event instead of false durable stop success", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-stop-fail-"),
+    );
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-stop-fail-ws-"),
+    );
+    temporaryDirectories.push(directory, workspace);
+    const events: Array<Record<string, unknown>> = [];
+    let failWrites = false;
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      (event) => events.push(event),
+      () => undefined,
+      undefined,
+      undefined,
+      {
+        writeStore: async (target, serialized) => {
+          if (failWrites) throw new Error("injected persistent store failure");
+          await writeFile(target, serialized, "utf8");
+        },
+      },
+    );
+    const { sessionId } = (await manager.invoke("start", [
+      { cwd: workspace, message: "wait" },
+    ])) as { sessionId: string };
+    failWrites = true;
+    events.length = 0;
+    await manager.invoke("stop", [sessionId]);
+    const eventTypes = events.map((event) => event.type);
+    expect(eventTypes).toContain("stop_persistence_failed");
+    expect(eventTypes).toContain("session_updated");
+    expect(eventTypes).not.toContain("stopped");
+    await manager.dispose();
+  });
+
   it("requires the normal local-session workspace contract", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "local-code-"));
     temporaryDirectories.push(directory);
@@ -77,6 +160,351 @@ describe("LocalCodeSessionManager", () => {
     });
     expect(await manager.invoke("getSessionsBridgeEnabled", [])).toBe(false);
     expect(await manager.invoke("getBridgeConsent", [])).toBe(false);
+    await expect(
+      manager.invoke("teleportSession", ["missing"]),
+    ).rejects.toThrow("unavailable in local mode");
+    await manager.dispose();
+  });
+
+  it("changes a running session to Bypass permissions and persists the mode", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "local-code-mode-"));
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-mode-ws-"),
+    );
+    temporaryDirectories.push(directory, workspace);
+    const events: Array<Record<string, unknown>> = [];
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      (event) => events.push(event),
+      () => undefined,
+    );
+    const started = (await manager.invoke("start", [
+      { cwd: workspace, message: "Inspect this workspace" },
+    ])) as { sessionId: string };
+
+    await expect(
+      manager.invoke("setPermissionMode", [
+        started.sessionId,
+        "bypassPermissions",
+      ]),
+    ).resolves.toBe(true);
+    await expect(
+      manager.invoke("getPermissionMode", [started.sessionId]),
+    ).resolves.toBe("bypassPermissions");
+    expect(
+      events.some(
+        (event) =>
+          event.type === "permission_mode_changed" &&
+          event.permissionMode === "bypassPermissions",
+      ),
+    ).toBe(true);
+    await manager.dispose();
+
+    const restored = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      () => undefined,
+      () => undefined,
+    );
+    await expect(
+      restored.invoke("getPermissionMode", [started.sessionId]),
+    ).resolves.toBe("bypassPermissions");
+    await restored.dispose();
+  });
+
+  it("applies draft folders to the next session and persists visibility", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "local-code-ui-"));
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-ui-workspace-"),
+    );
+    const additional = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-ui-additional-"),
+    );
+    temporaryDirectories.push(directory, workspace, additional);
+    const events: Array<Record<string, unknown>> = [];
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      (event) => events.push(event),
+      () => undefined,
+    );
+
+    await expect(
+      manager.invoke("setDraftSessionFolders", [[additional]]),
+    ).resolves.toBeUndefined();
+    const started = (await manager.invoke("start", [
+      { cwd: workspace, message: "Use my selected folders" },
+    ])) as { sessionId: string };
+    await expect(
+      manager.invoke("setVisibility", [
+        started.sessionId,
+        false,
+        "route_changed",
+      ]),
+    ).resolves.toBeUndefined();
+    const session = (await manager.invoke("getSession", [
+      started.sessionId,
+    ])) as CodeSession;
+    expect(session.additionalDirectories).toEqual([path.resolve(additional)]);
+    expect(session).toMatchObject({
+      isVisible: false,
+      visibilityReason: "route_changed",
+    });
+    expect(
+      events.some(
+        (event) =>
+          event.type === "session_updated" &&
+          (event.session as Record<string, unknown>)?.isVisible === false,
+      ),
+    ).toBe(true);
+    await manager.dispose();
+
+    const restored = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      () => undefined,
+      () => undefined,
+    );
+    await expect(
+      restored.invoke("getSession", [started.sessionId]),
+    ).resolves.toMatchObject({
+      isVisible: false,
+      visibilityReason: "route_changed",
+    });
+    await restored.dispose();
+  });
+
+  it("stops cleanly and promotes a queued correction without an interruption error", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "local-code-stop-"));
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-stop-ws-"),
+    );
+    temporaryDirectories.push(directory, workspace);
+    const events: Array<Record<string, unknown>> = [];
+    let requests = 0;
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const server = createServer(async (request, response) => {
+      for await (const _chunk of request) {
+        // Drain the provider request before responding.
+      }
+      requests += 1;
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      if (requests === 1) {
+        response.write(
+          `data: ${JSON.stringify({ choices: [{ delta: { content: "partial answer" } }] })}\n\n`,
+        );
+        await firstGate;
+        response.end("data: [DONE]\n\n");
+        return;
+      }
+      response.end(
+        `data: ${JSON.stringify({ choices: [{ delta: { content: "used queued correction" } }] })}\n\ndata: [DONE]\n\n`,
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("Missing stop-test provider address");
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => ({
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        model: "stop-test",
+        contextWindow: 32_000,
+      }),
+      (event) => events.push(event),
+      () => undefined,
+    );
+
+    try {
+      const started = (await manager.invoke("start", [
+        { cwd: workspace, message: "begin the task" },
+      ])) as { sessionId: string };
+      await manager.invoke("getTranscript", [started.sessionId]);
+      for (let attempt = 0; requests === 0 && attempt < 100; attempt += 1)
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(requests).toBe(1);
+
+      await manager.invoke("sendMessage", [
+        started.sessionId,
+        "use this queued correction",
+      ]);
+      await expect(
+        Promise.race([
+          manager
+            .invoke("stop", [started.sessionId])
+            .then(() => "stopped" as const),
+          new Promise<"timed-out">((resolve) =>
+            setTimeout(() => resolve("timed-out"), 2_000),
+          ),
+        ]),
+      ).resolves.toBe("stopped");
+      expect(
+        events.some(
+          (event) =>
+            event.type === "session_updated" &&
+            (event.session as Record<string, unknown>)?.isRunning === false,
+        ),
+      ).toBe(true);
+      expect(events.some((event) => event.type === "transcript_loaded")).toBe(
+        true,
+      );
+      const transcript = await waitForResult(manager, started.sessionId);
+
+      expect(requests).toBe(2);
+      expect(JSON.stringify(transcript)).not.toContain(
+        "Generation interrupted",
+      );
+      expect(JSON.stringify(transcript)).toContain("used queued correction");
+      expect(events.some((event) => event.type === "error")).toBe(false);
+    } finally {
+      releaseFirst();
+      await manager.dispose();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("continues after a provider output limit instead of silently ending the task", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-output-limit-"),
+    );
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-output-limit-ws-"),
+    );
+    temporaryDirectories.push(directory, workspace);
+    const requests: Array<Record<string, unknown>> = [];
+    const server = createServer(async (request, response) => {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      requests.push(JSON.parse(body) as Record<string, unknown>);
+      response.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
+      const content =
+        requests.length === 1
+          ? "I have started the repair but still need to verify it."
+          : "The repair and verification are complete.";
+      const finishReason = requests.length === 1 ? "length" : "stop";
+      response.end(
+        `data: ${JSON.stringify({
+          choices: [{ delta: { content } }],
+        })}\n\ndata: ${JSON.stringify({
+          choices: [{ delta: {}, finish_reason: finishReason }],
+        })}\n\ndata: [DONE]\n\n`,
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("Missing output-limit provider address");
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => ({
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        model: "output-limit-test",
+        contextWindow: 32_000,
+      }),
+      () => undefined,
+      () => undefined,
+    );
+
+    try {
+      const started = (await manager.invoke("start", [
+        { cwd: workspace, message: "finish the task" },
+      ])) as { sessionId: string };
+      const transcript = await waitForResult(manager, started.sessionId);
+
+      expect(requests).toHaveLength(2);
+      expect(requests[0]).toMatchObject({ max_tokens: 16_384 });
+      expect(JSON.stringify(transcript)).toContain(
+        "I have started the repair but still need to verify it.",
+      );
+      expect(JSON.stringify(transcript)).toContain(
+        "The repair and verification are complete.",
+      );
+    } finally {
+      await manager.dispose();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("does not requery after a text-only final response", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-final-reply-"),
+    );
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-final-reply-ws-"),
+    );
+    temporaryDirectories.push(directory, workspace);
+    let requests = 0;
+    const server = createServer(async (request, response) => {
+      for await (const _chunk of request) {
+        // Drain the provider request before responding.
+      }
+      requests += 1;
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content:
+                  "I need to finish the repair. Fix: write the proof file next.",
+              },
+            },
+          ],
+        }),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === "string")
+      throw new Error("Missing final-reply provider address");
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => ({
+        baseUrl: `http://127.0.0.1:${address.port}/v1`,
+        model: "final-reply-test",
+      }),
+      () => undefined,
+      () => undefined,
+    );
+
+    try {
+      const started = (await manager.invoke("start", [
+        { cwd: workspace, message: "Review the provider configuration" },
+      ])) as { sessionId: string };
+      const transcript = await waitForResult(manager, started.sessionId);
+
+      expect(requests).toBe(1);
+      expect(transcript.at(-1)).toEqual(
+        expect.objectContaining({
+          type: "result",
+          result:
+            "I need to finish the repair. Fix: write the proof file next.",
+        }),
+      );
+    } finally {
+      await manager.dispose();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it("honors the native Browser tools setting when advertising model tools", async () => {
@@ -120,6 +548,55 @@ describe("LocalCodeSessionManager", () => {
         (tool) => tool.function.name === "preview_start",
       ),
     ).toBe(false);
+    await manager.dispose();
+  });
+
+  it("drops stale renderer roots after a new primary workspace is selected", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "local-code-ui-"));
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-ui-workspace-"),
+    );
+    const stale = await mkdtemp(path.join(os.tmpdir(), "local-code-ui-stale-"));
+    const intentional = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-ui-intentional-"),
+    );
+    temporaryDirectories.push(directory, workspace, stale, intentional);
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      () => undefined,
+      () => undefined,
+    );
+
+    await manager.invoke("setDraftSessionFolders", [[stale]]);
+    await manager.invoke("resetDraftSessionFolders", []);
+    const reset = (await manager.invoke("start", [
+      {
+        cwd: workspace,
+        message: "Use only the newly selected workspace",
+        additionalDirectories: [stale],
+      },
+    ])) as { sessionId: string };
+    const resetSession = (await manager.invoke("getSession", [
+      reset.sessionId,
+    ])) as CodeSession;
+    expect(resetSession.additionalDirectories).toEqual([]);
+
+    await manager.invoke("resetDraftSessionFolders", []);
+    await manager.invoke("setDraftSessionFolders", [[intentional]]);
+    const selected = (await manager.invoke("start", [
+      {
+        cwd: workspace,
+        message: "Use the additional workspace I selected afterward",
+        additionalDirectories: [intentional],
+      },
+    ])) as { sessionId: string };
+    const selectedSession = (await manager.invoke("getSession", [
+      selected.sessionId,
+    ])) as CodeSession;
+    expect(selectedSession.additionalDirectories).toEqual([
+      path.resolve(intentional),
+    ]);
     await manager.dispose();
   });
 
@@ -185,14 +662,24 @@ describe("LocalCodeSessionManager", () => {
         serverId: "preview-proof",
         url: "http://127.0.0.1:4173",
       }));
-      const manager = await LocalCodeSessionManager.create(
+      const permissions: Array<{ requestId: string; toolName: string }> = [];
+      let manager: LocalCodeSessionManager;
+      manager = await LocalCodeSessionManager.create(
         directory,
         () => ({
           baseUrl: `http://127.0.0.1:${address.port}/v1`,
           model: "preview-code-model",
         }),
         () => undefined,
-        () => undefined,
+        (request) => {
+          permissions.push(request);
+          queueMicrotask(() => {
+            void manager.invoke("respondToToolPermission", [
+              request.requestId,
+              "once",
+            ]);
+          });
+        },
       );
       manager.setBrowserTools({
         executeCodeBrowserTool: vi.fn(async () => "ok"),
@@ -204,7 +691,7 @@ describe("LocalCodeSessionManager", () => {
         {
           cwd: workspace,
           message: "Set up the dev server",
-          permissionMode: "bypassPermissions",
+          permissionMode: "default",
         },
       ])) as { sessionId: string };
       await waitForResult(manager, started.sessionId);
@@ -214,7 +701,9 @@ describe("LocalCodeSessionManager", () => {
           expect.objectContaining({
             function: expect.objectContaining({
               name: "preview_start",
-              description: expect.stringContaining(".open-claude/launch.json"),
+              description: expect.stringContaining(
+                '"configurations":[{"name":"web"',
+              ),
             }),
           }),
         ]),
@@ -224,6 +713,9 @@ describe("LocalCodeSessionManager", () => {
         "web",
         started.sessionId,
       );
+      expect(permissions).toEqual([
+        expect.objectContaining({ toolName: "preview_start" }),
+      ]);
       expect(requests[1].messages).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -763,6 +1255,17 @@ describe("LocalCodeSessionManager", () => {
           type: "text/markdown",
           content: "local code harness proof",
         }),
+      );
+      await writeFile(
+        path.join(workspace, "proof.md"),
+        Buffer.from([0xc3, 0x28]),
+      );
+      await expect(
+        manager.invoke("readArtifact", [started.sessionId, artifacts[0]?.url]),
+      ).resolves.toBeNull();
+      await writeFile(
+        path.join(workspace, "proof.md"),
+        "local code harness proof",
       );
 
       const reopened = await LocalCodeSessionManager.create(
@@ -1678,6 +2181,14 @@ describe("LocalCodeSessionManager", () => {
         session: Record<string, unknown>,
         input: Record<string, unknown>,
         signal: AbortSignal,
+      ) => Promise<{
+        modelOutput: string;
+        isError?: boolean;
+        toolUseResult?: { stdout?: string; interrupted?: boolean };
+      }>;
+      toolRead: (
+        session: Record<string, unknown>,
+        input: Record<string, unknown>,
       ) => Promise<unknown>;
     };
     const session = internal.session(started.sessionId)!;
@@ -1705,6 +2216,48 @@ describe("LocalCodeSessionManager", () => {
     await expect(
       internal.toolBash(session, { command: "claude -p test" }, signal),
     ).rejects.toThrow("external Claude Code CLI");
+    await expect(
+      internal.toolBash(
+        session,
+        { command: 'node -e "process.exit(7)"' },
+        signal,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        modelOutput: expect.stringContaining("Exit code: 7"),
+        isError: true,
+      }),
+    );
+    const cancellation = new AbortController();
+    const residentCommand = internal.toolBash(
+      session,
+      {
+        command:
+          'node -e "console.log(process.pid); setInterval(() => {}, 1000)"',
+        timeout: 10_000,
+      },
+      cancellation.signal,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    cancellation.abort();
+    const cancelled = await residentCommand;
+    expect(cancelled).toEqual(
+      expect.objectContaining({
+        isError: true,
+        toolUseResult: expect.objectContaining({ interrupted: true }),
+      }),
+    );
+    const cancelledPid = Number(cancelled.toolUseResult?.stdout?.trim());
+    expect(cancelledPid).toBeGreaterThan(0);
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(() => process.kill(cancelledPid, 0)).toThrow();
+    await writeFile(
+      path.join(workspace, "binary.png"),
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]),
+    );
+    await expect(
+      internal.toolRead(session, { file_path: "binary.png" }),
+    ).rejects.toThrow("only accepts UTF-8 text files");
 
     const outside = path.join(workspace, "..", "outside.txt");
     expect(
@@ -1958,6 +2511,8 @@ describe("LocalCodeSessionManager", () => {
           sessionId: "recovered",
           cwd: path.resolve(workspace),
           permissionMode: "acceptEdits",
+          rootDetected:
+            typeof process.getuid === "function" && process.getuid() === 0,
           additionalDirectories: [],
         }),
         expect.objectContaining({
@@ -1972,6 +2527,129 @@ describe("LocalCodeSessionManager", () => {
     expect(await manager.invoke("getTranscript", ["recovered"])).toEqual([
       { type: "user", message: "ok" },
     ]);
+  });
+
+  it("implements the retained transcript, usage, forge-adjacent, and remote compatibility contracts", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-24012-contracts-"),
+    );
+    const workspace = await mkdtemp(
+      path.join(os.tmpdir(), "local-code-24012-root-"),
+    );
+    temporaryDirectories.push(directory, workspace);
+    const timestamp = new Date().toISOString();
+    await writeFile(
+      path.join(directory, "local-code-sessions.json"),
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            sessionId: "delta-session",
+            cwd: workspace,
+            createdAt: Date.now(),
+            lastActivityAt: Date.now(),
+            transcript: [
+              {
+                type: "user",
+                timestamp,
+                message: { content: "Search for the release notes" },
+              },
+              {
+                type: "assistant",
+                timestamp,
+                message: {
+                  model: "local-proof-model",
+                  usage: {
+                    input_tokens: 12,
+                    output_tokens: 8,
+                    cache_read_input_tokens: 4,
+                    cache_creation_input_tokens: 2,
+                  },
+                  content: [{ type: "tool_use", name: "WebSearch", input: {} }],
+                },
+              },
+            ],
+            artifacts: [],
+          },
+        ],
+      }),
+      "utf8",
+    );
+    const manager = await LocalCodeSessionManager.create(
+      directory,
+      () => null,
+      () => undefined,
+      () => undefined,
+    );
+
+    expect(
+      await manager.invoke("getTranscriptTail", ["delta-session", 1]),
+    ).toEqual({
+      messages: [expect.objectContaining({ type: "assistant" })],
+      hasMore: true,
+    });
+    expect(await manager.invoke("getCustom3pUsageSummary", [30])).toEqual(
+      expect.objectContaining({
+        windowDays: 30,
+        turns: 1,
+        errorTurns: 0,
+        surfaces: expect.objectContaining({
+          code: {
+            inputTokens: 12,
+            outputTokens: 8,
+            cacheReadTokens: 4,
+            cacheWriteTokens: 2,
+            webSearchRequests: 1,
+          },
+        }),
+        models: [
+          expect.objectContaining({
+            model: "local-proof-model",
+            totals: expect.objectContaining({ webSearchRequests: 1 }),
+          }),
+        ],
+        tools: [{ name: "WebSearch", count: 1 }],
+      }),
+    );
+
+    await manager.invoke("armAutoFixOnNextPr", ["delta-session", "feature"]);
+    await manager.invoke("setBoundPrAutoFix", [
+      "delta-session",
+      "owner/repo",
+      42,
+      true,
+      "github.com",
+    ]);
+    expect(await manager.invoke("getSession", ["delta-session"])).toEqual(
+      expect.objectContaining({
+        autoFixNextOwnPr: "feature",
+        boundPrAutoFix: [
+          {
+            repo: "owner/repo",
+            prNumber: 42,
+            enabled: true,
+            host: "github.com",
+          },
+        ],
+      }),
+    );
+    expect(await manager.invoke("openCliTail", ["missing"])).toBe(false);
+    expect(await manager.invoke("closeCliTail", ["missing"])).toBe(false);
+    expect(
+      await manager.invoke("listRemoteDirectory", [{}, "/root", "/root"]),
+    ).toEqual({
+      entries: [],
+      error: "Remote workspaces are not available in local mode",
+    });
+    expect(
+      await manager.invoke("toggleRemoteControl", ["delta-session", true]),
+    ).toEqual(
+      expect.objectContaining({
+        ok: false,
+        reason: "deployment_unavailable",
+      }),
+    );
+    await manager.dispose();
   });
 
   it("backs the native terminal transport with an interactive PTY", async () => {
@@ -2058,7 +2736,7 @@ describe("LocalCodeSessionManager", () => {
                 role: "assistant",
                 content:
                   fallbackTurns === 1
-                    ? '<tool_call>{"name":"Write","arguments":{"file_path":"fallback.txt","content":"fallback provider proof"}}</tool_call>'
+                    ? 'thought\nI should create the requested file.\n<tool_call>{"name":"Write","arguments":{"file_path":"fallback.txt","content":"fallback provider proof"}</tool_call>'
                     : "Fallback tool loop complete.",
               },
             },
@@ -2114,6 +2792,9 @@ describe("LocalCodeSessionManager", () => {
       expect(permissions).toHaveLength(1);
       expect(await readFile(path.join(workspace, "fallback.txt"), "utf8")).toBe(
         "fallback provider proof",
+      );
+      expect(JSON.stringify(transcript)).not.toContain(
+        "I should create the requested file",
       );
       expect(transcript.at(-1)).toEqual(
         expect.objectContaining({
@@ -2207,6 +2888,87 @@ describe("LocalCodeSessionManager", () => {
           }),
         ]),
       );
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+
+  it("recovers repeated Claude-style tool_code calls and continues the loop", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const server = createServer(async (request, response) => {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      requests.push(JSON.parse(body) as Record<string, unknown>);
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content:
+                  requests.length === 1
+                    ? [
+                        "Let me inspect both fixtures.",
+                        "<tool_code>read(file_path=first.txt)",
+                        '<tool_code>read(file_path="second.txt")',
+                      ].join("\n")
+                    : "Claude-style textual tool loop complete.",
+              },
+            },
+          ],
+        }),
+      );
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+
+    try {
+      const address = server.address();
+      if (!address || typeof address === "string")
+        throw new Error("Missing Claude-style provider address");
+      const directory = await mkdtemp(
+        path.join(os.tmpdir(), "local-code-tool-code-"),
+      );
+      const workspace = await mkdtemp(
+        path.join(os.tmpdir(), "local-code-tool-code-root-"),
+      );
+      temporaryDirectories.push(directory, workspace);
+      await writeFile(path.join(workspace, "first.txt"), "FIRST", "utf8");
+      await writeFile(path.join(workspace, "second.txt"), "SECOND", "utf8");
+      const manager = await LocalCodeSessionManager.create(
+        directory,
+        () => ({
+          baseUrl: `http://127.0.0.1:${address.port}/v1`,
+          model: "claude-style-model",
+        }),
+        () => undefined,
+        () => undefined,
+      );
+      const started = (await manager.invoke("start", [
+        {
+          cwd: workspace,
+          message: "Read both fixtures",
+          permissionMode: "bypassPermissions",
+        },
+      ])) as { sessionId: string };
+      const transcript = await waitForResult(manager, started.sessionId);
+
+      expect(requests).toHaveLength(2);
+      expect(requests[0].tools).toEqual(expect.any(Array));
+      expect(requests[1].tools).toBeUndefined();
+      expect(JSON.stringify(requests[1])).toContain("FIRST");
+      expect(JSON.stringify(requests[1])).toContain("SECOND");
+      expect(transcript.at(-1)).toEqual(
+        expect.objectContaining({
+          type: "result",
+          result: "Claude-style textual tool loop complete.",
+        }),
+      );
+      await manager.dispose();
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

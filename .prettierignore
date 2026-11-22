@@ -5,3 +5,6 @@ dist-electron/
 node_modules/
 reference/
 src/generated/
+src/shared/connector-directory-snapshot.json
+src/shared/plugin-directory-snapshot.json
+.claude/

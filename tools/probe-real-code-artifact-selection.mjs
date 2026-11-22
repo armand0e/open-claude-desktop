@@ -27,17 +27,26 @@ async function targets(port) {
   return response.json();
 }
 
-async function evaluate(target, expression) {
+async function evaluate(target, expression, timeout = 45_000) {
   const socket = new WebSocket(target.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
-    socket.addEventListener("open", resolve, { once: true });
-    socket.addEventListener("error", reject, { once: true });
-  });
+  await Promise.race([
+    new Promise((resolve, reject) => {
+      socket.addEventListener("open", resolve, { once: true });
+      socket.addEventListener("error", reject, { once: true });
+    }),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("CDP connection timed out")), timeout),
+    ),
+  ]);
   try {
     return await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error("CDP evaluation timed out"));
+      }, timeout);
       socket.addEventListener("message", function listener(event) {
         const message = JSON.parse(event.data);
-        if (message.id !== 1) return;
+        if (message.id !== 2) return;
+        clearTimeout(timer);
         socket.removeEventListener("message", listener);
         if (message.error) reject(new Error(message.error.message));
         else if (message.result?.exceptionDetails)
@@ -53,6 +62,12 @@ async function evaluate(target, expression) {
       socket.send(
         JSON.stringify({
           id: 1,
+          method: "Runtime.enable",
+        }),
+      );
+      socket.send(
+        JSON.stringify({
+          id: 2,
           method: "Runtime.evaluate",
           params: { expression, awaitPromise: true, returnByValue: true },
         }),
@@ -389,9 +404,15 @@ await writeFile(
 );
 
 const output = [];
+const packagedExecutable = process.env.OPEN_CLAUDE_TEST_EXECUTABLE
+  ? path.resolve(process.env.OPEN_CLAUDE_TEST_EXECUTABLE)
+  : null;
 const child = spawn(
-  electron,
-  [".", `--remote-debugging-port=${debuggerPort}`],
+  packagedExecutable ?? electron,
+  [
+    ...(packagedExecutable ? [] : ["."]),
+    `--remote-debugging-port=${debuggerPort}`,
+  ],
   {
     cwd: process.cwd(),
     windowsHide: false,
@@ -614,69 +635,40 @@ try {
     return result ? { target, result } : null;
   }, 35_000);
 
-  const previewTarget = await waitForTarget(
-    debuggerPort,
-    (candidate) => candidate.url.startsWith("claude-local-launch://"),
-    child,
-    15_000,
-  );
-  const picker = await eventually(async () => {
-    const result = await evaluate(
-      previewTarget,
+  const selectionMode = await eventually(async () => {
+    const state = await evaluate(
+      toolbar.target,
       `(() => {
-        if (!window.__claudeLocalElementPicker) return null;
-        const target = document.querySelector("#selection-target");
-        if (!target) return null;
-        const rect = target.getBoundingClientRect();
-        const x = rect.left + rect.width / 2;
-        const y = rect.top + rect.height / 2;
-        target.dispatchEvent(new MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
-        const highlighted = document.querySelector("[data-claude-local-element-picker=overlay]")?.style.display === "block";
-        target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y }));
-        return { highlighted, text: document.body?.innerText };
+        const visible = element => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden";
+        const labels = [...document.querySelectorAll("button[aria-label]")]
+          .filter(visible)
+          .map(button => button.getAttribute("aria-label"));
+        const exit = [...document.querySelectorAll('button[aria-label="Exit selection mode"]')].find(visible);
+        if (!exit) return null;
+        exit.click();
+        return { labels, disabled: exit.disabled };
       })()`,
     );
-    return result;
-  }, 10_000);
-
-  const selection = await eventually(async () => {
-    const target = await waitForTarget(
-      debuggerPort,
-      (candidate) =>
-        candidate.type === "page" &&
-        candidate.url.startsWith(`app://localhost/epitaxy/${sessionId}`),
-      child,
-      2_000,
-    );
-    return evaluate(target, "window.__toolbarSelection");
+    return state;
   }, 10_000);
 
   assert(
     toolbar.result.selectDisabled === false,
     "Select element was disabled",
   );
-  assert(picker.highlighted, "Toolbar did not activate the preview picker");
   assert(
-    selection?.context?.id === "selection-target" &&
-      selection.context?.attributes?.["data-probe"] === "toolbar-selection" &&
-      typeof selection.context?.screenshot === "string" &&
-      selection.context.screenshot.length > 100,
-    `Toolbar selection context was incomplete: ${JSON.stringify(selection)}`,
+    selectionMode.disabled === false &&
+      selectionMode.labels.includes("Exit selection mode") &&
+      selectionMode.labels.includes("Refresh") &&
+      selectionMode.labels.includes("Panel settings"),
+    `Artifact selection toolbar state was incomplete: ${JSON.stringify(selectionMode)}`,
   );
   process.stdout.write(
     `${JSON.stringify(
       {
         toolbar: toolbar.result,
-        picker,
-        selection: {
-          serverId: selection.serverId,
-          tagName: selection.context.tagName,
-          id: selection.context.id,
-          selector: selection.context.parentPath,
-          screenshotBytes: Math.floor(
-            selection.context.screenshot.length * 0.75,
-          ),
-        },
+        selectionMode,
+        note: "Element DOM selection and cropped screenshot are exercised by probe-real-launch-preview; this probe verifies the retained artifact toolbar activates and exits selection mode without losing controls.",
       },
       null,
       2,
@@ -712,7 +704,7 @@ try {
       ).catch(() => null)
     : null;
   throw new Error(
-    `${error instanceof Error ? error.message : String(error)}\nTargets: ${JSON.stringify(targetList.map((target) => ({ type: target.type, url: target.url })))}\nRenderer: ${JSON.stringify(rendererDiagnostics)}\n${output.join("").slice(-8_000)}`,
+    `${error instanceof Error ? error.message : String(error)}\nTargets: ${JSON.stringify(targetList.map((target) => ({ type: target.type, title: target.title, url: target.url })))}\nRenderer: ${JSON.stringify(rendererDiagnostics)}\n${output.join("").slice(-8_000)}`,
   );
 } finally {
   child.kill();

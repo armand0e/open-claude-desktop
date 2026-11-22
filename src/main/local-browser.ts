@@ -35,7 +35,11 @@ interface PublicTarget {
   family: 4 | 6;
 }
 
-interface PublicNetworkProxy {
+export type BrowserAddressResolver = (
+  hostname: string,
+) => Promise<Array<{ address: string; family: number }>>;
+
+export interface PublicNetworkProxy {
   server: string;
   username: string;
   password: string;
@@ -118,7 +122,11 @@ function privateAddress(address: string): boolean {
   );
 }
 
-async function resolvePublicBrowserUrl(raw: string): Promise<PublicTarget> {
+async function resolvePublicBrowserUrl(
+  raw: string,
+  resolver: BrowserAddressResolver = (hostname) =>
+    lookup(hostname, { all: true }),
+): Promise<PublicTarget> {
   if (!raw || raw.length > MAX_URL_LENGTH)
     throw new Error("Browser URL is empty or too long");
   const url = new URL(raw);
@@ -129,7 +137,7 @@ async function resolvePublicBrowserUrl(raw: string): Promise<PublicTarget> {
   const hostname = url.hostname.replace(/^\[|\]$/gu, "");
   if (hostname === "localhost" || hostname.endsWith(".localhost"))
     throw new Error("Private and local network URLs are unavailable");
-  const addresses = await lookup(hostname, { all: true });
+  const addresses = await resolver(hostname);
   if (
     !addresses.length ||
     addresses.some((entry) => privateAddress(entry.address))
@@ -143,8 +151,11 @@ async function resolvePublicBrowserUrl(raw: string): Promise<PublicTarget> {
   };
 }
 
-export async function publicBrowserUrl(raw: string): Promise<URL> {
-  return (await resolvePublicBrowserUrl(raw)).url;
+export async function publicBrowserUrl(
+  raw: string,
+  resolver?: BrowserAddressResolver,
+): Promise<URL> {
+  return (await resolvePublicBrowserUrl(raw, resolver)).url;
 }
 
 function proxyAuthorized(request: IncomingMessage, expected: string): boolean {
@@ -172,22 +183,67 @@ function proxyHeaders(
   target: URL,
 ): Record<string, string | string[] | undefined> {
   const headers = { ...request.headers };
-  delete headers["proxy-authorization"];
-  delete headers["proxy-connection"];
+  const connectionTokens = String(headers.connection ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  for (const name of [
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "proxy-connection",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    ...connectionTokens,
+  ])
+    delete headers[name];
   headers.host = target.host;
   headers.connection = "close";
   return headers;
 }
 
-async function startPublicNetworkProxy(): Promise<PublicNetworkProxy> {
+function proxyResponseHeaders(
+  input: Record<string, string | string[] | undefined>,
+): Record<string, string | string[] | undefined> {
+  const headers = { ...input };
+  const connectionTokens = String(headers.connection ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  for (const name of [
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "proxy-connection",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    ...connectionTokens,
+  ])
+    delete headers[name];
+  headers.connection = "close";
+  return headers;
+}
+
+export async function startPublicNetworkProxy(
+  authenticate = true,
+): Promise<PublicNetworkProxy> {
   const username = "open-claude";
   const password = randomBytes(24).toString("hex");
-  const expected = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+  const expected = authenticate
+    ? `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
+    : "";
   const sockets = new Set<net.Socket>();
   let server!: HttpServer;
 
   server = createHttpServer(async (request, response) => {
-    if (!requireProxyAuthorization(request, response, expected)) return;
+    if (expected && !requireProxyAuthorization(request, response, expected))
+      return;
     try {
       const target = await resolvePublicBrowserUrl(request.url ?? "");
       const requestFn =
@@ -206,9 +262,7 @@ async function startPublicNetworkProxy(): Promise<PublicNetworkProxy> {
             : {}),
         },
         (upstreamResponse) => {
-          const headers = { ...upstreamResponse.headers };
-          delete headers["proxy-authenticate"];
-          delete headers["proxy-authorization"];
+          const headers = proxyResponseHeaders(upstreamResponse.headers);
           response.writeHead(upstreamResponse.statusCode ?? 502, headers);
           upstreamResponse.pipe(response);
         },
@@ -245,7 +299,7 @@ async function startPublicNetworkProxy(): Promise<PublicNetworkProxy> {
       clientClosed = true;
       upstream?.destroy();
     });
-    if (!proxyAuthorized(request, expected)) {
+    if (expected && !proxyAuthorized(request, expected)) {
       clientSocket.end(
         'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="Open-Claude"\r\nConnection: close\r\n\r\n',
       );
@@ -326,12 +380,21 @@ export async function withAbort<T>(
     // Closing the page terminates click/type/fill work as well as navigation.
     // window.stop() only stops document loading and can leave a mutating input
     // action running after the caller has already been told it was cancelled.
+    let rejected = false;
+    const rejectOnce = () => {
+      if (rejected) return;
+      rejected = true;
+      rejectAbort?.(new Error("The browser action was cancelled"));
+    };
+    const timer = setTimeout(rejectOnce, 2_000);
+    timer.unref?.();
     void page
       .close({ runBeforeUnload: false })
       .catch(() => undefined)
-      .finally(() =>
-        rejectAbort?.(new Error("The browser action was cancelled")),
-      );
+      .finally(() => {
+        clearTimeout(timer);
+        rejectOnce();
+      });
   };
   signal.addEventListener("abort", onAbort, { once: true });
   try {
@@ -469,6 +532,21 @@ export class LocalBrowserUse {
     return `Now on: ${title || "(untitled)"} — ${page.url()}`;
   }
 
+  async #shotDirectory(key: string): Promise<string> {
+    await mkdir(this.#shotsRoot, { recursive: true });
+    const requested = path.join(this.#shotsRoot, key);
+    await mkdir(requested, { recursive: true });
+    const directoryInfo = await lstat(requested);
+    if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink())
+      throw new Error("Browser screenshot directory is unavailable");
+    const canonicalRoot = await realpath(this.#shotsRoot);
+    const canonicalDirectory = await realpath(requested);
+    const relative = path.relative(canonicalRoot, canonicalDirectory);
+    if (relative.startsWith("..") || path.isAbsolute(relative))
+      throw new Error("Browser screenshot directory escaped its local root");
+    return canonicalDirectory;
+  }
+
   async run(
     conversationUuid: string,
     name: string,
@@ -557,8 +635,7 @@ export class LocalBrowserUse {
       }
       case "browser_screenshot": {
         const key = conversationKey(conversationUuid);
-        const directory = path.join(this.#shotsRoot, key);
-        await mkdir(directory, { recursive: true });
+        const directory = await this.#shotDirectory(key);
         this.#shotCounter += 1;
         const fileName = `shot-${Date.now()}-${this.#shotCounter}.png`;
         await withAbort(signal, page, () =>
@@ -598,6 +675,10 @@ export class LocalBrowserUse {
     }
     const absolutePath = path.join(this.#shotsRoot, key, fileName);
     try {
+      const requestedDirectory = path.join(this.#shotsRoot, key);
+      const directoryInfo = await lstat(requestedDirectory);
+      if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink())
+        return null;
       const candidate = await lstat(absolutePath);
       if (candidate.isSymbolicLink()) return null;
       const root = await realpath(path.join(this.#shotsRoot, key));
@@ -621,10 +702,26 @@ export class LocalBrowserUse {
     this.#pages.delete(key);
     await page?.close().catch(() => undefined);
     await pending?.then((created) => created.close()).catch(() => undefined);
-    await rm(path.join(this.#shotsRoot, key), {
-      recursive: true,
-      force: true,
-    }).catch(() => undefined);
+    const shots = path.join(this.#shotsRoot, key);
+    const info = await lstat(shots).catch(() => null);
+    if (info?.isSymbolicLink())
+      await rm(shots, { force: true }).catch(() => undefined);
+    else if (info?.isDirectory()) {
+      const canonicalRoot = await realpath(this.#shotsRoot).catch(() => null);
+      const canonicalShots = await realpath(shots).catch(() => null);
+      const relative =
+        canonicalRoot && canonicalShots
+          ? path.relative(canonicalRoot, canonicalShots)
+          : "..";
+      if (
+        canonicalShots &&
+        !relative.startsWith("..") &&
+        !path.isAbsolute(relative)
+      )
+        await rm(canonicalShots, { recursive: true, force: true }).catch(
+          () => undefined,
+        );
+    }
   }
 
   async dispose(): Promise<void> {

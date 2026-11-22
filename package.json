@@ -15,16 +15,30 @@
     "reference:signatures": "node tools/extract-ipc-signatures.mjs",
     "reference:generate": "node tools/generate-contracts.mjs",
     "reference:coverage": "node tools/report-implementation.mjs",
+    "compatibility:verify": "node tools/compatibility-policy.mjs",
+    "renderer:verify": "node tools/renderer-compatibility.mjs && vitest run tests/client-patches.test.ts --testTimeout=120000",
+    "renderer:migrate": "node tools/renderer-migrate.mjs",
+    "renderer:migrate:deep": "node tools/renderer-migrate.mjs --deep-scan",
+    "renderer:candidate": "node tools/renderer-migrate.mjs --launch",
+    "renderer:candidate:partial": "node tools/renderer-migrate.mjs --launch --allow-partial",
+    "renderer:promote": "node tools/renderer-migrate.mjs --promote",
     "directory:snapshot": "node tools/snapshot-plugin-directory.mjs && node tools/snapshot-connector-directory.mjs",
     "reference:recover": "npm run reference:extract && npm run reference:analyze && npm run reference:preloads && npm run reference:signatures && npm run reference:generate && npm run reference:coverage",
     "build": "npm run typecheck && node tools/build-electron.mjs && vite build",
-    "dist:win": "npm run build && node tools/prepare-package-assets.mjs && electron-builder --win nsis --x64",
-    "dist:linux": "npm run build && node tools/prepare-package-assets.mjs && node tools/build-linux-package.mjs",
+    "dictation:prepare": "node tools/fetch-moonshine.mjs",
+    "dist:win": "npm run verify:dependencies && npm run dictation:prepare && npm run build && npm run probe:moonshine && npm run probe:dictation-stream && node tools/prepare-package-assets.mjs && npm run renderer:verify && electron-builder --win nsis --x64 && npm run verify:package-contents",
+    "dist:linux": "npm run verify:dependencies && npm run dictation:prepare && npm run build && npm run probe:moonshine && node tools/prepare-package-assets.mjs && npm run renderer:verify && node tools/build-linux-package.mjs && npm run verify:package-contents",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=4 --testTimeout=15000 --hookTimeout=15000",
     "format": "prettier --write --ignore-unknown .",
     "format:check": "prettier --check --ignore-unknown .",
-    "verify": "npm run format:check && npm test && npm run build",
+    "verify": "npm run format:check && npm run verify:dependencies && npm run compatibility:verify && npm test && npm run build && npm run renderer:verify && npm run verify:runtime",
+    "verify:runtime": "npm run smoke:local-chat && npm run smoke:local-code && npm run probe:background-tasks && npm run probe:route-audit && npm run probe:settings-directory && npm run probe:plugins && npm run probe:scheduled-run && npm run probe:real-file-preview && npm run probe:real-launch-preview && npm run probe:real-code-browser && npm run probe:real-code-artifact-selection && npm run probe:moonshine && npm run probe:dictation-stream",
+    "verify:packaged": "node tools/verify-packaged.mjs",
+    "verify:dependencies": "npm audit --audit-level=moderate",
+    "verify:package-contents": "node tools/inspect-package-contents.mjs",
+    "release:hashes": "node tools/attest-release.mjs --write-hashes",
+    "release:attest": "node tools/attest-release.mjs --verify-release",
     "smoke:hosted": "node tools/smoke-electron.mjs hosted",
     "smoke:local": "node tools/smoke-electron.mjs local",
     "smoke:local-chat": "node tools/smoke-local-chat.mjs",
@@ -40,11 +54,14 @@
     "smoke:local-code-permission": "node tools/smoke-local-code.mjs permission",
     "smoke:local-code-bypass": "node tools/smoke-local-code.mjs bypass",
     "smoke:local-code-terminal": "node tools/smoke-local-code.mjs terminal",
+    "probe:background-tasks": "node tools/probe-background-tasks.mjs",
+    "probe:route-audit": "node tools/probe-route-audit.mjs",
     "smoke:standalone": "node tools/smoke-standalone.mjs",
     "smoke:packaged": "node tools/smoke-packaged.mjs",
     "probe:save-memory": "node tools/probe-save-memory.mjs",
     "probe:sandbox-chat": "node tools/probe-sandbox-chat.mjs",
     "probe:dictation-stream": "node tools/probe-dictation-stream.mjs",
+    "probe:moonshine": "node tools/probe-moonshine.mjs",
     "probe:project-page": "node tools/probe-project-page.mjs",
     "probe:publish-artifact": "node tools/probe-publish-artifact.mjs",
     "probe:artifact-interactivity": "node tools/probe-artifact-interactivity.mjs",
@@ -97,7 +114,12 @@
       "dist-electron/**/*",
       "src/main/local-search-proxy.cjs",
       "LICENSE",
-      "package.json"
+      "package.json",
+      "!dist/**/*.map",
+      "!dist-electron/**/*.map",
+      "!node_modules/**/{test,tests,__tests__,coverage,doc,docs,example,examples,fixtures}/**/*",
+      "!node_modules/**/*.map",
+      "!node_modules/**/{ADVISORY,SECURITY,CONTRIBUTING}*"
     ],
     "extraResources": [
       {
@@ -115,12 +137,23 @@
         ]
       },
       {
-        "from": "assets/whisper/ggml-base-q5_1.bin",
-        "to": "whisper/ggml-base-q5_1.bin"
+        "from": "assets/moonshine/models",
+        "to": "moonshine/models",
+        "filter": [
+          "**/*"
+        ]
       },
       {
         "from": ".package-assets/icon.png",
         "to": "icon.png"
+      },
+      {
+        "from": ".package-assets/release-metadata.json",
+        "to": "release-metadata.json"
+      },
+      {
+        "from": ".package-assets/renderer-compatibility.json",
+        "to": "renderer-compatibility.json"
       }
     ],
     "protocols": [
@@ -148,8 +181,8 @@
           "to": "icon.ico"
         },
         {
-          "from": "assets/whisper/win",
-          "to": "whisper/bin",
+          "from": "assets/moonshine/win",
+          "to": "moonshine/bin",
           "filter": [
             "**/*"
           ]
@@ -172,8 +205,8 @@
       "syncDesktopName": true,
       "extraResources": [
         {
-          "from": "assets/whisper/linux",
-          "to": "whisper/bin",
+          "from": "assets/moonshine/linux",
+          "to": "moonshine/bin",
           "filter": [
             "**/*"
           ]
@@ -195,14 +228,19 @@
       "perMachine": false
     }
   },
+  "openClaude": {
+    "rendererCompatibilityVersion": "1.24012.11",
+    "contractReferenceVersion": "1.24012.11"
+  },
   "dependencies": {
     "node-pty": "1.2.0-beta.13",
-    "pdfjs-dist": "^6.1.200",
+    "pdfjs-dist": "^6.3.289",
     "playwright-core": "^1.55.0",
     "playwright-extra": "^4.3.6",
     "puppeteer-extra-plugin-stealth": "^2.11.2"
   },
   "overrides": {
+    "brace-expansion@1.1.17": "1.1.18",
     "localtunnel": {
       "axios": "1.18.1"
     }
@@ -218,12 +256,12 @@
     "electron": "42.5.1",
     "electron-builder": "^26.15.3",
     "localtunnel": "^2.0.2",
-    "mermaid": "11.16.0",
+    "mermaid": "11.17.2",
     "prettier": "^3.6.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "typescript": "^5.8.3",
     "vite": "^7.0.5",
-    "vitest": "^3.2.4"
+    "vitest": "4.1.11"
   }
 }

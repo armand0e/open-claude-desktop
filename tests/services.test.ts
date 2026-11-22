@@ -1,6 +1,6 @@
 import path from "node:path";
 import os from "node:os";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const electron = vi.hoisted(() => ({
@@ -8,6 +8,7 @@ const electron = vi.hoisted(() => ({
   register: vi.fn<(...args: unknown[]) => boolean>(),
   unregisterAll: vi.fn(),
   getPath: vi.fn<(name: string) => string>(),
+  getVersion: vi.fn<() => string>(),
   findInPage: vi.fn<(...args: unknown[]) => number>(),
   stopFindInPage: vi.fn<(...args: unknown[]) => void>(),
   getLoginItemSettings: vi.fn<() => Record<string, boolean>>(),
@@ -17,6 +18,7 @@ const electron = vi.hoisted(() => ({
 vi.mock("electron", () => ({
   app: {
     getPath: electron.getPath,
+    getVersion: electron.getVersion,
     getLoginItemSettings: electron.getLoginItemSettings,
     setLoginItemSettings: electron.setLoginItemSettings,
   },
@@ -42,6 +44,7 @@ vi.mock("electron", () => ({
 }));
 
 import type { LocalCodeSessionManager } from "../src/main/local-code";
+import { zipEntries } from "../src/main/local-extract";
 import { ServiceDispatcher, type ServiceContext } from "../src/main/services";
 import { StateStore } from "../src/main/state";
 import type { ParsedChannel } from "../src/shared/channels";
@@ -95,11 +98,79 @@ function channel(key: string, method: string): ParsedChannel {
 }
 
 describe("ServiceDispatcher local Code integration", () => {
+  it("does not resurrect removed Cowork preferences submitted by the retained renderer", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "removed-prefs-"));
+    try {
+      const state = new StateStore(directory);
+      const dispatcher = dispatcherWithState(state);
+      await dispatcher.invoke(
+        channel("claude.settings.AppPreferences", "setPreference"),
+        ["coworkScheduledTasksEnabled", true],
+      );
+      expect(
+        state.get("appConfig").preferences.coworkScheduledTasksEnabled,
+      ).toBeUndefined();
+      await dispatcher.invoke(
+        channel("claude.settings.AppPreferences", "setPreference"),
+        ["sidebarMode", "expanded"],
+      );
+      expect(state.get("appConfig").preferences.sidebarMode).toBe("expanded");
+      await state.dispose();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("hides unavailable extension and update workflows and rejects their mutations", async () => {
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "truthful-capabilities-"),
+    );
+    try {
+      const dispatcher = dispatcherWithState(new StateStore(directory));
+      expect(
+        dispatcher.invoke(
+          channel("claude.settings.Extensions", "isExtensionsEnabled"),
+          [],
+        ),
+      ).toBe(false);
+      expect(
+        dispatcher.invoke(
+          channel(
+            "claude.settings.Extensions",
+            "isLocalExtensionInstallAllowed",
+          ),
+          [],
+        ),
+      ).toBe(false);
+      expect(() =>
+        dispatcher.invoke(
+          channel("claude.settings.Extensions", "showInstallDxtDialog"),
+          [],
+        ),
+      ).toThrow(/extensions are unavailable/i);
+      expect(() =>
+        dispatcher.invoke(
+          channel("claude.web.AutoUpdater", "checkForUpdates"),
+          [],
+        ),
+      ).toThrow(/no signed update feed/i);
+      expect(
+        dispatcher.invoke(
+          channel("claude.web.AutoUpdater", "restartToUpdate"),
+          [],
+        ),
+      ).toBe(false);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   beforeEach(() => {
     electron.openPath.mockReset();
     electron.register.mockReset();
     electron.unregisterAll.mockReset();
     electron.getPath.mockReset();
+    electron.getVersion.mockReset();
     electron.getLoginItemSettings.mockReset();
     electron.setLoginItemSettings.mockReset();
   });
@@ -445,6 +516,9 @@ describe("ServiceDispatcher local Code integration", () => {
         "C:\\workspace",
       ]),
     ).toBeUndefined();
+    expect(() =>
+      dispatcher.invoke(channel("claude.web.FutureSurface", "listItems"), []),
+    ).toThrow("has no declared local compatibility policy");
   });
 
   it("forwards the native Plugins service to the local plugin manager", async () => {
@@ -474,7 +548,6 @@ describe("ServiceDispatcher local Code integration", () => {
   it("rejects every obsolete Cowork service instead of returning defaults", () => {
     const dispatcher = new ServiceDispatcher({} as ServiceContext);
     for (const key of [
-      "claude.web.LocalAgentModeSessions",
       "claude.web.CoworkUserFiles",
       "claude.web.CoworkScheduledTasks",
       "claude.web.CoworkArtifacts",
@@ -485,6 +558,163 @@ describe("ServiceDispatcher local Code integration", () => {
       expect(() => dispatcher.invoke(channel(key, "getAll"), [])).toThrow(
         "Cowork has been removed",
       );
+    }
+  });
+
+  it("routes native local-skill compatibility calls to LocalSessions", async () => {
+    const invoke = vi.fn(async () => ({ ok: true }));
+    const dispatcher = new ServiceDispatcher({
+      codeSessions: { invoke },
+    } as unknown as ServiceContext);
+    await expect(
+      dispatcher.invoke(
+        channel("claude.web.LocalAgentModeSessions", "setLocalSkillEnabled"),
+        ["proof-skill", false],
+      ),
+    ).resolves.toEqual({ ok: true });
+    expect(invoke).toHaveBeenCalledWith("setLocalSkillEnabled", [
+      "proof-skill",
+      false,
+    ]);
+  });
+
+  it("implements the retained managed policy, simulator, and window contracts", () => {
+    const showMainWindow = vi.fn();
+    const dispatcher = new ServiceDispatcher({
+      showMainWindow,
+    } as unknown as ServiceContext);
+    for (const method of [
+      "managedRendererConfig_$store$_getState",
+      "managedRendererConfig_$store$_getStateSync",
+      "managedRendererConfig_$store$_update",
+    ]) {
+      expect(
+        dispatcher.invoke(channel("claude.web.ManagedConfig", method), []),
+      ).toEqual({
+        disableEssentialTelemetry: true,
+        disableNonessentialTelemetry: true,
+        disableMobileSimulatorTools: true,
+      });
+    }
+    expect(
+      dispatcher.invoke(
+        channel("claude.simulator.Simulator", "checkSetup"),
+        [],
+      ),
+    ).toEqual({ xcode: false });
+    expect(
+      dispatcher.invoke(
+        channel("claude.simulator.Simulator", "checkAndroidSetup"),
+        [],
+      ),
+    ).toEqual({ studioInstalled: false });
+    expect(
+      dispatcher.invoke(
+        channel("claude.simulator.Simulator", "openAndroidStudio"),
+        [],
+      ),
+    ).toBe(false);
+    expect(
+      dispatcher.invoke(channel("claude.web.WindowControl", "show"), []),
+    ).toBeUndefined();
+    expect(showMainWindow).toHaveBeenCalledOnce();
+  });
+
+  it("persists the new forge visibility set and delegates custom-provider usage", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "delta-state-"));
+    try {
+      const state = new StateStore(directory);
+      const usage = {
+        windowDays: 7,
+        generatedAtMs: 123,
+        turns: 1,
+        errorTurns: 0,
+        surfaces: {},
+        models: [],
+        tools: [],
+        daily: [],
+      };
+      const invoke = vi.fn().mockResolvedValue(usage);
+      const dispatcher = new ServiceDispatcher({
+        state,
+        codeSessions: { invoke },
+      } as unknown as ServiceContext);
+
+      await expect(
+        dispatcher.invoke(
+          channel("claude.web.ForgeState", "setForgeStateVisibleKeys"),
+          [["github:owner/repo#1", "github:owner/repo#1", "x".repeat(300)]],
+        ),
+      ).resolves.toBeUndefined();
+      expect(state.get("stores").forgeStateVisibleKeys).toEqual([
+        "github:owner/repo#1",
+      ]);
+      expect(
+        dispatcher.invoke(
+          channel("claude.web.ForgeState", "getForgeStateSnapshot"),
+          [],
+        ),
+      ).toEqual([]);
+      await expect(
+        dispatcher.invoke(
+          channel("claude.settings.Custom3pUsage", "getSummary"),
+          [7],
+        ),
+      ).resolves.toEqual(usage);
+      expect(invoke).toHaveBeenCalledWith("getCustom3pUsageSummary", [7]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("creates a bounded native-shaped logs handoff ZIP", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "handoff-bundle-"));
+    const logs = path.join(directory, "logs");
+    const temporary = path.join(directory, "temp");
+    try {
+      await mkdir(logs, { recursive: true });
+      await writeFile(path.join(logs, "main.log"), "backend ready\n", "utf8");
+      electron.getPath.mockImplementation((name) =>
+        name === "logs" ? logs : temporary,
+      );
+      electron.getVersion.mockReturnValue("0.2.1-test");
+      const invoke = vi.fn(async (method: string) =>
+        method === "getSession"
+          ? { sessionId: "proof-session", title: "Proof" }
+          : [{ type: "user", message: { content: "hello" } }],
+      );
+      const dispatcher = new ServiceDispatcher({
+        codeSessions: { invoke },
+      } as unknown as ServiceContext);
+      const handoff = channel(
+        "claude.web.LocalSessions",
+        "createLogsHandoffBundle",
+      );
+
+      await expect(
+        dispatcher.invoke(handoff, ["https://example.com/thread"]),
+      ).resolves.toEqual(
+        expect.objectContaining({
+          success: false,
+          errorCode: "invalid_thread_url",
+        }),
+      );
+      const result = (await dispatcher.invoke(handoff, [
+        "https://claude.ai/task/proof",
+        "proof-session",
+      ])) as { success: boolean; zipPath: string };
+      expect(result.success).toBe(true);
+      const entries = zipEntries(await readFile(result.zipPath));
+      expect([...entries.keys()].sort()).toEqual([
+        "logs/main.log",
+        "manifest.json",
+        "session.json",
+      ]);
+      expect(
+        Buffer.from(entries.get("manifest.json") ?? []).toString("utf8"),
+      ).toContain('"appVersion": "0.2.1-test"');
+    } finally {
+      await rm(directory, { recursive: true, force: true });
     }
   });
 });

@@ -36,7 +36,7 @@ function serviceEntry(key) {
 
 const serviceSpecificDispatch = explicitKeys.map(serviceEntry);
 const eventBackedDispatch = eventBackedKeys.sort().map(serviceEntry);
-const fallbackDispatch = Object.keys(contract.services)
+const compatibilityDispatch = Object.keys(contract.services)
   .filter((key) => !explicitSet.has(key) && !eventBackedSet.has(key))
   .sort()
   .map(serviceEntry);
@@ -65,10 +65,10 @@ const report = {
     methodCount: sumMethods(eventBackedDispatch),
     services: eventBackedDispatch,
   },
-  safeFallbackDispatch: {
-    serviceCount: fallbackDispatch.length,
-    methodCount: sumMethods(fallbackDispatch),
-    services: fallbackDispatch,
+  explicitCompatibilityDispatch: {
+    serviceCount: compatibilityDispatch.length,
+    methodCount: sumMethods(compatibilityDispatch),
+    services: compatibilityDispatch,
   },
   qualification:
     "A service-specific or event-backed branch is not a claim of full semantic parity. See docs/coverage.md and docs/product-boundary.md for functional, compatibility, and trimmed surfaces.",
